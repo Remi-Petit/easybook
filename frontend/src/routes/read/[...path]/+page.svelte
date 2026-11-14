@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { bookUrl, rawUrl, type BookDetail } from '$lib/api';
+	import { folderUrl, parentOf } from '$lib/catalog';
 	import ComicReader from '$lib/reader/ComicReader.svelte';
 	import EpubReader from '$lib/reader/EpubReader.svelte';
 	import PdfReader from '$lib/reader/PdfReader.svelte';
 
 	const rel = $derived(page.params.path ?? '');
 	const fallbackTitle = $derived(rel.split('/').pop()?.replace(/\.[^.]+$/, '') ?? '');
+	// Retour au dossier qui contient le livre, pas nécessairement à la racine.
+	const parent = $derived(parentOf(rel));
+	const backLabel = $derived(parent ? (parent.split('/').pop() ?? 'Bibliothèque') : 'Bibliothèque');
 
 	let detail = $state<BookDetail | null>(null);
 	let error = $state<string | null>(null);
@@ -52,7 +56,7 @@
 
 <div class="reader">
 	<header class="reader-head">
-		<a class="back" href="/">← Bibliothèque</a>
+		<a class="back" href={parent ? folderUrl(parent) : '/'}>← {backLabel}</a>
 		<h1 class="reader-title">{detail?.title ?? fallbackTitle}</h1>
 		{#if detail?.author}
 			<span class="reader-sub">{detail.author}</span>

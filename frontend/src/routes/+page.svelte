@@ -1,37 +1,34 @@
 <script lang="ts">
 	import BookCard from '$lib/components/BookCard.svelte';
-	import type { BookInfo } from '$lib/api';
+	import FolderCard from '$lib/components/FolderCard.svelte';
+	import Topbar from '$lib/components/Topbar.svelte';
+	import { childBooks, childFolders, previewBook } from '$lib/catalog';
 	import { library, reload } from '$lib/library.svelte';
 
 	let filter = $state('');
 
 	const query = $derived(filter.trim().toLowerCase());
 
-	const results = $derived(
-		query
-			? library.books.filter((book) =>
-					[book.title, book.rel, book.format].some((value) =>
-						value.toLowerCase().includes(query)
-					)
-				)
-			: library.books
+	// Les deux listes arrivent déjà triées naturellement du backend ; on ne fait
+	// que séparer les dossiers et les livres du niveau courant.
+	const topFolders = $derived(childFolders(library.folders, ''));
+	const rootBooks = $derived(childBooks(library.books, ''));
+
+	const matchingFolders = $derived(
+		query ? topFolders.filter((folder) => folder.name.toLowerCase().includes(query)) : topFolders
 	);
 
-	// Regroupement par dossier **parent** : la racine d'abord, puis chaque
-	// dossier dans l'ordre naturel des chemins (`T2` avant `T10`).
-	const groups = $derived.by(() => {
-		const map = new Map<string, BookInfo[]>();
-		for (const book of results) {
-			const cut = book.rel.lastIndexOf('/');
-			const parent = cut === -1 ? '' : book.rel.slice(0, cut);
-			const list = map.get(parent);
-			if (list) list.push(book);
-			else map.set(parent, [book]);
-		}
-		return [...map.entries()].sort(([a], [b]) =>
-			a.localeCompare(b, 'fr', { numeric: true, sensitivity: 'base' })
-		);
-	});
+	// Hors recherche, on ne liste que les livres posés à la racine : ceux d'un
+	// dossier sont représentés par la tuile du dossier.
+	const matchingBooks = $derived(
+		(query ? library.books : rootBooks).filter((book) =>
+			query
+				? [book.title, book.rel, book.format].some((value) => value.toLowerCase().includes(query))
+				: true
+		)
+	);
+
+	const empty = $derived(matchingFolders.length === 0 && matchingBooks.length === 0);
 </script>
 
 <svelte:head>
@@ -39,22 +36,7 @@
 </svelte:head>
 
 <div class="page">
-	<header class="topbar">
-		<div class="brand">
-			<span class="mark">easybook</span>
-			<span class="tagline">bibliothèque locale</span>
-		</div>
-		<div class="status" data-status={library.status}>
-			<span class="dot"></span>
-			{#if library.status === 'live'}
-				en direct
-			{:else if library.status === 'connecting'}
-				connexion…
-			{:else}
-				hors ligne
-			{/if}
-		</div>
-	</header>
+	<Topbar />
 
 	<section class="intro">
 		<h1>Ma bibliothèque</h1>
@@ -74,7 +56,7 @@
 		<p class="notice">
 			Impossible de joindre l’API ({library.error}). <button onclick={() => reload()}>Réessayer</button>
 		</p>
-	{:else if results.length === 0}
+	{:else if empty}
 		<p class="notice">
 			{#if library.books.length === 0}
 				Aucun livre pour le moment : déposez un EPUB, un CBZ ou un PDF dans <code>books/</code>,
@@ -84,18 +66,32 @@
 			{/if}
 		</p>
 	{:else}
-		{#each groups as [parent, books] (parent)}
+		{#if matchingFolders.length > 0}
 			<section class="group">
 				<h2>
-					{parent || 'à la racine'}
-					<span class="count">{books.length}</span>
+					dossiers
+					<span class="count">{matchingFolders.length}</span>
 				</h2>
 				<div class="grid">
-					{#each books as book (book.rel)}
+					{#each matchingFolders as folder (folder.rel)}
+						<FolderCard {folder} preview={previewBook(library.books, folder.rel)} />
+					{/each}
+				</div>
+			</section>
+		{/if}
+
+		{#if matchingBooks.length > 0}
+			<section class="group">
+				<h2>
+					{query ? 'livres' : 'à la racine'}
+					<span class="count">{matchingBooks.length}</span>
+				</h2>
+				<div class="grid">
+					{#each matchingBooks as book (book.rel)}
 						<BookCard {book} />
 					{/each}
 				</div>
 			</section>
-		{/each}
+		{/if}
 	{/if}
 </div>

@@ -20,10 +20,12 @@ easybook/
 │   │   └── config.rs     # config.yml
 │   └── config.yml
 ├── frontend/         # SvelteKit — bibliothèque + lecteurs
-│   ├── src/routes/+page.svelte          # le catalogue
+│   ├── src/routes/+page.svelte          # le catalogue (racine)
+│   ├── src/routes/folder/[...path]/     # un dossier (fil d'Ariane + contenu)
 │   ├── src/routes/read/[...path]/       # le lecteur
+│   ├── src/lib/catalog.ts               # découpage des listes plates en arborescence
 │   ├── src/lib/library.svelte.ts        # état partagé + WebSocket
-│   ├── src/lib/components/BookCard.svelte # une vignette du catalogue
+│   ├── src/lib/components/              # BookCard, FolderCard, Topbar
 │   └── src/lib/reader/                  # EPUB, bande dessinée, PDF
 └── docker-compose.yml
 ```
@@ -38,6 +40,11 @@ easybook/
   où on l'ouvre.
 - `books/` peut contenir les livres à sa racine **et** dans des sous-dossiers,
   sur n'importe quelle profondeur.
+- À la racine du catalogue, un dossier est présenté par une **tuile** : la
+  couverture de son premier livre (celui qui en a une), son nom et le nombre de
+  livres qu'il contient. Cliquer dessus ouvre le dossier (`/folder/<chemin>`) :
+  fil d'Ariane, sous-dossiers, puis les livres de ce niveau. Les livres posés à
+  la racine apparaissent un par un.
 
 ## Formats
 
