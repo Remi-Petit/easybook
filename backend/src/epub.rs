@@ -1,0 +1,404 @@
+//! Lecture d'un EPUB : sommaire (`spine` + table des matières) et chapitres.
+//!
+//! Un EPUB est une archive ZIP : `META-INF/container.xml` désigne le `.opf`, qui
+//! décrit les métadonnées, le manifeste (fichiers du livre) et le `spine`
+//! (l'ordre de lecture). La table des matières vient soit du `toc.ncx` (EPUB 2),
+//! soit d'un document de navigation XHTML (EPUB 3) — on essaie les deux.
+
+use crate::archive;
+use crate::rewrite;
+use roxmltree::{Document, Node};
+use serde::Serialize;
+use std::collections::HashMap;
+use std::fs::File;
+use std::path::Path;
+use zip::ZipArchive;
+
+/// Un chapitre du `spine`, dans l'ordre de lecture.
+#[derive(Debug, Clone, Serialize)]
+pub struct Chapter {
+    /// Position dans le `spine` (0 = première page).
+    pub index: usize,
+    /// Libellé de la table des matières, ou « Chapitre N » à défaut.
+    pub title: String,
+    /// Chemin du document **dans l'archive** (pas une URL).
+    pub href: String,
+}
+
+/// Sommaire d'un EPUB.
+#[derive(Debug, Clone)]
+pub struct Outline {
+    pub title: Option<String>,
+    pub author: Option<String>,
+    pub chapters: Vec<Chapter>,
+}
+
+/// Sommaire d'un EPUB.
+pub fn outline(path: &Path) -> Result<Outline, String> {
+    let mut zip = archive::open(path)?;
+    outline_from(&mut zip)
+}
+
+/// Contenu brut d'une ressource de l'archive.
+pub fn entry(path: &Path, inner: &str) -> Option<Vec<u8>> {
+    let mut zip = archive::open(path).ok()?;
+    archive::read_named(&mut zip, inner)
+}
+
+/// Document d'un chapitre, prêt à être affiché.
+///
+/// Les URL relatives sont réécrites vers `/api/asset` (voir [`crate::rewrite`]) :
+/// le document peut donc être injecté tel quel dans la page du lecteur.
+pub fn chapter(
+    path: &Path,
+    index: usize,
+    book_rel: &str,
+    asset_base: &str,
+) -> Result<String, String> {
+    let mut zip = archive::open(path)?;
+    let outline = outline_from(&mut zip)?;
+    let chapter = outline.chapters.get(index).ok_or_else(|| {
+        format!(
+            "chapitre {index} hors limites ({} chapitres)",
+            outline.chapters.len()
+        )
+    })?;
+
+    let bytes = archive::read_named(&mut zip, &chapter.href)
+        .ok_or_else(|| format!("chapitre introuvable dans l'archive : {}", chapter.href))?;
+    let text = String::from_utf8_lossy(&bytes);
+
+    Ok(rewrite::html(
+        &text,
+        rewrite::dir_of(&chapter.href),
+        book_rel,
+        asset_base,
+    ))
+}
+
+/// Description d'une entrée du manifeste.
+struct Item {
+    /// Chemin dans l'archive (déjà résolu depuis le dossier de l'OPF).
+    href: String,
+    media_type: String,
+    properties: String,
+}
+
+fn outline_from(zip: &mut ZipArchive<File>) -> Result<Outline, String> {
+    // 1. `container.xml` : où est l'OPF ?
+    let opf_path = container_opf(zip).ok_or("META-INF/container.xml absent ou invalide")?;
+
+    // 2. L'OPF : métadonnées, manifeste, spine. Le document emprunte le texte
+    //    (local) : il vit le temps de cette fonction, sans copie ni fuite.
+    let bytes = archive::read_named(zip, &opf_path).ok_or("OPF introuvable")?;
+    let text = String::from_utf8_lossy(&bytes);
+    let opf = Document::parse(&text).map_err(|e| format!("OPF invalide : {e}"))?;
+    let opf_dir = rewrite::dir_of(&opf_path).to_string();
+
+    let title = element_text(&opf, "title");
+    let author = element_text(&opf, "creator");
+
+    let mut manifest: HashMap<String, Item> = HashMap::new();
+    for node in opf
+        .descendants()
+        .filter(|node| node.is_element() && node.tag_name().name() == "item")
+    {
+        let (Some(id), Some(href)) = (node.attribute("id"), node.attribute("href")) else {
+            continue;
+        };
+        manifest.insert(
+            id.to_string(),
+            Item {
+                href: rewrite::join_path(&opf_dir, &rewrite::decode(href)),
+                media_type: node.attribute("media-type").unwrap_or("").to_string(),
+                properties: node.attribute("properties").unwrap_or("").to_string(),
+            },
+        );
+    }
+
+    let mut chapters: Vec<Chapter> = Vec::new();
+    for node in opf
+        .descendants()
+        .filter(|node| node.is_element() && node.tag_name().name() == "itemref")
+    {
+        // `linear="no"` : annexe (couverture, colophon), hors du fil de lecture.
+        if node.attribute("linear") == Some("no") {
+            continue;
+        }
+        let Some(item) = node.attribute("idref").and_then(|id| manifest.get(id)) else {
+            continue;
+        };
+        if !is_document(&item.media_type) {
+            continue;
+        }
+        chapters.push(Chapter {
+            index: chapters.len(),
+            title: String::new(),
+            href: item.href.clone(),
+        });
+    }
+
+    // 3. La table des matières donne un titre lisible à chaque document.
+    let labels = toc_labels(zip, &opf, &manifest);
+
+    for chapter in &mut chapters {
+        chapter.title = labels
+            .get(&chapter.href)
+            .cloned()
+            .unwrap_or_else(|| format!("Chapitre {}", chapter.index + 1));
+    }
+
+    Ok(Outline {
+        title,
+        author,
+        chapters,
+    })
+}
+
+/// Le média du `spine` est-il un document affichable ?
+fn is_document(media_type: &str) -> bool {
+    matches!(
+        media_type,
+        "application/xhtml+xml" | "text/html" | "image/svg+xml"
+    )
+}
+
+/// Libellés de la table des matières, indexés par chemin d'archive.
+///
+/// EPUB 3 d'abord (document de navigation), EPUB 2 ensuite (`toc.ncx`) : les
+/// deux peuvent coexister, et le premier libellé trouvé l'emporte — c'est celui
+/// du niveau le plus haut.
+fn toc_labels(
+    zip: &mut ZipArchive<File>,
+    opf: &Document<'_>,
+    manifest: &HashMap<String, Item>,
+) -> HashMap<String, String> {
+    let mut labels = HashMap::new();
+
+    // EPUB 3 : l'élément du manifeste porte `properties="nav"`.
+    if let Some(nav) = manifest
+        .values()
+        .find(|item| item.properties.split_whitespace().any(|p| p == "nav"))
+        && let Some(text) = read_xml(zip, &nav.href)
+        && let Ok(document) = Document::parse(&text)
+    {
+        let nav_dir = rewrite::dir_of(&nav.href).to_string();
+        let toc = document
+            .descendants()
+            .find(|node| node.is_element() && node.tag_name().name() == "nav" && is_toc(node));
+
+        if let Some(toc) = toc {
+            for link in toc
+                .descendants()
+                .filter(|node| node.is_element() && node.tag_name().name() == "a")
+            {
+                let Some(href) = link.attribute("href") else {
+                    continue;
+                };
+                let label = text_of(&link);
+                if label.is_empty() {
+                    continue;
+                }
+                labels.entry(target_of(&nav_dir, href)).or_insert(label);
+            }
+        }
+    }
+
+    // EPUB 2 : `toc.ncx`, désigné par le manifeste ou par `spine@toc`.
+    let ncx = manifest
+        .values()
+        .find(|item| item.media_type == "application/x-dtbncx+xml")
+        .map(|item| item.href.clone())
+        .or_else(|| {
+            opf.descendants()
+                .find(|node| node.is_element() && node.tag_name().name() == "spine")
+                .and_then(|spine| spine.attribute("toc"))
+                .and_then(|id| manifest.get(id))
+                .map(|item| item.href.clone())
+        });
+
+    if let Some(ncx) = ncx
+        && let Some(text) = read_xml(zip, &ncx)
+        && let Ok(document) = Document::parse(&text)
+    {
+        let ncx_dir = rewrite::dir_of(&ncx).to_string();
+        for point in document
+            .descendants()
+            .filter(|node| node.is_element() && node.tag_name().name() == "navPoint")
+        {
+            let Some(source) = point
+                .descendants()
+                .find(|node| node.is_element() && node.tag_name().name() == "content")
+                .and_then(|node| node.attribute("src"))
+            else {
+                continue;
+            };
+            let label = point
+                .descendants()
+                .find(|node| node.is_element() && node.tag_name().name() == "navLabel")
+                .map(|label| text_of(&label))
+                .unwrap_or_default();
+            if label.is_empty() {
+                continue;
+            }
+            labels.entry(target_of(&ncx_dir, source)).or_insert(label);
+        }
+    }
+
+    labels
+}
+
+/// Cible d'un lien de sommaire : chemin d'archive absolu, sans fragment.
+fn target_of(dir: &str, href: &str) -> String {
+    let path = href.split('#').next().unwrap_or("");
+    rewrite::join_path(dir, &rewrite::decode(path))
+}
+
+/// `true` si un `<nav>` est la table des matières (`epub:type="toc"`).
+fn is_toc(node: &Node<'_, '_>) -> bool {
+    node.attributes()
+        .any(|attr| attr.name() == "type" && attr.value().split_whitespace().any(|v| v == "toc"))
+}
+
+/// Texte d'un élément, espaces normalisés.
+fn text_of(node: &Node<'_, '_>) -> String {
+    let mut out = String::new();
+    for descendant in node.descendants().filter(|n| n.is_text()) {
+        if let Some(text) = descendant.text() {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(text);
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Texte du premier élément de ce nom dans le document.
+fn element_text(document: &Document<'_>, name: &str) -> Option<String> {
+    document
+        .descendants()
+        .find(|node| node.is_element() && node.tag_name().name() == name)
+        .map(|node| text_of(&node))
+        .filter(|text| !text.is_empty())
+}
+
+/// Chemin de l'OPF, lu dans `META-INF/container.xml`.
+fn container_opf(zip: &mut ZipArchive<File>) -> Option<String> {
+    let bytes = archive::read_named(zip, "META-INF/container.xml")?;
+    let text = String::from_utf8_lossy(&bytes);
+    let document = Document::parse(&text).ok()?;
+    document
+        .descendants()
+        .find(|node| node.is_element() && node.tag_name().name() == "rootfile")
+        .and_then(|node| node.attribute("full-path"))
+        .map(rewrite::decode)
+}
+
+/// Lit une entrée XML et rend son texte, que l'appelant analyse.
+///
+/// Un `Document` emprunte le texte qu'il analyse : le garder au-delà de la
+/// fonction demanderait une structure auto-référencée (ou une fuite). Chaque
+/// appelant analyse donc son document dans sa propre portée.
+fn read_xml(zip: &mut ZipArchive<File>, name: &str) -> Option<String> {
+    archive::read_named(zip, name).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+
+    /// EPUB minimal : OPF + navigation + deux chapitres + une image.
+    fn epub() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Test.epub");
+        let file = File::create(&path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+
+        let entries: Vec<(&str, &str)> = vec![
+            (
+                "META-INF/container.xml",
+                r#"<?xml version="1.0"?>
+                <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+                </container>"#,
+            ),
+            (
+                "OEBPS/content.opf",
+                r#"<?xml version="1.0"?>
+                <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
+                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:title>Le Livre</dc:title>
+                    <dc:creator>Autrice</dc:creator>
+                  </metadata>
+                  <manifest>
+                    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+                    <item id="c1" href="Text/chap1.xhtml" media-type="application/xhtml+xml"/>
+                    <item id="c2" href="Text/chap2.xhtml" media-type="application/xhtml+xml"/>
+                    <item id="img" href="Images/p1.jpg" media-type="image/jpeg"/>
+                  </manifest>
+                  <spine>
+                    <itemref idref="c1"/>
+                    <itemref idref="c2"/>
+                  </spine>
+                </package>"#,
+            ),
+            (
+                "OEBPS/nav.xhtml",
+                r#"<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+                  <body><nav epub:type="toc"><ol>
+                    <li><a href="Text/chap1.xhtml">Début</a></li>
+                    <li><a href="Text/chap2.xhtml">Suite</a></li>
+                  </ol></nav></body></html>"#,
+            ),
+            (
+                "OEBPS/Text/chap1.xhtml",
+                r#"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>1</title></head>
+                   <body><h1>Un</h1><img src="../Images/p1.jpg"/></body></html>"#,
+            ),
+            (
+                "OEBPS/Text/chap2.xhtml",
+                r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Deux</h1></body></html>"#,
+            ),
+            ("OEBPS/Images/p1.jpg", "jpeg"),
+        ];
+
+        for (name, content) in entries {
+            zip.start_file(name, SimpleFileOptions::default()).unwrap();
+            zip.write_all(content.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn reads_metadata_and_spine_with_toc_labels() {
+        let (_dir, path) = epub();
+        let outline = outline(&path).unwrap();
+
+        assert_eq!(outline.title.as_deref(), Some("Le Livre"));
+        assert_eq!(outline.author.as_deref(), Some("Autrice"));
+        assert_eq!(outline.chapters.len(), 2);
+        assert_eq!(outline.chapters[0].title, "Début");
+        assert_eq!(outline.chapters[1].title, "Suite");
+        assert_eq!(outline.chapters[0].href, "OEBPS/Text/chap1.xhtml");
+    }
+
+    #[test]
+    fn chapter_html_points_images_at_the_api() {
+        let (_dir, path) = epub();
+        let html = chapter(&path, 0, "Test.epub", "http://127.0.0.1:8091").unwrap();
+        assert!(html.contains("<h1>Un</h1>"));
+        assert!(html.contains(
+            "http://127.0.0.1:8091/api/asset?path=Test.epub&inner=OEBPS%2FImages%2Fp1.jpg"
+        ));
+    }
+
+    #[test]
+    fn chapter_out_of_range_is_an_error() {
+        let (_dir, path) = epub();
+        assert!(chapter(&path, 5, "Test.epub", "http://x").is_err());
+    }
+}

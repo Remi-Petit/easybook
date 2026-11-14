@@ -1,0 +1,7 @@
+# easybook — configuration de l'application
+#
+# Relu à chaque démarrage. `BOOKS_ROOT` (variable d'environnement) gagne sur ce
+# fichier : c'est ce que le conteneur Docker utilise (`/books`).
+
+# Dossier des livres. Relatif au dossier de CE fichier (`backend/`).
+books_root: ../books

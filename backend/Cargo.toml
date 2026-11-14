@@ -1,0 +1,36 @@
+[package]
+name = "easybook"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.0"
+license = "MIT"
+description = "Bibliothèque de livres (EPUB, CBZ, PDF) surveillée en temps réel"
+
+[dependencies]
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "fs", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+dotenvy = "0.15"
+futures-util = "0.3"
+# Le dossier `books/` est surveillé, jamais sondé : un événement, une diffusion.
+notify = "8.2.0"
+notify-debouncer-full = "0.7.0"
+# EPUB et CBZ sont des archives ZIP : une seule dépendance les ouvre toutes les
+# deux (`archive`). Version 9 : les 2.x portent plusieurs avis RustSec.
+zip = "9"
+roxmltree = "0.20"
+regex = "1.13.1"
+# CORS : l'interface est servie sur une autre origine que l'API (deux process,
+# deux ports) et lui parle en direct — sans relais.
+tower-http = { version = "0.6", features = ["cors"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

@@ -1,0 +1,10 @@
+**/node_modules
+**/target
+frontend/build
+frontend/.svelte-kit
+.git
+.vscode
+
+# Les livres ne sont pas nécessaires à la construction des images : ils sont
+# montés au lancement.
+books/*

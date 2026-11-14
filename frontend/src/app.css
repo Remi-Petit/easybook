@@ -1,0 +1,551 @@
+:root {
+	color-scheme: dark;
+
+	--bg: #0f0f13;
+	--panel: #16161c;
+	--panel-2: #1e1e26;
+	--line: #2b2b36;
+	--text: #ecebf2;
+	--muted: #9a9aac;
+	--accent: #e0a54a;
+	--accent-soft: rgba(224, 165, 74, 0.14);
+	--danger: #e0715c;
+
+	--radius: 14px;
+	--sans: system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, sans-serif;
+	--serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	min-height: 100%;
+}
+
+body {
+	background: linear-gradient(180deg, #121218 0%, var(--bg) 320px) no-repeat, var(--bg);
+	color: var(--text);
+	font-family: var(--sans);
+	font-size: 15px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+a {
+	color: inherit;
+	text-decoration: none;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: 0;
+	cursor: pointer;
+}
+
+code {
+	font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+	font-size: 0.9em;
+	color: var(--accent);
+}
+
+/* ── Bibliothèque ────────────────────────────────────────────────────────── */
+
+.page {
+	max-width: 1180px;
+	margin: 0 auto;
+	padding: 0 28px 72px;
+}
+
+.topbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 26px 0 22px;
+	border-bottom: 1px solid var(--line);
+}
+
+.brand {
+	display: flex;
+	align-items: baseline;
+	gap: 12px;
+}
+
+.mark {
+	font-size: 20px;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+}
+
+.tagline {
+	color: var(--muted);
+	font-size: 12.5px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.status {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12.5px;
+	color: var(--muted);
+}
+
+.dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--muted);
+}
+
+.status[data-status='live'] .dot {
+	background: #5cc98a;
+	box-shadow: 0 0 0 4px rgba(92, 201, 138, 0.14);
+}
+
+.status[data-status='connecting'] .dot {
+	background: var(--accent);
+}
+
+.status[data-status='offline'] .dot {
+	background: var(--danger);
+}
+
+.intro {
+	padding: 42px 0 26px;
+	display: grid;
+	gap: 6px;
+}
+
+.intro h1 {
+	margin: 0;
+	font-size: clamp(26px, 3.4vw, 38px);
+	font-weight: 640;
+	letter-spacing: -0.025em;
+}
+
+.intro p {
+	margin: 0;
+	color: var(--muted);
+}
+
+.search {
+	margin-top: 18px;
+	max-width: 420px;
+	padding: 11px 14px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	color: var(--text);
+	font: inherit;
+	outline: none;
+	transition: border-color 120ms ease;
+}
+
+.search:focus {
+	border-color: var(--accent);
+}
+
+.notice {
+	margin: 32px 0;
+	padding: 18px 20px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	color: var(--muted);
+}
+
+.notice button {
+	color: var(--accent);
+	text-decoration: underline;
+}
+
+.group {
+	margin-top: 34px;
+}
+
+.group h2 {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 0 0 14px;
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.group h2::after {
+	content: '';
+	flex: 1;
+	height: 1px;
+	background: var(--line);
+}
+
+.count {
+	order: 1;
+	padding: 1px 8px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	font-size: 11px;
+	color: var(--muted);
+	letter-spacing: 0;
+}
+
+.grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+	gap: 14px;
+}
+
+.card {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-height: 132px;
+	padding: 16px 16px 14px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	overflow: hidden;
+	transition:
+		transform 140ms ease,
+		border-color 140ms ease,
+		background 140ms ease;
+}
+
+.card::before {
+	content: '';
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 3px;
+	background: var(--accent);
+	opacity: 0.8;
+}
+
+.card[data-format='cbz']::before,
+.card[data-format='cbr']::before {
+	background: #6f9ee8;
+}
+
+.card[data-format='pdf']::before {
+	background: #d9726a;
+}
+
+.card:hover {
+	transform: translateY(-2px);
+	border-color: #3a3a48;
+	background: var(--panel-2);
+}
+
+.badge {
+	align-self: flex-start;
+	padding: 2px 7px;
+	margin-bottom: 6px;
+	border-radius: 5px;
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+}
+
+.card[data-format='cbz'] .badge,
+.card[data-format='cbr'] .badge {
+	background: rgba(111, 158, 232, 0.14);
+	color: #8fb5f2;
+}
+
+.card[data-format='pdf'] .badge {
+	background: rgba(217, 114, 106, 0.14);
+	color: #e08b84;
+}
+
+.title {
+	font-size: 15.5px;
+	font-weight: 560;
+	line-height: 1.32;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.meta {
+	color: var(--muted);
+	font-size: 12px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.foot {
+	margin-top: auto;
+	padding-top: 10px;
+	color: var(--muted);
+	font-size: 11.5px;
+	opacity: 0.8;
+}
+
+/* ── Lecteur ─────────────────────────────────────────────────────────────── */
+
+.reader {
+	display: grid;
+	grid-template-rows: auto 1fr;
+	height: 100vh;
+	height: 100dvh;
+	/* Le défilement appartient à la zone de lecture, pas à la page :
+	   l'en-tête et la liste des chapitres restent en place. */
+	overflow: hidden;
+}
+
+.reader-head {
+	display: flex;
+	align-items: center;
+	gap: 18px;
+	padding: 14px 24px;
+	background: rgba(15, 15, 19, 0.92);
+	border-bottom: 1px solid var(--line);
+	backdrop-filter: blur(8px);
+}
+
+.back {
+	color: var(--muted);
+	font-size: 13px;
+	white-space: nowrap;
+}
+
+.back:hover {
+	color: var(--text);
+}
+
+.reader-title {
+	margin: 0;
+	font-size: 15px;
+	font-weight: 560;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.reader-sub {
+	color: var(--muted);
+	font-size: 12.5px;
+	white-space: nowrap;
+	margin-left: auto;
+}
+
+.reader-sub + .reader-sub {
+	margin-left: 0;
+}
+
+.reader-sub.link:hover {
+	color: var(--text);
+}
+
+.reader-body {
+	min-height: 0;
+	display: grid;
+	grid-template-columns: 260px 1fr;
+}
+
+.reader-body.no-toc {
+	grid-template-columns: 1fr;
+}
+
+.toc {
+	min-height: 0;
+	overflow-y: auto;
+	padding: 18px 12px;
+	border-right: 1px solid var(--line);
+	background: #121217;
+}
+
+.toc h2 {
+	margin: 0 8px 12px;
+	font-size: 11px;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.toc button {
+	display: block;
+	width: 100%;
+	padding: 8px 10px;
+	border-radius: 8px;
+	text-align: left;
+	font-size: 13.5px;
+	color: var(--muted);
+}
+
+.toc button:hover {
+	background: var(--panel);
+	color: var(--text);
+}
+
+.toc button[aria-current='true'] {
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+
+/* La zone de lecture : une ligne qui défile, une barre de navigation fixe.
+   Le pager ne recouvre donc jamais le texte ni la planche. */
+.stage {
+	min-height: 0;
+	display: grid;
+	grid-template-rows: 1fr auto;
+	overflow: hidden;
+}
+
+.viewport {
+	min-height: 0;
+	overflow-y: auto;
+}
+
+/* Texte d'un EPUB : largeur de lecture confortable, styles du livre conservés. */
+.prose {
+	max-width: 44rem;
+	margin: 0 auto;
+	padding: 46px 32px 48px;
+	font-family: var(--serif);
+	font-size: 18.5px;
+	line-height: 1.66;
+	color: #e6e4ea;
+}
+
+.prose img,
+.prose svg {
+	max-width: 100%;
+	/* Une image pleine page ne dépasse jamais l'écran : elle est réduite au
+	   lieu d'obliger à défiler pour la voir entière. */
+	max-height: calc(100dvh - 190px);
+	width: auto;
+	height: auto;
+}
+
+.prose h1,
+.prose h2,
+.prose h3 {
+	line-height: 1.25;
+	font-weight: 600;
+}
+
+.prose blockquote {
+	margin-left: 0;
+	padding-left: 18px;
+	border-left: 2px solid var(--line);
+	color: var(--muted);
+}
+
+.prose a {
+	color: var(--accent);
+}
+
+.prose table {
+	max-width: 100%;
+	border-collapse: collapse;
+}
+
+/* Planche de bande dessinée */
+.page-view {
+	/* Position absolue de l'image : sa taille se déduit de la zone visible,
+	   quelle que soit la hauteur calculée des parents. */
+	position: relative;
+	height: 100%;
+}
+
+.page-view img {
+	position: absolute;
+	top: 14px;
+	left: 50%;
+	transform: translateX(-50%);
+	width: calc(100% - 28px);
+	height: calc(100% - 28px);
+	/* La planche est toujours entièrement visible : on rogne les marges
+	   plutôt que la page. */
+	object-fit: contain;
+	border-radius: 4px;
+}
+
+/* PDF : le lecteur du navigateur occupe tout l'écran */
+.pdf {
+	width: 100%;
+	height: 100%;
+	border: 0;
+	background: #333;
+}
+
+/* Barre de navigation flottante (chapitre ou planche) */
+.pager {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 18px;
+	padding: 12px;
+	background: #121217;
+	border-top: 1px solid var(--line);
+}
+
+.pager button {
+	padding: 8px 16px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	background: var(--panel);
+	font-size: 13px;
+}
+
+.pager button:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
+.pager span {
+	color: var(--muted);
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+}
+
+.state {
+	display: grid;
+	place-items: center;
+	min-height: 60vh;
+	padding: 32px;
+	color: var(--muted);
+	text-align: center;
+}
+
+.state strong {
+	display: block;
+	margin-bottom: 6px;
+	color: var(--text);
+	font-weight: 560;
+}
+
+@media (max-width: 760px) {
+	.reader-body {
+		grid-template-columns: 1fr;
+	}
+
+	.toc {
+		display: none;
+	}
+
+	.prose {
+		padding: 28px 20px 40px;
+		font-size: 17.5px;
+	}
+
+	.page {
+		padding: 0 18px 60px;
+	}
+}

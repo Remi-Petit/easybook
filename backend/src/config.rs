@@ -1,0 +1,97 @@
+//! Configuration de l'application, lue dans `config.yml`.
+//!
+//! Source du fichier :
+//! 1. variable d'environnement `EASYBOOK_CONFIG=<chemin>` ;
+//! 2. sinon `config.yml` dans le dossier courant (lancé depuis `backend/`) ;
+//! 3. sinon les valeurs par défaut.
+//!
+//! Le fichier n'est **pas** relu à chaud : seul le dossier des livres est
+//! surveillé (voir `main.rs`). Changer de bibliothèque demande un redémarrage —
+//! c'est rare, et ça évite de faire suivre un déplacement de racine au watcher.
+
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+/// Contenu de `config.yml`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Config {
+    /// Dossier des livres. Relatif au dossier de `config.yml` s'il ne commence
+    /// pas par `/`.
+    pub books_root: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            books_root: "../books".to_string(),
+        }
+    }
+}
+
+impl Config {
+    /// Chemin du fichier de configuration.
+    pub fn config_path() -> PathBuf {
+        std::env::var("EASYBOOK_CONFIG")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("config.yml"))
+    }
+
+    /// Charge le fichier ; en l'absence de fichier, rend les valeurs par défaut.
+    ///
+    /// Un fichier présent mais illisible **n'empêche pas** le démarrage : le
+    /// serveur annonce l'erreur et part sur les défauts (le dossier `books/`
+    /// reste ainsi consultable même si le YAML a été cassé à la main).
+    pub fn load() -> Self {
+        let path = Self::config_path();
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return Self::default();
+        };
+        match serde_yaml::from_str(&text) {
+            Ok(config) => config,
+            Err(e) => {
+                eprintln!(
+                    "⚠️  {} illisible ({e}) : valeurs par défaut utilisées.",
+                    path.display()
+                );
+                Self::default()
+            }
+        }
+    }
+
+    /// Dossier des livres réellement utilisé.
+    ///
+    /// Priorité : `BOOKS_ROOT` (ce que pose le conteneur), puis `books_root`
+    /// relatif au dossier de `config.yml`.
+    pub fn resolve_books_root(&self) -> PathBuf {
+        if let Ok(root) = std::env::var("BOOKS_ROOT")
+            && !root.trim().is_empty()
+        {
+            return PathBuf::from(root);
+        }
+
+        let raw = PathBuf::from(&self.books_root);
+        if raw.is_absolute() {
+            return raw;
+        }
+        let base = Self::config_path()
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        base.join(raw)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_root_is_sibling_of_backend() {
+        // `config.yml` vit dans `backend/` : `../books` désigne la racine du dépôt,
+        // quel que soit le dossier courant (chemin relatif au fichier de config).
+        let config = Config::default();
+        assert!(config.resolve_books_root().ends_with("books"));
+    }
+}

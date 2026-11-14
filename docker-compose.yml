@@ -1,0 +1,43 @@
+# easybook — deux process, deux ports.
+#
+#   api : Rust (axum) — scan de books/, lecture des livres, WebSocket.
+#   web : SvelteKit (Node) — l'interface.
+#
+# L'interface appelle l'API **en direct** (CORS ouvert côté API) : elle a donc
+# besoin de connaître son adresse publique, d'où `PUBLIC_EASYBOOK_API`.
+#
+#   docker compose up --build
+#   → interface : http://localhost:5100
+#   → API       : http://localhost:8091/api/books
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: easybook-api:dev
+    pull_policy: build
+    container_name: easybook-api
+    restart: unless-stopped
+    ports:
+      - "8091:8091"
+    volumes:
+      # La bibliothèque. En lecture seule pour le moment : le serveur n'écrit
+      # jamais dans ce dossier.
+      - ./books:/books:ro
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: easybook-web:dev
+    pull_policy: build
+    container_name: easybook-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "5100:3000"
+    environment:
+      # Vue depuis le navigateur : c'est l'adresse publiée de l'API sur l'hôte.
+      PUBLIC_EASYBOOK_API: http://localhost:8091

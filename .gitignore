@@ -1,0 +1,13 @@
+# Dépendances et artefacts de compilation
+backend/target/
+frontend/node_modules/
+frontend/build/
+frontend/.svelte-kit/
+
+# Secrets locaux
+.env
+
+# Les livres ne sont pas versionnés : `books/` est un point de montage.
+# Le dossier lui-même est conservé (`.gitkeep`).
+/books/*
+!/books/.gitkeep
