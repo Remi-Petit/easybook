@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 	import BookCard from '$lib/components/BookCard.svelte';
 	import FolderCard from '$lib/components/FolderCard.svelte';
-	import Topbar from '$lib/components/Topbar.svelte';
 	import { childBooks, childFolders, folderUrl, parentOf, previewBook, segments } from '$lib/catalog';
 	import { library } from '$lib/library.svelte';
 
@@ -11,8 +10,19 @@
 
 	// `books` et `folders` arrivent triés naturellement : filtrer suffit.
 	const folder = $derived(library.folders.find((entry) => entry.rel === rel));
-	const subfolders = $derived(childFolders(library.folders, rel));
-	const books = $derived(childBooks(library.books, rel));
+
+	// Un dossier de premier niveau est une **catégorie** : sa page montre tous ses
+	// livres, y compris ceux rangés dans ses sous-dossiers. C'est la vue « livres
+	// associés » demandée depuis la barre latérale. Un sous-dossier garde, lui, la
+	// présentation par niveau (ses sous-dossiers puis ses livres).
+	const isCategory = $derived(rel !== '' && !rel.includes('/'));
+
+	const subfolders = $derived(isCategory ? [] : childFolders(library.folders, rel));
+	const books = $derived(
+		isCategory
+			? library.books.filter((book) => book.rel.startsWith(`${rel}/`))
+			: childBooks(library.books, rel)
+	);
 	const crumbs = $derived(segments(rel));
 	const parent = $derived(parentOf(rel));
 
@@ -32,8 +42,6 @@
 </svelte:head>
 
 <div class="page">
-	<Topbar />
-
 	{#if rel}
 		<nav class="crumbs" aria-label="Fil d’Ariane">
 			<a href="/">bibliothèque</a>

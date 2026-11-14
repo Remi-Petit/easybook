@@ -20,12 +20,13 @@ easybook/
 │   │   └── config.rs     # config.yml
 │   └── config.yml
 ├── frontend/         # SvelteKit — bibliothèque + lecteurs
-│   ├── src/routes/+page.svelte          # le catalogue (racine)
-│   ├── src/routes/folder/[...path]/     # un dossier (fil d'Ariane + contenu)
-│   ├── src/routes/read/[...path]/       # le lecteur
+│   ├── src/routes/(catalog)/+layout.svelte   # coquille : barre latérale + contenu
+│   ├── src/routes/(catalog)/+page.svelte     # accueil : tous les livres
+│   ├── src/routes/(catalog)/folder/[...path]/ # une catégorie / un dossier
+│   ├── src/routes/read/[...path]/       # le lecteur (plein écran)
 │   ├── src/lib/catalog.ts               # découpage des listes plates en arborescence
 │   ├── src/lib/library.svelte.ts        # état partagé + WebSocket
-│   ├── src/lib/components/              # BookCard, FolderCard, Topbar
+│   ├── src/lib/components/              # Sidebar, BookCard, FolderCard
 │   └── src/lib/reader/                  # EPUB, bande dessinée, PDF
 └── docker-compose.yml
 ```
@@ -40,11 +41,14 @@ easybook/
   où on l'ouvre.
 - `books/` peut contenir les livres à sa racine **et** dans des sous-dossiers,
   sur n'importe quelle profondeur.
-- À la racine du catalogue, un dossier est présenté par une **tuile** : la
-  couverture de son premier livre (celui qui en a une), son nom et le nombre de
-  livres qu'il contient. Cliquer dessus ouvre le dossier (`/folder/<chemin>`) :
-  fil d'Ariane, sous-dossiers, puis les livres de ce niveau. Les livres posés à
-  la racine apparaissent un par un.
+- **Un dossier de premier niveau est une catégorie** (`books/mangas`,
+  `books/électronique`…). La barre latérale les liste sous « Bibliothèque »,
+  avec le nombre de livres de chacune ; cliquer ouvre la catégorie
+  (`/folder/<catégorie>`), qui montre **tous ses livres**, y compris ceux rangés
+  dans ses sous-dossiers, avec un fil d'Ariane.
+- La **page d'accueil** montre la totalité des livres, toutes catégories
+  confondues (avec la recherche). Le lecteur s'ouvre en plein écran, et son lien
+  de retour ramène à la catégorie du livre.
 
 ## Formats
 
