@@ -15,6 +15,7 @@ easybook/
 │   │   ├── epub.rs       # sommaire et chapitres d'un EPUB
 │   │   ├── archive.rs    # ouverture des archives ZIP (EPUB, CBZ)
 │   │   ├── rewrite.rs    # réécriture des URL d'un document (HTML, CSS)
+│   │   ├── thumbnail.rs  # couvertures : extraction, vignette, cache
 │   │   ├── watcher.rs    # interprétation des événements du disque
 │   │   └── config.rs     # config.yml
 │   └── config.yml
@@ -22,6 +23,7 @@ easybook/
 │   ├── src/routes/+page.svelte          # le catalogue
 │   ├── src/routes/read/[...path]/       # le lecteur
 │   ├── src/lib/library.svelte.ts        # état partagé + WebSocket
+│   ├── src/lib/components/BookCard.svelte # une vignette du catalogue
 │   └── src/lib/reader/                  # EPUB, bande dessinée, PDF
 └── docker-compose.yml
 ```
@@ -39,12 +41,17 @@ easybook/
 
 ## Formats
 
-| Format | Lecture | Comment |
-|---|---|---|
-| `.epub` | ✅ | sommaire (`spine` + `toc.ncx` / navigation EPUB 3), chapitres affichés dans l'interface ; images, CSS et polices servis par l'API |
-| `.cbz` | ✅ | archive ZIP d'images, pages triées naturellement (`p2` avant `p10`) |
-| `.pdf` | ✅ | le lecteur PDF du navigateur |
-| `.cbr` | ❌ | archive RAR : listé (il est bien là), mais il faut un décodeur RAR pour l'ouvrir |
+| Format | Lecture | Couverture | Comment |
+|---|---|---|---|
+| `.epub` | ✅ | celle déclarée par le livre (`properties="cover-image"` ou `<meta name="cover">`) | sommaire (`spine` + `toc.ncx` / navigation EPUB 3), chapitres affichés dans l'interface ; images, CSS et polices servis par l'API |
+| `.cbz` | ✅ | première page de l'archive | archive ZIP d'images, pages triées naturellement (`p2` avant `p10`) |
+| `.pdf` | ✅ | repli (pas de rendu de page) | le lecteur PDF du navigateur |
+| `.cbr` | ❌ | repli | archive RAR : listé (il est bien là), mais il faut un décodeur RAR pour l'ouvrir |
+
+Les couvertures sont **réduites** (400 px de large, JPEG) et gardées en mémoire par
+le backend : le catalogue affiche des dizaines de vignettes sans télécharger les
+planches d'origine, qui pèsent plusieurs mégaoctets chacune. Une couverture
+absente n'est pas une erreur — l'interface montre alors un repli avec le format.
 
 Ajouter un format = une variante dans `formats.rs` (extension, type MIME) plus,
 si le contenu n'est pas déjà servi par l'archive, un module de lecture dédié.
@@ -87,6 +94,7 @@ docker compose up --build
 | `GET /api/health` | état du serveur |
 | `GET /api/books` | catalogue complet (JSON) |
 | `GET /api/book?path=` | fiche d'un livre (titre, chapitres ou nombre de pages) |
+| `GET /api/cover?path=&v=` | couverture, en vignette JPEG (`v` = date de modification, pour le cache) |
 | `GET /api/chapter?path=&index=` | document d'un chapitre (HTML, URL réécrites) |
 | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 | `GET /api/page?path=&index=` | page d'une bande dessinée |

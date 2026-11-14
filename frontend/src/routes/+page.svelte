@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { readUrl, formatBytes, type BookInfo } from '$lib/api';
+	import BookCard from '$lib/components/BookCard.svelte';
+	import type { BookInfo } from '$lib/api';
 	import { library, reload } from '$lib/library.svelte';
 
 	let filter = $state('');
@@ -91,15 +92,7 @@
 				</h2>
 				<div class="grid">
 					{#each books as book (book.rel)}
-						<a class="card" href={readUrl(book.rel)} data-format={book.format}>
-							<span class="badge">{book.format}</span>
-							<span class="title">{book.title}</span>
-							<span class="meta">{book.rel}</span>
-							<span class="foot">
-								{formatBytes(book.size)}
-								{#if !book.readable}· format non pris en charge{/if}
-							</span>
-						</a>
+						<BookCard {book} />
 					{/each}
 				</div>
 			</section>

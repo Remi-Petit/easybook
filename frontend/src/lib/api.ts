@@ -80,6 +80,20 @@ export function readUrl(rel: string): string {
 
 export const booksUrl = () => `${apiBase()}/api/books`;
 export const bookUrl = (rel: string) => apiUrl('/api/book', { path: rel });
+
+/**
+ * Couverture d'un livre (vignette JPEG produite par le backend).
+ *
+ * La date de modification du fichier est recopiée dans l'URL : elle sert de
+ * version, et permet au navigateur de garder l'image indéfiniment. Un livre
+ * remplacé change de date, donc d'URL.
+ */
+export function coverUrl(rel: string, modified?: number | null): string {
+	const params: Record<string, string | number> = { path: rel };
+	if (modified) params.v = modified;
+	return apiUrl('/api/cover', params);
+}
+
 export const chapterUrl = (rel: string, index: number) =>
 	apiUrl('/api/chapter', { path: rel, index });
 export const pageUrl = (rel: string, index: number) => apiUrl('/api/page', { path: rel, index });

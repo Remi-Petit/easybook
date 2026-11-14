@@ -11,6 +11,7 @@
 //! | `GET /api/health` | état du serveur |
 //! | `GET /api/books` | catalogue complet (JSON) |
 //! | `GET /api/book?path=` | sommaire d'un livre |
+//! | `GET /api/cover?path=&v=` | couverture (vignette JPEG) |
 //! | `GET /api/chapter?path=&index=` | document d'un chapitre (HTML réécrit) |
 //! | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 //! | `GET /api/page?path=&index=` | page d'une bande dessinée (image) |
@@ -18,7 +19,7 @@
 //! | `GET /ws` | catalogue poussé à chaque changement du dossier |
 
 use crate::formats::{self, Format};
-use crate::{archive, epub, library, rewrite};
+use crate::{archive, epub, library, rewrite, thumbnail};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -108,6 +109,7 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/health", get(health))
         .route("/api/books", get(list_books))
         .route("/api/book", get(get_book))
+        .route("/api/cover", get(get_cover))
         .route("/api/chapter", get(get_chapter))
         .route("/api/asset", get(get_asset))
         .route("/api/page", get(get_page))
@@ -238,6 +240,61 @@ fn detail(path: &Path, rel: &str) -> Result<BookDetail, String> {
     }
 
     Ok(detail)
+}
+
+#[derive(Deserialize)]
+struct CoverQuery {
+    path: String,
+    /// Date de modification annoncée par le catalogue (`BookInfo::modified`).
+    /// Recopiée dans l'URL, elle rend la réponse « immuable » côté navigateur.
+    #[serde(default)]
+    v: Option<String>,
+}
+
+/// `GET /api/cover?path=&v=` — couverture d'un livre, en vignette JPEG.
+///
+/// Une vignette, pas l'image d'origine : le catalogue en affiche des dizaines et
+/// une planche scannée pèse plusieurs mégaoctets (voir [`crate::thumbnail`]).
+async fn get_cover(State(state): State<AppState>, Query(query): Query<CoverQuery>) -> Response {
+    let Some(path) = file_in(&state.root(), &query.path) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    // La date du fichier sert de version : elle change dès que le livre est
+    // remplacé, et le catalogue l'annonce déjà.
+    let version = std::fs::metadata(&path)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |elapsed| elapsed.as_secs());
+
+    let rel = query.path.clone();
+    let cover = tokio::task::spawn_blocking(move || thumbnail::cover(&path, &rel, version)).await;
+
+    let announced = version.to_string();
+    match cover {
+        Ok(Some(bytes)) => {
+            // Avec la version dans l'URL, le contenu ne changera plus pour cette
+            // adresse : le navigateur peut la garder indéfiniment.
+            let cache = if query.v.as_deref() == Some(announced.as_str()) {
+                "public, max-age=31536000, immutable"
+            } else {
+                "public, max-age=300"
+            };
+            (
+                [
+                    (header::CONTENT_TYPE, "image/jpeg"),
+                    (header::CACHE_CONTROL, cache),
+                ],
+                bytes,
+            )
+                .into_response()
+        }
+        // Pas de couverture pour ce livre (PDF, CBR, archive sans image) : ce
+        // n'est pas une erreur, l'interface affiche son repli.
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
 }
 
 #[derive(Deserialize)]

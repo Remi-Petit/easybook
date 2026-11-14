@@ -25,6 +25,10 @@ regex = "1.13.1"
 # CORS : l'interface est servie sur une autre origine que l'API (deux process,
 # deux ports) et lui parle en direct — sans relais.
 tower-http = { version = "0.6", features = ["cors"] }
+# Vignettes de couverture : décodage des images d'un livre et ré-encodage en
+# JPEG. On ne garde que les formats qu'on trouve réellement dans une bande
+# dessinée (une planche scannée est presque toujours en JPEG).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 
 [dev-dependencies]
 tempfile = "3"

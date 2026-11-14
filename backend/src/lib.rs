@@ -6,6 +6,7 @@
 //! - [`archive`] : ouverture des archives ZIP (EPUB et CBZ).
 //! - [`epub`] : sommaire et chapitres d'un EPUB.
 //! - [`rewrite`] : réécriture des URL d'un document (HTML, CSS).
+//! - [`thumbnail`] : couvertures (extraction, vignette, cache).
 //! - [`watcher`] : interprétation des événements du système de fichiers.
 //! - [`config`] : configuration (`config.yml`).
 
@@ -16,4 +17,5 @@ pub mod epub;
 pub mod formats;
 pub mod library;
 pub mod rewrite;
+pub mod thumbnail;
 pub mod watcher;

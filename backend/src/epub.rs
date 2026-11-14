@@ -45,6 +45,100 @@ pub fn entry(path: &Path, inner: &str) -> Option<Vec<u8>> {
     archive::read_named(&mut zip, inner)
 }
 
+/// Image de couverture déclarée par le livre, si elle existe.
+///
+/// Trois écritures coexistent, dans cet ordre de fiabilité :
+/// 1. EPUB 3 — l'élément du manifeste porte `properties="cover-image"` ;
+/// 2. EPUB 2 — `<meta name="cover" content="id"/>` désigne un élément du
+///    manifeste (parfois le nom de fichier, rarement l'identifiant exact) ;
+/// 3. repli — la première image dont le chemin évoque une couverture.
+///
+/// La couverture n'est pas lue au scan : elle coûte l'ouverture de l'archive,
+/// et seuls les livres affichés en ont besoin.
+pub fn cover(path: &Path) -> Option<Vec<u8>> {
+    let mut zip = archive::open(path).ok()?;
+    cover_from(&mut zip)
+}
+
+fn cover_from(zip: &mut ZipArchive<File>) -> Option<Vec<u8>> {
+    let opf_path = container_opf(zip)?;
+    let text = read_xml(zip, &opf_path)?;
+    let opf = Document::parse(&text).ok()?;
+    let opf_dir = rewrite::dir_of(&opf_path).to_string();
+    let manifest = manifest(&opf, &opf_dir);
+
+    // 1. EPUB 3 : c'est le manifeste qui le dit.
+    if let Some(item) = manifest.values().find(|item| {
+        item.properties
+            .split_whitespace()
+            .any(|p| p == "cover-image")
+    }) && let Some(bytes) = archive::read_named(zip, &item.href)
+    {
+        return Some(bytes);
+    }
+
+    // 2. EPUB 2 : `<meta name="cover" content="…"/>`. La valeur est en général
+    //    l'identifiant d'un élément du manifeste ; certains producteurs y mettent
+    //    directement le nom du fichier, d'où le second essai.
+    let declared = opf
+        .descendants()
+        .filter(|node| node.is_element() && node.tag_name().name() == "meta")
+        .find(|node| {
+            node.attribute("name")
+                .is_some_and(|name| name.eq_ignore_ascii_case("cover"))
+        })
+        .and_then(|node| node.attribute("content"));
+
+    if let Some(declared) = declared {
+        let by_id = manifest.get(declared);
+        let by_path = manifest.values().find(|item| {
+            item.href.eq_ignore_ascii_case(declared) || item.href.ends_with(&format!("/{declared}"))
+        });
+        if let Some(item) = by_id.or(by_path)
+            && let Some(bytes) = archive::read_named(zip, &item.href)
+        {
+            return Some(bytes);
+        }
+    }
+
+    // 3. Repli : une image dont le nom parle de couverture (`cover.jpg`,
+    //    `Cover2.png`…). Sinon, la première image du manifeste : mieux que rien
+    //    pour un livre qui n'a rien déclaré.
+    let candidate = manifest
+        .values()
+        .filter(|item| item.media_type.starts_with("image/"))
+        .find(|item| item.href.to_ascii_lowercase().contains("cover"))
+        .or_else(|| {
+            manifest
+                .values()
+                .find(|item| item.media_type.starts_with("image/"))
+        })?;
+
+    archive::read_named(zip, &candidate.href)
+}
+
+/// Entrées du manifeste, indexées par identifiant.
+fn manifest(opf: &Document<'_>, opf_dir: &str) -> HashMap<String, Item> {
+    let mut manifest: HashMap<String, Item> = HashMap::new();
+    for node in opf
+        .descendants()
+        .filter(|node| node.is_element() && node.tag_name().name() == "item")
+    {
+        let (Some(id), Some(href)) = (node.attribute("id"), node.attribute("href")) else {
+            continue;
+        };
+        manifest.insert(
+            id.to_string(),
+            Item {
+                href: rewrite::join_path(opf_dir, &rewrite::decode(href)),
+                media_type: node.attribute("media-type").unwrap_or("").to_string(),
+                properties: node.attribute("properties").unwrap_or("").to_string(),
+            },
+        );
+    }
+    manifest
+}
+
 /// Document d'un chapitre, prêt à être affiché.
 ///
 /// Les URL relatives sont réécrites vers `/api/asset` (voir [`crate::rewrite`]) :
@@ -97,24 +191,7 @@ fn outline_from(zip: &mut ZipArchive<File>) -> Result<Outline, String> {
 
     let title = element_text(&opf, "title");
     let author = element_text(&opf, "creator");
-
-    let mut manifest: HashMap<String, Item> = HashMap::new();
-    for node in opf
-        .descendants()
-        .filter(|node| node.is_element() && node.tag_name().name() == "item")
-    {
-        let (Some(id), Some(href)) = (node.attribute("id"), node.attribute("href")) else {
-            continue;
-        };
-        manifest.insert(
-            id.to_string(),
-            Item {
-                href: rewrite::join_path(&opf_dir, &rewrite::decode(href)),
-                media_type: node.attribute("media-type").unwrap_or("").to_string(),
-                properties: node.attribute("properties").unwrap_or("").to_string(),
-            },
-        );
-    }
+    let manifest = manifest(&opf, &opf_dir);
 
     let mut chapters: Vec<Chapter> = Vec::new();
     for node in opf
