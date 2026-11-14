@@ -11,13 +11,13 @@ easybook/
 │   │   ├── main.rs       # démarrage + watcher
 │   │   ├── api.rs        # routes HTTP et WebSocket
 │   │   ├── library.rs    # scan récursif de books/
-│   │   ├── formats.rs    # formats reconnus, tri « naturel »
-│   │   ├── epub.rs       # sommaire et chapitres d'un EPUB
-│   │   ├── archive.rs    # ouverture des archives ZIP (EPUB, CBZ)
+│   │   ├── formats/      # **un fichier par format** (voir plus bas)
+│   │   ├── archive.rs    # helpers ZIP partagés (EPUB, CBZ)
 │   │   ├── rewrite.rs    # réécriture des URL d'un document (HTML, CSS)
 │   │   ├── thumbnail.rs  # couvertures : extraction, vignette, cache
 │   │   ├── watcher.rs    # interprétation des événements du disque
 │   │   └── config.rs     # config.yml
+│   ├── tests/            # tests d'intégration (routeur complet, vrais fichiers)
 │   └── config.yml
 ├── frontend/         # SvelteKit — bibliothèque + lecteurs
 │   ├── src/routes/(catalog)/+layout.svelte   # coquille : barre latérale + contenu
@@ -56,16 +56,39 @@ easybook/
 |---|---|---|---|
 | `.epub` | ✅ | celle déclarée par le livre (`properties="cover-image"` ou `<meta name="cover">`) | sommaire (`spine` + `toc.ncx` / navigation EPUB 3), chapitres affichés dans l'interface ; images, CSS et polices servis par l'API |
 | `.cbz` | ✅ | première page de l'archive | archive ZIP d'images, pages triées naturellement (`p2` avant `p10`) |
-| `.pdf` | ✅ | repli (pas de rendu de page) | le lecteur PDF du navigateur |
-| `.cbr` | ❌ | repli | archive RAR : listé (il est bien là), mais il faut un décodeur RAR pour l'ouvrir |
+| `.cbr` | ✅ | première page de l'archive | archive RAR, lue avec unrar (compilé avec le projet) |
+| `.pdf` | ✅ | plus grande image de la première page | le lecteur PDF du navigateur |
+
+Le **conteneur** d'une bande dessinée est détecté par les octets du fichier, pas
+par son extension : beaucoup de `.cbr` distribués en ligne sont des ZIP
+renommés, et ils se lisent aussi (et inversement).
 
 Les couvertures sont **réduites** (400 px de large, JPEG) et gardées en mémoire par
 le backend : le catalogue affiche des dizaines de vignettes sans télécharger les
 planches d'origine, qui pèsent plusieurs mégaoctets chacune. Une couverture
 absente n'est pas une erreur — l'interface montre alors un repli avec le format.
 
-Ajouter un format = une variante dans `formats.rs` (extension, type MIME) plus,
-si le contenu n'est pas déjà servi par l'archive, un module de lecture dédié.
+## Ajouter un format
+
+Chaque format tient dans **un fichier** de `backend/src/formats/` :
+
+```
+formats/
+├── mod.rs    # Format (extension, type MIME), trait BookFormat, registre module()
+├── epub.rs   # chapitres, ressources, couverture
+├── cbz.rs    # bande dessinée (délègue à comic.rs)
+├── cbr.rs    # bande dessinée RAR (délègue à comic.rs)
+├── comic.rs  # archives de planches : ZIP ou RAR, choisi par les octets
+└── pdf.rs    # couverture (image de la page 1)
+```
+
+1. un fichier qui implémente `BookFormat` (`outline`, `pages`, `cover`,
+   `chapter`, `asset`, `page` — tout a une valeur par défaut) ;
+2. une variante dans `Format` (extension + type MIME) ;
+3. une ligne dans `module()` — et dans `ALL` pour l'annonce au démarrage.
+
+L'API ne connaît que le trait : elle n'a pas à être modifiée.
+
 
 ## Lancer en développement
 
@@ -97,6 +120,8 @@ docker compose up --build
 ```
 
 `books/` est monté dans le conteneur de l'API (`/books`, via `BOOKS_ROOT`).
+L'image de compilation installe `g++` et `make` : `unrar` (CBR) compile ses
+sources C++ avec le projet.
 
 ## API
 
@@ -118,6 +143,28 @@ canonicalisé.
 
 Le message du WebSocket est exactement le JSON de `/api/books` : à la connexion,
 puis à chaque changement.
+
+## Tests
+
+```bash
+cd backend  && cargo test        # unitaires + intégration
+cd frontend && bun run test      # logique du catalogue (Vitest)
+```
+
+- **Unitaires (backend)** — un module par sujet : tri naturel et détection de
+  format, scan du dossier, réécriture HTML/CSS, EPUB (sommaire, chapitres,
+  couverture, ressources), CBZ/CBR (pages, ordre, ZIP nommé `.cbr`), PDF
+  (extraction de l'image, PDF sans image), vignettes, chemins sûrs.
+- **Intégration (backend)** — `tests/api.rs` monte le **vrai routeur** sur une
+  bibliothèque temporaire (EPUB + CBZ + PDF fabriqués) et vérifie le contrat
+  HTTP : catalogue, fiches, couvertures des quatre formats, chapitres, pages,
+  cache, refus de traversée.
+- **Frontend** — `catalog.ts` (parent, enfants, aperçu d'un dossier, fil
+  d'Ariane, URL).
+- **E2E navigateur** : non installés ici — ils demanderaient Chromium + les deux
+  process lancés, pour vérifier ce que les tests d'intégration couvrent déjà
+  côté API. L'interface a été vérifiée manuellement (catalogue, dossiers,
+  lecteurs EPUB/CBZ/CBR/PDF, temps réel).
 
 ## Configuration
 

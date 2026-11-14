@@ -1,11 +1,25 @@
-//! Formats de livres reconnus.
+//! Formats de livres : **un module par format**.
 //!
-//! Le catalogue ne s'appuie que sur l'**extension** : ouvrir chaque fichier
-//! pour savoir ce qu'il est coûterait une lecture d'archive par entrée, à chaque
-//! scan. Le contenu n'est lu qu'au moment d'ouvrir un livre.
+//! Le catalogue ne s'appuie que sur l'**extension** pour savoir ce qu'est un
+//! fichier : ouvrir chaque livre coûterait une lecture d'archive par entrée, à
+//! chaque scan. Le contenu n'est lu qu'au moment où on l'ouvre.
+//!
+//! Chaque format implémente [`BookFormat`] et s'enregistre dans [`module`]. Tout
+//! ce que l'API sait demander à un livre passe par ce trait — ajouter un format
+//! (`.mobi`, `.fb2`…) tient donc en trois gestes :
+//! 1. un fichier dans ce dossier, avec son implémentation ;
+//! 2. une variante dans [`Format`] (extension, type MIME) ;
+//! 3. une ligne dans [`module`] (et dans [`ALL`] pour l'annonce au démarrage).
+
+mod cbr;
+mod cbz;
+mod comic;
+mod epub;
+mod pdf;
 
 use serde::Serialize;
 use std::cmp::Ordering;
+use std::path::Path;
 
 /// Formats reconnus, dans l'ordre où ils sont annoncés au démarrage.
 pub const ALL: [Format; 4] = [Format::Epub, Format::Cbz, Format::Cbr, Format::Pdf];
@@ -19,7 +33,7 @@ pub enum Format {
     Cbz,
     /// Bande dessinée (archive RAR).
     Cbr,
-    /// Document PDF (affiché par le lecteur du navigateur).
+    /// Document PDF (rendu par le navigateur, image extraite pour la couverture).
     Pdf,
 }
 
@@ -42,21 +56,12 @@ impl Format {
 
     /// Identifiant public (`epub`, `cbz`, `cbr`, `pdf`), celui du JSON.
     pub fn id(self) -> &'static str {
-        match self {
-            Self::Epub => "epub",
-            Self::Cbz => "cbz",
-            Self::Cbr => "cbr",
-            Self::Pdf => "pdf",
-        }
+        module(self).id()
     }
 
-    /// `true` si ce serveur sait en afficher le contenu.
-    ///
-    /// CBR est une archive **RAR** : la décompresser demanderait un décodeur
-    /// dédié (ou le binaire `unrar`). Le livre reste listé — il est bien dans le
-    /// dossier — et l'interface explique pourquoi il ne s'ouvre pas encore.
+    /// `true` si ce serveur sait afficher le contenu du livre.
     pub fn readable(self) -> bool {
-        !matches!(self, Self::Cbr)
+        module(self).readable()
     }
 
     /// Type MIME du fichier lui-même (réponse de `/api/raw`).
@@ -70,6 +75,96 @@ impl Format {
     }
 }
 
+/// Ce qu'un format sait faire.
+///
+/// Toutes les méthodes ont une valeur par défaut : un format qui ne sait pas
+/// faire quelque chose ne l'implémente pas (plutôt que de répondre par une
+/// erreur métier). L'API demande, le format répond « je ne sais pas ».
+pub trait BookFormat: Send + Sync {
+    /// Identifiant public, celui du JSON (`epub`, `cbz`, `cbr`, `pdf`).
+    fn id(&self) -> &'static str;
+
+    /// `true` si le contenu peut être affiché par l'interface.
+    fn readable(&self) -> bool {
+        true
+    }
+
+    /// Explication à montrer quand `readable()` est faux, ou précision utile.
+    fn note(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Titre, auteur et chapitres — les formats qui en ont un.
+    fn outline(&self, _path: &Path) -> Result<Option<Outline>, String> {
+        Ok(None)
+    }
+
+    /// Nombre de pages — les formats paginés (bande dessinée).
+    fn pages(&self, _path: &Path) -> Result<Option<usize>, String> {
+        Ok(None)
+    }
+
+    /// Image de couverture **telle qu'elle est dans le livre** (non réduite).
+    fn cover(&self, _path: &Path) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Ressource interne (document EPUB : image, CSS, police…).
+    fn asset(&self, _path: &Path, _inner: &str) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Document d'un chapitre, prêt à être affiché (URL réécrites).
+    fn chapter(
+        &self,
+        _path: &Path,
+        _index: usize,
+        _book_rel: &str,
+        _asset_base: &str,
+    ) -> Result<String, String> {
+        Err(format!("{} : pas de chapitres", self.id()))
+    }
+
+    /// Une page illustrée : nom de l'entrée et contenu.
+    fn page(&self, _path: &Path, _index: usize) -> Result<(String, Vec<u8>), String> {
+        Err(format!("{} : pas de pages", self.id()))
+    }
+}
+
+/// Registre : le module qui sait ouvrir ce format.
+pub fn module(format: Format) -> &'static dyn BookFormat {
+    match format {
+        Format::Epub => &epub::EPUB,
+        Format::Cbz => &cbz::CBZ,
+        Format::Cbr => &cbr::CBR,
+        Format::Pdf => &pdf::PDF,
+    }
+}
+
+/// Module d'un chemin, si son extension est reconnue.
+pub fn from_path(path: &str) -> Option<&'static dyn BookFormat> {
+    Format::from_path(path).map(module)
+}
+
+/// Un chapitre du sommaire, dans l'ordre de lecture.
+#[derive(Debug, Clone, Serialize)]
+pub struct Chapter {
+    /// Position dans le sommaire (0 = première entrée).
+    pub index: usize,
+    /// Libellé de la table des matières, ou un repli (« Chapitre N »).
+    pub title: String,
+    /// Chemin du document **dans l'archive** (pas une URL).
+    pub href: String,
+}
+
+/// Sommaire d'un livre.
+#[derive(Debug, Clone, Default)]
+pub struct Outline {
+    pub title: Option<String>,
+    pub author: Option<String>,
+    pub chapters: Vec<Chapter>,
+}
+
 /// `true` si le nom désigne une image affichable par un navigateur.
 pub fn is_image(name: &str) -> bool {
     let Some((_, ext)) = name.rsplit_once('.') else {
@@ -79,6 +174,20 @@ pub fn is_image(name: &str) -> bool {
         ext.to_ascii_lowercase().as_str(),
         "jpg" | "jpeg" | "png" | "gif" | "webp" | "avif" | "bmp"
     )
+}
+
+/// Entrée d'archive qui n'est pas du contenu : artefacts du système de fichiers
+/// de l'auteur (`__MACOSX/`, `.DS_Store`, dossiers cachés).
+pub fn is_noise(name: &str) -> bool {
+    name.starts_with("__MACOSX/")
+        || name
+            .split('/')
+            .any(|segment| segment.starts_with('.') && !segment.is_empty())
+}
+
+/// Nom normalisé d'une entrée d'archive (séparateurs `/`).
+pub fn normalize_entry(name: &str) -> String {
+    name.replace('\\', "/")
 }
 
 /// Type MIME d'une ressource **à l'intérieur** d'un livre (image, CSS, police…).
@@ -181,6 +290,15 @@ mod tests {
     }
 
     #[test]
+    fn every_format_has_a_module() {
+        for format in ALL {
+            let module = module(format);
+            assert_eq!(module.id(), format.id());
+            assert!(!format.content_type().is_empty());
+        }
+    }
+
+    #[test]
     fn natural_order_puts_ten_after_two() {
         let mut names = vec!["T10.cbz", "T2.cbz", "T1.cbz", "T02.cbz"];
         names.sort_by(|a, b| natural_cmp(a, b));
@@ -192,5 +310,13 @@ mod tests {
         assert!(is_image("OEBPS/Images/p1.JPG"));
         assert!(!is_image("OEBPS/style.css"));
         assert!(!is_image("comicinfo.xml"));
+    }
+
+    #[test]
+    fn noise_is_recognised() {
+        assert!(is_noise("__MACOSX/._p1.jpg"));
+        assert!(is_noise("Manga/.DS_Store"));
+        assert!(!is_noise("Manga/p1.jpg"));
+        assert!(!is_noise("p1.jpg"));
     }
 }

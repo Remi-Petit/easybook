@@ -5,14 +5,12 @@
 //! et une page en affiche des dizaines. Chaque couverture est donc réduite une
 //! fois, puis gardée en mémoire.
 //!
-//! D'où vient la couverture :
-//! - **EPUB** : celle que le livre déclare (voir [`crate::epub::cover`]) ;
-//! - **CBZ** : la première page, par convention du format ;
-//! - **PDF** et **CBR** : aucune pour le moment (rendu PDF ou décompression RAR
-//!   demanderaient un moteur de plus). L'interface affiche alors un repli.
+//! D'où vient la couverture, selon le format :
+//! - **EPUB** : celle que le livre déclare (voir [`crate::formats::epub`]) ;
+//! - **CBZ** et **CBR** : la première page, par convention du format ;
+//! - **PDF** : la plus grande image de la première page (un scan, une planche).
 
-use crate::formats::Format;
-use crate::{archive, epub};
+use crate::formats::{self, Format};
 use image::{DynamicImage, ImageFormat};
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -39,12 +37,9 @@ pub fn cover(path: &Path, rel: &str, version: u64) -> Option<Vec<u8>> {
         return Some(bytes);
     }
 
-    let original = match Format::from_path(rel)? {
-        Format::Epub => epub::cover(path),
-        // Convention du format : la première page est la couverture.
-        Format::Cbz => archive::page(path, 0).ok().map(|(_, bytes)| bytes),
-        // Ni rendu PDF ni décompression RAR ici : pas de couverture.
-        Format::Cbr | Format::Pdf => None,
+    let original = match Format::from_path(rel) {
+        Some(format) => formats::module(format).cover(path),
+        None => None,
     }?;
 
     // Une image illisible (format exotique) reste mieux qu'une absence : on la

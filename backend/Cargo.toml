@@ -29,9 +29,23 @@ tower-http = { version = "0.6", features = ["cors"] }
 # JPEG. On ne garde que les formats qu'on trouve réellement dans une bande
 # dessinée (une planche scannée est presque toujours en JPEG).
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+# PDF : extraction de l'image de la première page (couverture). `lopdf` est du
+# Rust pur : la mise en page n'est pas rendue, mais un scan ou une planche est
+# une image embarquée, et c'est de celle-là qu'on tire la vignette.
+lopdf = "0.38"
+# Les flux d'un PDF passent souvent par `FlateDecode` avant le JPEG : on défait
+# nous-mêmes la compression (lopdf s'arrête sur `DCTDecode`, qui n'est pas une
+# compression de pixels à ses yeux). Déjà présent via `zip` et `lopdf`.
+flate2 = "1"
+# CBR : archive RAR. Le crate embarque les sources C++ d'unrar et les compile
+# (voir backend/Dockerfile : `g++`/`make` requis à la construction).
+unrar = "0.5"
 
 [dev-dependencies]
 tempfile = "3"
+# Tests d'intégration : monter le routeur et l'appeler sans ouvrir de socket.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
 
 [profile.dev]
 debug = "line-tables-only"

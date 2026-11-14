@@ -5,7 +5,6 @@
 //! fichiers est chaud, et un cache de descripteurs compliquerait la gestion des
 //! fichiers remplacés pendant la lecture.
 
-use crate::formats;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -58,59 +57,16 @@ pub fn read_named(zip: &mut ZipArchive<File>, name: &str) -> Option<Vec<u8>> {
     read(zip, &actual)
 }
 
-/// Une entrée est-elle « technique » (cachée par le système, artefact d'un
-/// ordinateur) plutôt que du contenu ?
-fn is_noise(name: &str) -> bool {
-    name.starts_with("__MACOSX/")
-        || name
-            .split('/')
-            .any(|segment| segment.starts_with('.') && !segment.is_empty())
-}
-
-/// Noms des images d'une bande dessinée, **dans l'ordre de lecture**.
-///
-/// L'ordre vient d'une comparaison naturelle (`p2.jpg` avant `p10.jpg`) et non
-/// de l'ordre de l'archive : les outils de création ne le garantissent pas.
-pub fn images(path: &Path) -> Result<Vec<String>, String> {
-    let zip = open(path)?;
-    let mut names: Vec<String> = zip
-        .file_names()
-        .filter_map(|name| name.ok())
-        .filter(|name| !is_noise(name) && formats::is_image(name))
-        .map(|name| name.into_owned())
-        .collect();
-    names.sort_by(|a, b| formats::natural_cmp(a, b));
-    Ok(names)
-}
-
-/// Nombre de pages d'une bande dessinée.
-pub fn page_count(path: &Path) -> Result<usize, String> {
-    Ok(images(path)?.len())
-}
-
-/// Une page : son nom dans l'archive et son contenu.
-pub fn page(path: &Path, index: usize) -> Result<(String, Vec<u8>), String> {
-    let names = images(path)?;
-    let name = names
-        .get(index)
-        .ok_or_else(|| format!("page {index} hors limites ({} pages)", names.len()))?
-        .clone();
-
-    let mut zip = open(path)?;
-    let bytes = read_named(&mut zip, &name)
-        .ok_or_else(|| format!("page {name} introuvable dans l'archive"))?;
-    Ok((name, bytes))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use zip::write::SimpleFileOptions;
 
     fn fixture(entries: &[(&str, &[u8])]) -> (tempfile::TempDir, std::path::PathBuf) {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.cbz");
+        let path = dir.path().join("test.zip");
         let file = File::create(&path).unwrap();
         let mut zip = zip::ZipWriter::new(file);
         for (name, bytes) in entries {
@@ -122,22 +78,26 @@ mod tests {
     }
 
     #[test]
-    fn pages_are_sorted_naturally_and_noise_is_ignored() {
-        let (_dir, path) = fixture(&[
-            ("p10.jpg", b"10"),
-            ("p2.jpg", b"2"),
-            ("__MACOSX/._p2.jpg", b"x"),
-            ("comicinfo.xml", b"<x/>"),
-        ]);
-        let names = images(&path).unwrap();
-        assert_eq!(names, vec!["p2.jpg", "p10.jpg"]);
-        assert_eq!(page_count(&path).unwrap(), 2);
-    }
-
-    #[test]
     fn reads_entry_regardless_of_case() {
         let (_dir, path) = fixture(&[("Images/Cover.PNG", b"png")]);
         let mut zip = open(&path).unwrap();
         assert_eq!(read_named(&mut zip, "images/cover.png").unwrap(), b"png");
+    }
+
+    #[test]
+    fn reads_percent_encoded_entry_names() {
+        let (_dir, path) = fixture(&[("Mon livre/p1.jpg", b"page")]);
+        let mut zip = open(&path).unwrap();
+        assert_eq!(
+            read_named(&mut zip, "Mon%20livre%2Fp1.jpg").unwrap(),
+            b"page"
+        );
+    }
+
+    #[test]
+    fn missing_entry_is_none() {
+        let (_dir, path) = fixture(&[("a.jpg", b"x")]);
+        let mut zip = open(&path).unwrap();
+        assert!(read_named(&mut zip, "b.jpg").is_none());
     }
 }

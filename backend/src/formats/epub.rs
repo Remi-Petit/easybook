@@ -8,39 +8,55 @@
 use crate::archive;
 use crate::rewrite;
 use roxmltree::{Document, Node};
-use serde::Serialize;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
 use zip::ZipArchive;
 
-/// Un chapitre du `spine`, dans l'ordre de lecture.
-#[derive(Debug, Clone, Serialize)]
-pub struct Chapter {
-    /// Position dans le `spine` (0 = première page).
-    pub index: usize,
-    /// Libellé de la table des matières, ou « Chapitre N » à défaut.
-    pub title: String,
-    /// Chemin du document **dans l'archive** (pas une URL).
-    pub href: String,
+use super::{BookFormat, Chapter, Outline};
+
+/// Format EPUB, tel que l'enregistre [`super::module`].
+pub struct Epub;
+
+/// Instance unique du format (voir [`super::module`]).
+pub static EPUB: Epub = Epub;
+
+impl BookFormat for Epub {
+    fn id(&self) -> &'static str {
+        "epub"
+    }
+
+    fn outline(&self, path: &Path) -> Result<Option<Outline>, String> {
+        Ok(Some(outline(path)?))
+    }
+
+    fn cover(&self, path: &Path) -> Option<Vec<u8>> {
+        cover(path)
+    }
+
+    fn asset(&self, path: &Path, inner: &str) -> Option<Vec<u8>> {
+        entry(path, inner)
+    }
+
+    fn chapter(
+        &self,
+        path: &Path,
+        index: usize,
+        book_rel: &str,
+        asset_base: &str,
+    ) -> Result<String, String> {
+        chapter(path, index, book_rel, asset_base)
+    }
 }
 
 /// Sommaire d'un EPUB.
-#[derive(Debug, Clone)]
-pub struct Outline {
-    pub title: Option<String>,
-    pub author: Option<String>,
-    pub chapters: Vec<Chapter>,
-}
-
-/// Sommaire d'un EPUB.
-pub fn outline(path: &Path) -> Result<Outline, String> {
+fn outline(path: &Path) -> Result<Outline, String> {
     let mut zip = archive::open(path)?;
     outline_from(&mut zip)
 }
 
 /// Contenu brut d'une ressource de l'archive.
-pub fn entry(path: &Path, inner: &str) -> Option<Vec<u8>> {
+fn entry(path: &Path, inner: &str) -> Option<Vec<u8>> {
     let mut zip = archive::open(path).ok()?;
     archive::read_named(&mut zip, inner)
 }
@@ -55,7 +71,7 @@ pub fn entry(path: &Path, inner: &str) -> Option<Vec<u8>> {
 ///
 /// La couverture n'est pas lue au scan : elle coûte l'ouverture de l'archive,
 /// et seuls les livres affichés en ont besoin.
-pub fn cover(path: &Path) -> Option<Vec<u8>> {
+fn cover(path: &Path) -> Option<Vec<u8>> {
     let mut zip = archive::open(path).ok()?;
     cover_from(&mut zip)
 }
@@ -143,12 +159,7 @@ fn manifest(opf: &Document<'_>, opf_dir: &str) -> HashMap<String, Item> {
 ///
 /// Les URL relatives sont réécrites vers `/api/asset` (voir [`crate::rewrite`]) :
 /// le document peut donc être injecté tel quel dans la page du lecteur.
-pub fn chapter(
-    path: &Path,
-    index: usize,
-    book_rel: &str,
-    asset_base: &str,
-) -> Result<String, String> {
+fn chapter(path: &Path, index: usize, book_rel: &str, asset_base: &str) -> Result<String, String> {
     let mut zip = archive::open(path)?;
     let outline = outline_from(&mut zip)?;
     let chapter = outline.chapters.get(index).ok_or_else(|| {

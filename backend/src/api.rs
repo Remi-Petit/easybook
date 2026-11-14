@@ -19,7 +19,7 @@
 //! | `GET /ws` | catalogue poussé à chaque changement du dossier |
 
 use crate::formats::{self, Format};
-use crate::{archive, epub, library, rewrite, thumbnail};
+use crate::{library, rewrite, thumbnail};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -182,7 +182,7 @@ struct BookDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
     author: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    chapters: Option<Vec<epub::Chapter>>,
+    chapters: Option<Vec<formats::Chapter>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pages: Option<usize>,
     /// Explication, quand le livre ne peut pas être ouvert.
@@ -211,35 +211,24 @@ async fn get_book(State(state): State<AppState>, Query(query): Query<BookQuery>)
 
 fn detail(path: &Path, rel: &str) -> Result<BookDetail, String> {
     let format = Format::from_path(rel).ok_or_else(|| "format non reconnu".to_string())?;
-    let mut detail = BookDetail {
+    // Tout ce qui dépend du format passe par son module : l'API ne connaît que
+    // le trait (voir `formats::BookFormat`).
+    let module = formats::module(format);
+
+    let outline = module.outline(path)?;
+    let pages = module.pages(path)?;
+
+    Ok(BookDetail {
         rel: rel.to_string(),
         format: format.id(),
-        supported: format.readable(),
-        title: None,
-        author: None,
-        chapters: None,
-        pages: None,
-        note: None,
-    };
-
-    match format {
-        Format::Epub => {
-            let outline = epub::outline(path)?;
-            detail.title = outline.title;
-            detail.author = outline.author;
-            detail.chapters = Some(outline.chapters);
-        }
-        Format::Cbz => detail.pages = Some(archive::page_count(path)?),
-        Format::Pdf => {}
-        Format::Cbr => {
-            detail.note = Some(
-                "CBR est une archive RAR : ce serveur ne sait pas encore la décompresser."
-                    .to_string(),
-            );
-        }
-    }
-
-    Ok(detail)
+        supported: module.readable(),
+        title: outline.as_ref().and_then(|outline| outline.title.clone()),
+        author: outline.as_ref().and_then(|outline| outline.author.clone()),
+        chapters: outline
+            .and_then(|outline| (!outline.chapters.is_empty()).then_some(outline.chapters)),
+        pages,
+        note: module.note().map(str::to_string),
+    })
 }
 
 #[derive(Deserialize)]
@@ -319,8 +308,14 @@ async fn get_chapter(
     let origin = origin(&headers);
     let rel = query.path.clone();
     let index = query.index;
+    let format = Format::from_path(&query.path);
 
-    match tokio::task::spawn_blocking(move || epub::chapter(&path, index, &rel, &origin)).await {
+    match tokio::task::spawn_blocking(move || match format {
+        Some(format) => formats::module(format).chapter(&path, index, &rel, &origin),
+        None => Err("format non reconnu".to_string()),
+    })
+    .await
+    {
         Ok(Ok(html)) => html_response(html),
         Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, e).into_response(),
         Err(e) => internal_error(e).into_response(),
@@ -361,8 +356,12 @@ async fn get_asset(
     let rel = query.path.clone();
     let origin = origin(&headers);
     let entry = inner.clone();
+    let format = Format::from_path(&query.path);
 
-    let bytes = tokio::task::spawn_blocking(move || epub::entry(&path, &entry)).await;
+    let bytes = tokio::task::spawn_blocking(move || {
+        format.and_then(|format| formats::module(format).asset(&path, &entry))
+    })
+    .await;
 
     match bytes {
         Ok(Some(bytes)) => {
@@ -408,8 +407,14 @@ async fn get_page(State(state): State<AppState>, Query(query): Query<PageQuery>)
         return StatusCode::NOT_FOUND.into_response();
     };
     let index = query.index;
+    let format = Format::from_path(&query.path);
 
-    match tokio::task::spawn_blocking(move || archive::page(&path, index)).await {
+    match tokio::task::spawn_blocking(move || match format {
+        Some(format) => formats::module(format).page(&path, index),
+        None => Err("format non reconnu".to_string()),
+    })
+    .await
+    {
         Ok(Ok((name, bytes))) => (
             [
                 (header::CONTENT_TYPE, formats::content_type(&name)),

@@ -86,7 +86,8 @@
 			</div>
 		{:else if detail.format === 'epub' && detail.chapters}
 			<EpubReader {rel} detail={detail} />
-		{:else if detail.format === 'cbz' && detail.pages != null}
+		{:else if (detail.format === 'cbz' || detail.format === 'cbr') && detail.pages != null}
+			<!-- CBZ et CBR sont la même lecture : une image par page. -->
 			<ComicReader {rel} pages={detail.pages} />
 		{:else if detail.format === 'pdf'}
 			<PdfReader {rel} />

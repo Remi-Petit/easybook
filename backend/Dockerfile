@@ -7,6 +7,12 @@
 # ── 1. Compilation ─────────────────────────────────────────────────────────
 FROM rust:1.98-slim-bookworm AS builder
 
+# `unrar` (format CBR) embarque les sources C++ d'unrar et les compile : il faut
+# donc un compilateur C++ en plus de Rust.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends g++ make \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /build/backend
 
 # Les dépendances changent rarement : on les compile seules, à partir d'une
