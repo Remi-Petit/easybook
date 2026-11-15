@@ -49,11 +49,10 @@ fn cover(path: &Path) -> Option<Vec<u8>> {
 
     // 1. Suivre le dessin : `Do` dans l'ordre, en descendant dans les formulaires
     //    (`Form XObject`) qui encapsulent la planche.
-    if let Ok(content) = document.get_page_content(page) {
-        for name in drawn_names(&content) {
-            if let Some(bytes) = image_named(&document, &resources, &name, 0) {
-                return Some(bytes);
-            }
+    let content = document.get_page_content(page);
+    for name in drawn_names(&content) {
+        if let Some(bytes) = image_named(&document, &resources, &name, 0) {
+            return Some(bytes);
         }
     }
 

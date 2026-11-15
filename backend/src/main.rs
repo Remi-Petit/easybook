@@ -8,7 +8,7 @@
 use easybook::{api, config, formats, watcher};
 use notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, new_debouncer};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -81,6 +81,10 @@ fn canonical_root(path: PathBuf) -> PathBuf {
     let path = std::fs::canonicalize(&path).unwrap_or(path);
     #[cfg(windows)]
     {
+        // Import local : `Path` ne sert que dans ce bloc, et un `use` en tête de
+        // fichier serait « inutilisé » sur les autres systèmes (clippy le refuse).
+        use std::path::Path;
+
         if let Some(text) = path.to_str()
             && let Some(stripped) = text.strip_prefix(r"\\?\")
             && Path::new(stripped).is_absolute()
