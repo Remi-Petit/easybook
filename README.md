@@ -1,5 +1,7 @@
 # easybook
 
+[![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
+
 Bibliothèque de livres locale : un dossier `books/`, un backend Rust qui le
 surveille, une interface SvelteKit pour lire ce qu'il contient.
 
@@ -207,6 +209,26 @@ cd frontend && bun run test      # catalogue + langues (25 tests Vitest)
   process lancés, pour vérifier ce que les tests d'intégration couvrent déjà
   côté API. L'interface a été vérifiée manuellement (catalogue, dossiers,
   lecteurs EPUB/CBZ/CBR/PDF, temps réel).
+
+## Intégration continue
+
+`.github/workflows/ci.yml`, sur `master` et sur les pull requests. Chaque job ne
+tourne que si son dossier a changé (`dorny/paths-filter`) : un commit qui ne
+touche que le README ne lance rien.
+
+| Job | Ce qu'il vérifie |
+|---|---|
+| `fmt` | `cargo fmt --all --check` |
+| `clippy` | `cargo clippy --all-targets -- -D warnings` |
+| `build_and_test` | `cargo build` + `cargo test`, sur stable, beta et nightly |
+| `latest_deps` | la suite avec les dépendances les plus récentes (informatif) |
+| `msrv` | `rust-version` de `Cargo.toml` tient (cargo-hack) |
+| `audit` | `cargo audit` (avis RustSec) — bloquant |
+| `frontend` | `bun run test`, `bun run check`, `bun run build` |
+| `trivy` | les **deux images** construites par `docker compose` : CRITICAL bloquant, HIGH en rapport |
+
+Les images sont construites sans être publiées, avec un cache GHA par image :
+la CI vérifie ce que l'utilisateur lance vraiment, pas seulement les lockfiles.
 
 ## Configuration
 

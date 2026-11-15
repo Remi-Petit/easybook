@@ -1,0 +1,244 @@
+name: CI
+
+# Deux dossiers, deux mondes : la CI ne lance que ce qui est concerné.
+#   - un commit qui ne touche ni `backend/`, ni `frontend/`, ni les images
+#     (README, livres…) ne déclenche **aucun** job ;
+#   - un changement purement frontend n'exécute pas la matrice Rust, et
+#     inversement (`job changes` + `if:` sur chaque job).
+# Les workflows font partie des filtres : modifier la CI la relance.
+#
+# `branches: [master]` : sans ce filtre, pousser un tag relançait toute la CI.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'docker-compose.yml'
+      - '.dockerignore'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'docker-compose.yml'
+      - '.dockerignore'
+      - '.github/workflows/**'
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Le crate Rust vit dans backend/ : tout ce qui touche à Cargo part de là.
+# Les jobs qui travaillent à la racine (images, frontend) le disent.
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  # Y a-t-il du backend à vérifier ? du frontend à tester ? des images à scanner ?
+  changes:
+    name: Fichiers modifiés
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Comparer au commit précédent, pas seulement au dernier commit :
+          # sans historique, le filtre ne voit aucun fichier modifié et
+          # **aucun** job ne tournerait.
+          fetch-depth: 0
+      - id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/**'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/**'
+            docker:
+              - 'backend/Dockerfile'
+              - 'frontend/Dockerfile'
+              - 'docker-compose.yml'
+              - '.dockerignore'
+              - '.github/workflows/**'
+
+  # Le formatage est une convention, pas un débat : `cargo fmt --check` échoue
+  # plutôt que de laisser la discussion se rejouer à chaque revue.
+  fmt:
+    name: Formatage
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup component add rustfmt
+      - run: cargo fmt --all --check
+
+  # Avertissements = erreurs : un `unused` qui traîne n'est pas une opinion.
+  clippy:
+    name: Clippy
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup component add clippy
+      - run: cargo clippy --all-targets -- -D warnings
+
+  # Tests unitaires et d'intégration sur les trois canaux : une régression de
+  # rustc se voit ici avant la sortie stable.
+  # `unrar` (format CBR) compile les sources C++ d'unrar via `cc` : `g++` est
+  # déjà présent sur les runners (`build-essential`), rien à installer.
+  build_and_test:
+    name: Rust - ${{ matrix.toolchain }}
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - beta
+          - nightly
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+      - run: cargo build --locked --verbose
+      - run: cargo test --locked --verbose
+
+  # Les dépendances de demain : on résout les versions les plus récentes et on
+  # rejoue la suite. En échec, ce job **n'échoue pas le run** — il annonce ce
+  # qui cassera à la prochaine mise à jour.
+  latest_deps:
+    name: Dépendances récentes
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: allow
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup update stable && rustup default stable
+      - run: cargo update
+      - run: cargo test --verbose
+
+  # `rust-version` de Cargo.toml est une promesse : ce job vérifie qu'aucune
+  # dépendance ne la casse.
+  msrv:
+    name: Version minimale de Rust
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: taiki-e/install-action@cargo-hack
+      - run: cargo hack check --rust-version --all-targets
+
+  # Vulnérabilités **publiées** dans les dépendances (base RustSec). Ce n'est pas
+  # un doublon de Dependabot : celui-ci propose des mises à jour, celui-là dit
+  # « la version que tu as est vulnérable » — et il le dit même quand aucune
+  # version corrigée n'existe encore.
+  #
+  # Pas de `continue-on-error` à dessein : un avis RustSec fait échouer le run.
+  # Une alerte qu'on peut ignorer sans rien faire n'est jamais traitée.
+  audit:
+    name: Audit (RustSec)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: taiki-e/install-action@cargo-audit
+      # `Cargo.lock` est versionné : `cargo audit` lit donc exactement les
+      # versions que les autres jobs compilent, sans rien re-résoudre.
+      - run: cargo audit
+
+  # Tests unitaires (Vitest), vérification des types (svelte-check) et build :
+  # le build est le seul endroit qui attrape une erreur de gabarit ou de SSR,
+  # invisible aux tests unitaires.
+  frontend:
+    name: Frontend (bun)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+      - run: bun run check
+      - run: bun run build
+
+  # Sécurité des **images** (Trivy) : ce qui part chez l'utilisateur est le
+  # conteneur, pas node_modules. Scanner `bun.lock` ferait remonter des avis dans
+  # les outils de compilation, qui ne sont jamais livrés.
+  #
+  # Seuils : **CRITICAL bloque** (avec `--ignore-unfixed` : sans version
+  # corrigée, il n'y a rien à faire) ; **HIGH est affiché** sans bloquer, car les
+  # avis restants viennent en général des paquets embarqués dans l'image de base.
+  #
+  # Trivy tourne depuis son **image officielle** (Docker Hub) plutôt que via
+  # `aquasecurity/setup-trivy` : l'action télécharge l'archive de release GitHub
+  # à chaque passage, et ce téléchargement échoue sur les runners depuis le
+  # 2026-11-03. Version épinglée, image tirée du registre, et aucune action
+  # tierce de plus dans le workflow.
+  trivy:
+    name: Trivy (images)
+    needs: changes
+    if: >-
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.frontend == 'true' ||
+      needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    # Les images se construisent depuis la racine du dépôt.
+    defaults:
+      run:
+        working-directory: .
+    strategy:
+      matrix:
+        include:
+          - image: easybook-api:ci
+            dockerfile: backend/Dockerfile
+            scope: api
+          - image: easybook-web:ci
+            dockerfile: frontend/Dockerfile
+            scope: web
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      # Même construction que `docker compose up --build`, **sans publication**.
+      # Un cache par image (`scope`) : les deux ne se marchent pas dessus.
+      - name: Construire l'image
+        run: |
+          docker buildx build \
+            --load \
+            --file ${{ matrix.dockerfile }} \
+            --tag ${{ matrix.image }} \
+            --cache-from type=gha,scope=${{ matrix.scope }} \
+            --cache-to type=gha,mode=max,scope=${{ matrix.scope }},ignore-error=true \
+            .
+      - name: CRITICAL (bloquant)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1 image \
+            --severity CRITICAL --ignore-unfixed --exit-code 1 ${{ matrix.image }}
+      - name: HIGH (rapport, non bloquant)
+        if: always()
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1 image \
+            --severity HIGH --ignore-unfixed --exit-code 0 ${{ matrix.image }}
