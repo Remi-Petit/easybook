@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { bookUrl, rawUrl, type BookDetail } from '$lib/api';
 	import { folderUrl, parentOf } from '$lib/catalog';
@@ -16,6 +17,20 @@
 	let detail = $state<BookDetail | null>(null);
 	let error = $state<string | null>(null);
 	let loading = $state(true);
+	/**
+	 * En-tête et pied de page visibles. Un clic au milieu de la zone de lecture
+	 * les cache : le livre occupe alors tout l'écran, sans rien autour.
+	 */
+	let chrome = $state(true);
+
+	// Échap ramène l'en-tête : sans lui, plus de retour vers le dossier.
+	onMount(() => {
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') chrome = true;
+		};
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
+	});
 
 	// Le sommaire est relu à chaque changement de livre : c'est une lecture
 	// d'archive, pas un scan du dossier.
@@ -55,18 +70,21 @@
 	<title>{detail?.title ?? fallbackTitle} · easybook</title>
 </svelte:head>
 
-<div class="reader">
-	<header class="reader-head">
-		<a class="back" href={parent ? folderUrl(parent) : '/'}>← {backLabel}</a>
-		<h1 class="reader-title">{detail?.title ?? fallbackTitle}</h1>
-		{#if detail?.author}
-			<span class="reader-sub">{detail.author}</span>
-		{/if}
-		<span class="reader-sub">{rel}</span>
-		<a class="reader-sub link" href={rawUrl(rel)} target="_blank" rel="noopener">
-			{t('reader.openFile')}
-		</a>
-	</header>
+<!-- Échap (voir `onMount`) ramène l'en-tête : sans lui, plus de retour au dossier. -->
+<div class="reader" data-chrome={chrome ? 'on' : 'off'}>
+	{#if chrome}
+		<header class="reader-head">
+			<a class="back" href={parent ? folderUrl(parent) : '/'}>← {backLabel}</a>
+			<h1 class="reader-title">{detail?.title ?? fallbackTitle}</h1>
+			{#if detail?.author}
+				<span class="reader-sub">{detail.author}</span>
+			{/if}
+			<span class="reader-sub">{rel}</span>
+			<a class="reader-sub link" href={rawUrl(rel)} target="_blank" rel="noopener">
+				{t('reader.openFile')}
+			</a>
+		</header>
+	{/if}
 
 	{#if loading}
 		<div class="state">{t('reader.opening')}</div>
@@ -86,10 +104,20 @@
 				</div>
 			</div>
 		{:else if detail.format === 'epub' && detail.chapters}
-			<EpubReader {rel} detail={detail} />
+			<EpubReader
+				{rel}
+				{detail}
+				{chrome}
+				onToggleChrome={() => (chrome = !chrome)}
+			/>
 		{:else if (detail.format === 'cbz' || detail.format === 'cbr') && detail.pages != null}
 			<!-- CBZ et CBR sont la même lecture : une image par page. -->
-			<ComicReader {rel} pages={detail.pages} />
+			<ComicReader
+				{rel}
+				pages={detail.pages}
+				{chrome}
+				onToggleChrome={() => (chrome = !chrome)}
+			/>
 		{:else if detail.format === 'pdf'}
 			<PdfReader {rel} />
 		{:else}

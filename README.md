@@ -80,6 +80,12 @@ easybook/
 - La **page d'accueil** montre la totalité des livres, toutes catégories
   confondues (avec la recherche). Le lecteur s'ouvre en plein écran, et son lien
   de retour ramène au dossier du livre.
+- Dans le lecteur (BD et EPUB), la **zone de lecture est découpée en trois** :
+  clic à gauche → page précédente, à droite → page suivante, au milieu →
+  l'en-tête, le pied de page et le sommaire s'effacent pour laisser toute la
+  place au livre (un second clic les ramène, comme **Échap**). Les flèches du
+  clavier font la même chose, et un lien du livre reste un lien : suivre une note
+  ne tourne pas la page.
 
 ## Langues
 

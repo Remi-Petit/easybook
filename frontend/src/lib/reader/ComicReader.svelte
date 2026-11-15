@@ -2,8 +2,14 @@
 	import { onMount } from 'svelte';
 	import { pageUrl } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
+	import { readingZone } from './zones';
 
-	let { rel, pages }: { rel: string; pages: number } = $props();
+	let {
+		rel,
+		pages,
+		chrome = true,
+		onToggleChrome = () => {}
+	}: { rel: string; pages: number; chrome?: boolean; onToggleChrome?: () => void } = $props();
 
 	const storageKey = $derived(`easybook:page:${rel}`);
 
@@ -42,6 +48,28 @@
 		return () => window.removeEventListener('keydown', onKey);
 	});
 
+	/**
+	 * Clic dans la zone de lecture : le tiers gauche recule, le droit avance, le
+	 * milieu montre ou cache l'en-tête et le pied de page.
+	 */
+	function onClick(event: MouseEvent) {
+		const selection = window.getSelection();
+		const zone = readingZone(event, selection !== null && !selection.isCollapsed);
+		if (zone === 'previous') go(index - 1);
+		else if (zone === 'next') go(index + 1);
+		else if (zone === 'toggle') onToggleChrome();
+	}
+
+	// Écouteur posé à la main : la zone de lecture n'est pas un bouton, et le
+	// clavier a déjà ses commandes (flèches, Échap).
+	$effect(() => {
+		const host = stage;
+		if (!host) return;
+		const handler = (event: MouseEvent) => onClick(event);
+		host.addEventListener('click', handler);
+		return () => host.removeEventListener('click', handler);
+	});
+
 	// Préchargement de la planche suivante : le passage à la page suivante est
 	// instantané au lieu d'attendre le réseau.
 	$effect(() => {
@@ -61,10 +89,12 @@
 			</div>
 		</div>
 
-		<nav class="pager">
-			<button disabled={atStart} onclick={() => go(index - 1)}>← {t('reader.previous')}</button>
-			<span>{index + 1} / {pages}</span>
-			<button disabled={atEnd} onclick={() => go(index + 1)}>{t('reader.next')} →</button>
-		</nav>
+		{#if chrome}
+			<nav class="pager">
+				<button disabled={atStart} onclick={() => go(index - 1)}>← {t('reader.previous')}</button>
+				<span>{index + 1} / {pages}</span>
+				<button disabled={atEnd} onclick={() => go(index + 1)}>{t('reader.next')} →</button>
+			</nav>
+		{/if}
 	</div>
 </div>

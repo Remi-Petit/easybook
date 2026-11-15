@@ -849,6 +849,18 @@ code {
 	overflow: hidden;
 }
 
+/* En-tête et pied de page masqués (clic au milieu) : le livre prend toute la
+   hauteur, la grille n'a plus qu'une seule rangée. */
+.reader[data-chrome='off'] {
+	grid-template-rows: 1fr;
+}
+
+/* Une image du livre peut alors dépasser ce que laissait l'en-tête. */
+.reader[data-chrome='off'] .prose img,
+.reader[data-chrome='off'] .prose svg {
+	max-height: calc(100dvh - 40px);
+}
+
 .reader-head {
 	display: flex;
 	align-items: center;

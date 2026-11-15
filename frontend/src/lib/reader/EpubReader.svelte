@@ -2,8 +2,19 @@
 	import { onMount } from 'svelte';
 	import { chapterUrl, type BookDetail } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
+	import { readingZone } from './zones';
 
-	let { rel, detail }: { rel: string; detail: BookDetail } = $props();
+	let {
+		rel,
+		detail,
+		chrome = true,
+		onToggleChrome = () => {}
+	}: {
+		rel: string;
+		detail: BookDetail;
+		chrome?: boolean;
+		onToggleChrome?: () => void;
+	} = $props();
 
 	const chapters = $derived(detail.chapters ?? []);
 	const storageKey = $derived(`easybook:chapter:${rel}`);
@@ -29,6 +40,28 @@
 			// Mode navigation privée : la reprise de lecture est un confort.
 		}
 	}
+
+	/**
+	 * Clic dans la zone de lecture : le tiers gauche recule, le droit avance, le
+	 * milieu montre ou cache l'en-tête, le pied de page et le sommaire.
+	 */
+	function onClick(event: MouseEvent) {
+		const selection = window.getSelection();
+		const zone = readingZone(event, selection !== null && !selection.isCollapsed);
+		if (zone === 'previous') go(index - 1);
+		else if (zone === 'next') go(index + 1);
+		else if (zone === 'toggle') onToggleChrome();
+	}
+
+	// Écouteur posé à la main : la zone de lecture n'est pas un bouton, et le
+	// clavier a déjà ses commandes (flèches, Échap).
+	$effect(() => {
+		const host = stage;
+		if (!host) return;
+		const handler = (event: MouseEvent) => onClick(event);
+		host.addEventListener('click', handler);
+		return () => host.removeEventListener('click', handler);
+	});
 
 	onMount(() => {
 		// Reprise : on rouvre le livre là où on l'avait laissé.
@@ -78,15 +111,17 @@
 	});
 </script>
 
-<div class="reader-body">
-	<aside class="toc">
-		<h2>{t('reader.chapters')}</h2>
-		{#each chapters as chapter (chapter.index)}
-			<button aria-current={chapter.index === index} onclick={() => go(chapter.index)}>
-				{chapter.title}
-			</button>
-		{/each}
-	</aside>
+<div class="reader-body" class:no-toc={!chrome}>
+	{#if chrome}
+		<aside class="toc">
+			<h2>{t('reader.chapters')}</h2>
+			{#each chapters as chapter (chapter.index)}
+				<button aria-current={chapter.index === index} onclick={() => go(chapter.index)}>
+					{chapter.title}
+				</button>
+			{/each}
+		</aside>
+	{/if}
 
 	<div class="stage">
 		<div class="viewport" bind:this={stage}>
@@ -104,10 +139,12 @@
 			{/if}
 		</div>
 
-		<nav class="pager">
-			<button disabled={atStart} onclick={() => go(index - 1)}>← {t('reader.previous')}</button>
-			<span>{index + 1} / {chapters.length}</span>
-			<button disabled={atEnd} onclick={() => go(index + 1)}>{t('reader.next')} →</button>
-		</nav>
+		{#if chrome}
+			<nav class="pager">
+				<button disabled={atStart} onclick={() => go(index - 1)}>← {t('reader.previous')}</button>
+				<span>{index + 1} / {chapters.length}</span>
+				<button disabled={atEnd} onclick={() => go(index + 1)}>{t('reader.next')} →</button>
+			</nav>
+		{/if}
 	</div>
 </div>
