@@ -3,11 +3,7 @@
 [![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/Remi-Petit/easybook)](LICENSE)
 <!-- couverture:start -->
-<<<<<<< HEAD
 [![couverture backend](https://img.shields.io/badge/coverage%20backend-88.5%25-green)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-95.7%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
-=======
-[![couverture backend](https://img.shields.io/badge/coverage%20backend-87.9%25-green)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-95.5%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
->>>>>>> fc4f2ce3e5d4972f12e59b7b4d47dac1f37cef95
 <!-- couverture:end -->
 
 Bibliothèque de livres locale : un dossier `books/`, un backend Rust qui le
@@ -47,12 +43,14 @@ easybook/
 
 - Le **backend ne fait qu'une chose** : décrire `books/` et servir le contenu des
   livres. Aucune base de données, aucun index à maintenir.
-- On peut **aussi ranger ses livres depuis l'interface** : créer une catégorie ou
-  une série, et déposer des ouvrages par **glisser-déposer** (ou par le bouton
-  « Ajouter des livres »). Le serveur écrit le fichier en flux, dans un
-  temporaire caché renommé une fois complet : un envoi interrompu ne laisse
-  jamais un livre tronqué dans le catalogue. Un nom déjà pris est refusé (409),
-  jamais écrasé silencieusement.
+- On peut **aussi ranger ses livres depuis l'interface** : deux icônes à droite du
+  titre de la page — « + » ouvre une boîte pour créer un dossier (une catégorie
+  à la racine), « ? » explique les dépôts. **Glisser-déposer** un fichier, ou un
+  **dossier entier**, n'importe où sur la page : les livres vont dans le dossier
+  affiché et l'arborescence du dossier déposé est reproduite. Le serveur écrit
+  chaque fichier en flux, dans un temporaire caché renommé une fois complet : un
+  envoi interrompu ne laisse jamais un livre tronqué dans le catalogue. Un nom
+  déjà pris est refusé (409), jamais écrasé silencieusement.
 - Le dossier est **surveillé** (`notify`) : un fichier ajouté, renommé ou
   supprimé est poussé aux navigateurs par WebSocket. **Pas de sondage.**
 - Un livre est reconnu à son **extension** ; son contenu n'est lu qu'au moment

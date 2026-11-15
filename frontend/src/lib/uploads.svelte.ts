@@ -7,8 +7,12 @@
 // Un seul envoi à la fois : le serveur écrit sur le disque de la bibliothèque,
 // et trois flux simultanés de plusieurs centaines de mégaoctets ne rendraient
 // personne plus rapide.
+//
+// Un dépôt peut être un **dossier entier** : le navigateur en donne alors une
+// arborescence (`webkitGetAsEntry`), qu'on rejoue telle quelle — les dossiers
+// sont créés d'abord, les fichiers suivent.
 
-import { uploadUrl } from './api';
+import { createFolderUrl, uploadUrl } from './api';
 
 /** Fichier accepté : les formats que le serveur sait lire. */
 const ACCEPTED = /\.(epub|cbz|cbr|pdf)$/i;
@@ -30,6 +34,9 @@ export type Upload = {
 
 export const uploads = $state({ items: [] as Upload[] });
 
+/** Un fichier à déposer, avec le dossier (relatif) qui le reçoit. */
+export type Deposit = { folder: string; file: File };
+
 let sequence = 0;
 /** Ce qui reste à envoyer (les `File` ne sont pas dans l'état réactif). */
 const queue: { item: Upload; file: File; folder: string }[] = [];
@@ -41,14 +48,33 @@ export function accepts(name: string): boolean {
 }
 
 /**
+ * Dossier d'accueil d'une entrée déposée, d'après son chemin dans le dépôt.
+ *
+ * `fullPath` vient de `FileSystemEntry` : `/Fullmetal/T01/f01.jpg`. Le premier
+ * segment est le dossier déposé lui-même, et on le **garde** : déposer un
+ * dossier sur `mangas` crée `mangas/Fullmetal/…`. (pure, testée)
+ */
+export function depositFolder(base: string, fullPath: string): string {
+	const segments = fullPath.split('/').filter(Boolean);
+	// Le dernier segment est le fichier : seuls les dossiers comptent.
+	const dirs = segments.slice(0, -1);
+	return [base, ...dirs].filter(Boolean).join('/');
+}
+
+/**
  * Met des fichiers en file d'attente pour un dossier (`""` = racine).
  *
  * Rend le nombre de fichiers refusés : l'appelant peut le dire à l'écran plutôt
  * que de laisser croire que tout est passé.
  */
 export function enqueue(files: File[], folder: string): number {
+	return enqueueDropped(files.map((file) => ({ folder, file })));
+}
+
+/** Même chose, mais chaque fichier porte son propre dossier (dossier déposé). */
+export function enqueueDropped(deposits: Deposit[]): number {
 	let rejected = 0;
-	for (const file of files) {
+	for (const { file, folder } of deposits) {
 		if (!accepts(file.name)) {
 			rejected += 1;
 			continue;
@@ -65,6 +91,93 @@ export function enqueue(files: File[], folder: string): number {
 
 	pump();
 	return rejected;
+}
+
+/**
+ * Crée les dossiers manquants d'un dépôt, du plus haut au plus bas.
+ *
+ * Un 409 veut dire « déjà là » : ce n'est pas une erreur, c'est le cas normal
+ * quand on dépose deux fois le même dossier. Un refus du serveur (nom invalide)
+ * n'est pas remonté ici : l'envoi des fichiers échouera juste après, avec le
+ * message du serveur.
+ */
+export async function createFolders(folders: string[]): Promise<void> {
+	const ordered = [...new Set(folders)].sort((a, b) => depth(a) - depth(b));
+
+	for (const rel of ordered) {
+		const cut = rel.lastIndexOf('/');
+		const parent = cut === -1 ? '' : rel.slice(0, cut);
+		const name = cut === -1 ? rel : rel.slice(cut + 1);
+		try {
+			await fetch(createFolderUrl(), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ parent, name })
+			});
+		} catch {
+			// Réseau : les fichiers seront marqués en échec, avec le statut.
+		}
+	}
+}
+
+/** Les dossiers à créer avant d'envoyer ces dépôts. */
+export function foldersOf(deposits: Deposit[]): string[] {
+	return deposits.map((deposit) => deposit.folder);
+}
+
+function depth(rel: string): number {
+	return rel.split('/').length;
+}
+
+/**
+ * Parcourt un dépôt du système de fichiers et rend les fichiers à envoyer, avec
+ * leur dossier.
+ *
+ * `webkitGetAsEntry` n'est lisible que **pendant** l'événement de dépôt :
+ * l'appelant récupère les entrées d'abord (`dropEntries`), puis attend.
+ */
+export async function readDrop(entries: FileSystemEntry[], base: string): Promise<Deposit[]> {
+	const deposits: Deposit[] = [];
+
+	async function walk(entry: FileSystemEntry): Promise<void> {
+		if (entry.isFile) {
+			const file = await new Promise<File | null>((resolve) => {
+				(entry as FileSystemFileEntry).file(resolve, () => resolve(null));
+			});
+			if (file) deposits.push({ folder: depositFolder(base, entry.fullPath), file });
+			return;
+		}
+
+		if (!entry.isDirectory) return;
+		const reader = (entry as FileSystemDirectoryEntry).createReader();
+		// `readEntries` rend par lots : il faut rappeler jusqu'au lot vide.
+		for (;;) {
+			const batch = await new Promise<FileSystemEntry[]>((resolve) => {
+				reader.readEntries(resolve, () => resolve([]));
+			});
+			if (batch.length === 0) break;
+			for (const child of batch) await walk(child);
+		}
+	}
+
+	for (const entry of entries) await walk(entry);
+	return deposits;
+}
+
+/**
+ * Entrées d'un glisser (fichiers **et** dossiers).
+ *
+ * À appeler dans le gestionnaire `drop`, sans `await` : le `DataTransfer` est
+ * invalidé dès que l'événement rend la main.
+ */
+export function dropEntries(transfer: DataTransfer | null): FileSystemEntry[] {
+	if (!transfer) return [];
+	const entries: FileSystemEntry[] = [];
+	for (const item of Array.from(transfer.items)) {
+		const entry = item.webkitGetAsEntry?.();
+		if (entry) entries.push(entry);
+	}
+	return entries;
 }
 
 /** Envoie le prochain fichier de la file. */

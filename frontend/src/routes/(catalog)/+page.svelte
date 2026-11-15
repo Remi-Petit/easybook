@@ -1,5 +1,5 @@
 <script lang="ts">
-	import AddBooks from '$lib/components/AddBooks.svelte';
+	import Add from '$lib/components/Add.svelte';
 	import BookCard from '$lib/components/BookCard.svelte';
 	import { library, reload } from '$lib/library.svelte';
 	import { t } from '$lib/i18n/state.svelte';
@@ -27,7 +27,10 @@
 
 <div class="page">
 	<section class="intro">
-		<h1>{t('home.title')}</h1>
+		<div class="intro-head">
+			<h1>{t('home.title')}</h1>
+			<Add folder="" />
+		</div>
 		<p>
 			{t('books.count', { count: library.total })}
 			· {t('home.in')} <code>books/</code>, {t('home.live')}
@@ -38,9 +41,6 @@
 			placeholder={t('home.search')}
 			aria-label={t('home.searchLabel')}
 		/>
-		<div class="intro-actions">
-			<AddBooks folder="" />
-		</div>
 	</section>
 
 	{#if library.error && library.books.length === 0}
