@@ -3,7 +3,11 @@
 [![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/Remi-Petit/easybook)](LICENSE)
 <!-- couverture:start -->
+<<<<<<< HEAD
 [![couverture backend](https://img.shields.io/badge/coverage%20backend-87.6%25-green)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-95.5%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
+=======
+[![couverture backend](https://img.shields.io/badge/coverage%20backend-77.3%25-yellowgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-100.0%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
+>>>>>>> 0a559f492d165567ca9c8ca7ed419fb524ec3567
 <!-- couverture:end -->
 
 Bibliothèque de livres locale : un dossier `books/`, un backend Rust qui le
