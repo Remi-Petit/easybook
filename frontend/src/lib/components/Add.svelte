@@ -6,6 +6,7 @@
 		createFolders,
 		depositFolder,
 		dismiss,
+		dismissSummary,
 		dropEntries,
 		enqueue,
 		enqueueDropped,
@@ -153,6 +154,12 @@
 	const examplePath = $derived(
 		folder ? `${folder}/Un dossier/…` : 'Un dossier/…'
 	);
+
+	/** Trois noms suffisent ici : la liste complète est dans l'infobulle. */
+	function names(duplicates: string[]): string {
+		const shown = duplicates.slice(0, 3).join(', ');
+		return duplicates.length > 3 ? `${shown}…` : shown;
+	}
 </script>
 
 <svelte:window ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
@@ -278,7 +285,45 @@
 	</div>
 {/if}
 
-{#if uploads.items.length > 0}
+{#if uploads.summary}
+	{@const summary = uploads.summary}
+	<div class="uploads" role="status">
+		<div
+			class="upload"
+			data-state={summary.failed > 0 ? 'failed' : summary.added === 0 && summary.exists > 0 ? 'exists' : 'done'}
+		>
+			<div class="upload-head">
+				<span class="upload-name">{t('upload.summaryTitle')}</span>
+				<button
+					class="upload-close"
+					type="button"
+					aria-label={t('common.dismiss')}
+					onclick={dismissSummary}
+				>
+					×
+				</button>
+			</div>
+			<span class="upload-state">
+				{#if summary.added > 0}
+					{t('upload.sumAdded', { count: summary.added })}
+				{/if}
+				{#if summary.exists > 0}
+					{#if summary.added > 0} · {/if}
+					{t('upload.sumExists', { count: summary.exists })}
+				{/if}
+				{#if summary.failed > 0}
+					{#if summary.added > 0 || summary.exists > 0} · {/if}
+					{t('upload.sumFailed', { count: summary.failed })}
+				{/if}
+			</span>
+			{#if summary.duplicates.length > 0}
+				<span class="upload-duplicates" title={summary.duplicates.join(', ')}>
+					{t('upload.duplicates', { names: names(summary.duplicates) })}
+				</span>
+			{/if}
+		</div>
+	</div>
+{:else if uploads.items.length > 0}
 	<div class="uploads" role="status">
 		{#each uploads.items as item (item.id)}
 			<div class="upload" data-state={item.state}>

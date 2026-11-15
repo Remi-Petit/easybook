@@ -3,11 +3,7 @@
 [![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/Remi-Petit/easybook)](LICENSE)
 <!-- couverture:start -->
-<<<<<<< HEAD
 [![couverture backend](https://img.shields.io/badge/coverage%20backend-88.5%25-green)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-95.7%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
-=======
-[![couverture backend](https://img.shields.io/badge/coverage%20backend-88.7%25-green)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-95.7%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
->>>>>>> 819bf9f275f30d7aa2fd9b218f083f6cf6317485
 <!-- couverture:end -->
 
 Bibliothèque de livres locale : un dossier `books/`, un backend Rust qui le
@@ -53,8 +49,12 @@ easybook/
   **dossier entier**, n'importe où sur la page : les livres vont dans le dossier
   affiché et l'arborescence du dossier déposé est reproduite. Le serveur écrit
   chaque fichier en flux, dans un temporaire caché renommé une fois complet : un
-  envoi interrompu ne laisse jamais un livre tronqué dans le catalogue. Un nom
-  déjà pris est refusé (409), jamais écrasé silencieusement.
+  envoi interrompu ne laisse jamais un livre tronqué dans le catalogue.
+- Les **doublons** sont pris en compte, pas subis : un fichier que le catalogue
+  connaît déjà n'est même pas envoyé (le serveur refuse de toute façon en 409),
+  un dossier déjà présent reçoit simplement les nouveaux livres, et la fin d'un
+  dépôt affiche un bilan — *« 12 ajoutés · 2 déjà présents »* avec les noms des
+  doublons — au lieu d'une ligne d'erreur par fichier. Rien n'est jamais écrasé.
 - Le dossier est **surveillé** (`notify`) : un fichier ajouté, renommé ou
   supprimé est poussé aux navigateurs par WebSocket. **Pas de sondage.**
 - Un livre est reconnu à son **extension** ; son contenu n'est lu qu'au moment

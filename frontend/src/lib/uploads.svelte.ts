@@ -11,14 +11,20 @@
 // Un dépôt peut être un **dossier entier** : le navigateur en donne alors une
 // arborescence (`webkitGetAsEntry`), qu'on rejoue telle quelle — les dossiers
 // sont créés d'abord, les fichiers suivent.
+//
+// Les **doublons** sont pris en compte des deux côtés : un fichier que le
+// catalogue connaît déjà n'est pas envoyé (le serveur refuserait aussi en 409),
+// et un dossier déjà présent n'est pas une erreur — les livres y sont ajoutés.
+// À la fin d'un dépôt, un résumé remplace la liste ligne à ligne.
 
 import { createFolderUrl, uploadUrl } from './api';
+import { library } from './library.svelte';
 
 /** Fichier accepté : les formats que le serveur sait lire. */
 const ACCEPTED = /\.(epub|cbz|cbr|pdf)$/i;
 
-/** Délai avant de retirer une ligne terminée de la liste. */
-const KEEP_DONE_MS = 4000;
+/** Délai avant de retirer le résumé d'un dépôt terminé. */
+const KEEP_DONE_MS = 8000;
 
 export type UploadState = 'waiting' | 'sending' | 'done' | 'exists' | 'failed';
 
@@ -32,7 +38,22 @@ export type Upload = {
 	detail?: string;
 };
 
-export const uploads = $state({ items: [] as Upload[] });
+/** Bilan du dernier dépôt. */
+export type UploadSummary = {
+	/** Livres écrits. */
+	added: number;
+	/** Livres déjà présents, donc ignorés (envoyés ou non). */
+	exists: number;
+	failed: number;
+	/** Noms des doublons, pour les montrer. */
+	duplicates: string[];
+};
+
+export const uploads = $state({
+	items: [] as Upload[],
+	/** Rempli quand un dépôt se termine ; `null` pendant l'envoi. */
+	summary: null as UploadSummary | null
+});
 
 /** Un fichier à déposer, avec le dossier (relatif) qui le reçoit. */
 export type Deposit = { folder: string; file: File };
@@ -41,6 +62,11 @@ let sequence = 0;
 /** Ce qui reste à envoyer (les `File` ne sont pas dans l'état réactif). */
 const queue: { item: Upload; file: File; folder: string }[] = [];
 let sending = false;
+
+/** Ce qui reste à traiter dans le dépôt en cours. */
+let pending = 0;
+/** Compteurs du dépôt en cours, remis à zéro quand il commence. */
+let counts: UploadSummary = { added: 0, exists: 0, failed: 0, duplicates: [] };
 
 /** Le fichier a-t-il un nom de livre ? (pure, testée) */
 export function accepts(name: string): boolean {
@@ -61,6 +87,23 @@ export function depositFolder(base: string, fullPath: string): string {
 	return [base, ...dirs].filter(Boolean).join('/');
 }
 
+/** Chemin relatif d'un livre, tel que le catalogue le nomme. (pure, testée) */
+export function bookRel(folder: string, name: string): string {
+	return folder ? `${folder}/${name}` : name;
+}
+
+/**
+ * Le catalogue connaît-il déjà ce livre ?
+ *
+ * Évite un aller-retour : un fichier déjà présent n'est pas envoyé du tout. Le
+ * serveur refuse de toute façon en 409 (c'est le filet de sécurité si le
+ * catalogue n'était pas encore chargé).
+ */
+export function known(folder: string, name: string): boolean {
+	const rel = bookRel(folder, name);
+	return library.books.some((book) => book.rel === rel);
+}
+
 /**
  * Met des fichiers en file d'attente pour un dossier (`""` = racine).
  *
@@ -73,12 +116,27 @@ export function enqueue(files: File[], folder: string): number {
 
 /** Même chose, mais chaque fichier porte son propre dossier (dossier déposé). */
 export function enqueueDropped(deposits: Deposit[]): number {
+	// Un nouveau dépôt remplace le bilan du précédent.
+	if (pending === 0) {
+		counts = { added: 0, exists: 0, failed: 0, duplicates: [] };
+		uploads.summary = null;
+		uploads.items = [];
+	}
+
 	let rejected = 0;
 	for (const { file, folder } of deposits) {
 		if (!accepts(file.name)) {
 			rejected += 1;
 			continue;
 		}
+		// Déjà dans le catalogue : rien à envoyer, mais à annoncer.
+		if (known(folder, file.name)) {
+			counts.exists += 1;
+			counts.duplicates.push(file.name);
+			continue;
+		}
+
+		pending += 1;
 		uploads.items = [
 			...uploads.items,
 			{ id: (sequence += 1), name: file.name, state: 'waiting', progress: 0 }
@@ -89,6 +147,8 @@ export function enqueueDropped(deposits: Deposit[]): number {
 		queue.push({ item, file, folder });
 	}
 
+	// Que des doublons (ou des refus) : le dépôt est déjà fini.
+	if (pending === 0) finishBatch();
 	pump();
 	return rejected;
 }
@@ -200,9 +260,18 @@ function pump(): void {
 
 	request.onload = () => {
 		next.item.progress = 1;
-		next.item.state = request.status === 201 ? 'done' : request.status === 409 ? 'exists' : 'failed';
-		if (next.item.state === 'failed') {
+		if (request.status === 201) {
+			next.item.state = 'done';
+			counts.added += 1;
+		} else if (request.status === 409) {
+			// Arrivé entre-temps (autre onglet, autre poste) : c'est un doublon aussi.
+			next.item.state = 'exists';
+			counts.exists += 1;
+			counts.duplicates.push(next.file.name);
+		} else {
+			next.item.state = 'failed';
 			next.item.detail = `${request.status} ${request.responseText}`.trim();
+			counts.failed += 1;
 		}
 		finish();
 	};
@@ -210,12 +279,14 @@ function pump(): void {
 	request.onerror = () => {
 		next.item.state = 'failed';
 		next.item.detail = 'réseau';
+		counts.failed += 1;
 		finish();
 	};
 
 	request.onabort = () => {
 		next.item.state = 'failed';
 		next.item.detail = 'interrompu';
+		counts.failed += 1;
 		finish();
 	};
 
@@ -224,17 +295,38 @@ function pump(): void {
 
 function finish(): void {
 	sending = false;
-	// Les lignes terminées s'effacent après un moment : le résultat du dernier
-	// envoi reste lisible, les vingt précédents n'encombrent pas l'écran.
-	for (const item of uploads.items) {
-		if (item.state === 'done' || item.state === 'exists' || item.state === 'failed') {
-			setTimeout(() => dismiss(item.id), KEEP_DONE_MS);
-		}
-	}
+	pending -= 1;
+	if (pending === 0) finishBatch();
 	pump();
 }
 
-/** Retire une ligne de la liste. */
+/**
+ * Clôt le dépôt : le détail ligne à ligne laisse la place à un bilan.
+ *
+ * Un dépôt de trente livres où trois existaient déjà ne doit pas afficher
+ * trente lignes dont trois en rouge : les doublons ne sont pas des échecs.
+ */
+function finishBatch(): void {
+	uploads.summary = {
+		added: counts.added,
+		exists: counts.exists,
+		failed: counts.failed,
+		duplicates: [...counts.duplicates]
+	};
+	uploads.items = [];
+
+	setTimeout(() => {
+		// Un nouveau dépôt a pu démarrer entre-temps : on ne l'efface pas.
+		if (pending === 0) uploads.summary = null;
+	}, KEEP_DONE_MS);
+}
+
+/** Ferme le bilan du dernier dépôt. */
+export function dismissSummary(): void {
+	uploads.summary = null;
+}
+
+/** Retire une ligne de la liste (envoi en cours). */
 export function dismiss(id: number): void {
 	uploads.items = uploads.items.filter((item) => item.id !== id);
 }

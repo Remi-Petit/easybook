@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { accepts, depositFolder } from './uploads.svelte';
+import type { BookInfo } from './api';
+import { library } from './library.svelte';
+import { accepts, bookRel, depositFolder, known } from './uploads.svelte';
 
 describe('accepts', () => {
 	it('accepte les quatre formats lus par le serveur', () => {
@@ -42,5 +44,38 @@ describe('depositFolder', () => {
 
 	it('ignore les segments vides', () => {
 		expect(depositFolder('mangas', '//Fullmetal///T01.cbz')).toBe('mangas/Fullmetal');
+	});
+});
+
+describe('doublons', () => {
+	function book(rel: string): BookInfo {
+		return {
+			rel,
+			name: rel.split('/').pop() ?? rel,
+			folder: rel.includes('/') ? rel.split('/')[0] : '',
+			format: 'cbz',
+			readable: true,
+			size: 1024,
+			modified: 1,
+			pages: 10,
+			title: rel
+		};
+	}
+
+	it('nomme un livre comme le catalogue', () => {
+		expect(bookRel('mangas', 'T1.cbz')).toBe('mangas/T1.cbz');
+		expect(bookRel('', 'T1.cbz')).toBe('T1.cbz');
+	});
+
+	it('reconnaît un livre déjà présent, dans le bon dossier', () => {
+		library.books = [book('mangas/T1.cbz'), book('T2.cbz')];
+
+		expect(known('mangas', 'T1.cbz')).toBe(true);
+		expect(known('', 'T2.cbz')).toBe(true);
+		// Même nom, autre dossier : c'est un autre livre.
+		expect(known('mangas', 'T2.cbz')).toBe(false);
+		expect(known('mangas', 'T9.cbz')).toBe(false);
+
+		library.books = [];
 	});
 });

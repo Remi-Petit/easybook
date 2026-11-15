@@ -578,6 +578,15 @@ code {
 	color: var(--muted);
 }
 
+/* Bilan d'un dépôt : les doublons sont nommés, pas comptés deux fois. */
+.upload-duplicates {
+	color: var(--muted);
+	font-size: 11.5px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .upload[data-state='done'] .upload-bar span {
 	background: #5cc98a;
 }
