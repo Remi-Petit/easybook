@@ -82,6 +82,15 @@ export const booksUrl = () => `${apiBase()}/api/books`;
 export const bookUrl = (rel: string) => apiUrl('/api/book', { path: rel });
 
 /**
+ * Version de l'extraction des couvertures.
+ *
+ * À incrémenter quand le backend change la façon de choisir l'image : les URL
+ * déjà servies `immutable` par le navigateur ne seraient sinon jamais
+ * redemandées. Fait aussi partie de la clé du cache mémoire du backend.
+ */
+const COVER_REVISION = 2;
+
+/**
  * Couverture d'un livre (vignette JPEG produite par le backend).
  *
  * La date de modification du fichier est recopiée dans l'URL : elle sert de
@@ -89,7 +98,7 @@ export const bookUrl = (rel: string) => apiUrl('/api/book', { path: rel });
  * remplacé change de date, donc d'URL.
  */
 export function coverUrl(rel: string, modified?: number | null): string {
-	const params: Record<string, string | number> = { path: rel };
+	const params: Record<string, string | number> = { path: rel, r: COVER_REVISION };
 	if (modified) params.v = modified;
 	return apiUrl('/api/cover', params);
 }

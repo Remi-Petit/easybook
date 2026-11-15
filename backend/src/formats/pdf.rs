@@ -30,26 +30,121 @@ impl BookFormat for Pdf {
     }
 }
 
-/// La plus grande image de la première page, si elle existe.
+/// L'image de la première page, si elle existe.
+///
+/// C'est **la première image dessinée** par le flux de contenu, pas la plus
+/// grosse : une page de garde peut contenir une grande illustration de fond et
+/// une vignette de couverture, ou une planche plein format plus légère que
+/// l'image décorative. L'ordre du flux est le seul qui dise ce que le lecteur
+/// voit d'abord.
 fn cover(path: &Path) -> Option<Vec<u8>> {
     let document = Document::load(path).ok()?;
     let page = *document.get_pages().values().next()?;
+    let resources = page_resources(&document, page);
 
-    // Les ressources d'une page sont soit un dictionnaire direct, soit des
-    // références héritées du nœud parent : `get_page_resources` rend les deux.
-    let (resources, inherited) = document.get_page_resources(page).ok()?;
-
-    let mut best: Option<(u64, Vec<u8>)> = None;
-    if let Some(resources) = resources {
-        collect_images(&document, resources, &mut best, 0);
-    }
-    for id in inherited {
-        if let Ok(resources) = document.get_dictionary(id) {
-            collect_images(&document, resources, &mut best, 0);
+    // 1. Suivre le dessin : `Do` dans l'ordre, en descendant dans les formulaires
+    //    (`Form XObject`) qui encapsulent la planche.
+    if let Ok(content) = document.get_page_content(page) {
+        for name in drawn_names(&content) {
+            if let Some(bytes) = image_named(&document, &resources, &name, 0) {
+                return Some(bytes);
+            }
         }
     }
 
+    // 2. Repli : la plus grande image de la page (flux illisible ou inhabituel).
+    let mut best: Option<(u64, Vec<u8>)> = None;
+    for resources in &resources {
+        collect_images(&document, resources, &mut best, 0);
+    }
     best.map(|(_, bytes)| bytes)
+}
+
+/// Dictionnaires de ressources d'une page : le direct, puis les hérités.
+fn page_resources(document: &Document, page: lopdf::ObjectId) -> Vec<&Dictionary> {
+    let Ok((direct, inherited)) = document.get_page_resources(page) else {
+        return Vec::new();
+    };
+
+    let mut resources: Vec<&Dictionary> = Vec::new();
+    if let Some(direct) = direct {
+        resources.push(direct);
+    }
+    for id in inherited {
+        if let Ok(dict) = document.get_dictionary(id) {
+            resources.push(dict);
+        }
+    }
+    resources
+}
+
+/// Noms des `XObject` dessinés par un flux de contenu, **dans l'ordre**.
+///
+/// Un appel se lit `/<nom> Do` : on retient le jeton qui précède `Do`. Les
+/// opérateurs sont dans le flux décompressé, que `get_page_content` rend déjà
+/// lisible.
+fn drawn_names(content: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(content);
+    let mut names = Vec::new();
+    let mut previous: Option<&str> = None;
+
+    for token in text.split_whitespace() {
+        if token == "Do"
+            && let Some(name) = previous
+            && let Some(name) = name.strip_prefix('/')
+            && !name.is_empty()
+        {
+            names.push(name.to_string());
+        }
+        previous = Some(token);
+    }
+
+    names
+}
+
+/// Image portant ce nom dans les ressources, en descendant dans les formulaires.
+fn image_named(
+    document: &Document,
+    resources: &[&Dictionary],
+    name: &str,
+    depth: usize,
+) -> Option<Vec<u8>> {
+    if depth > 3 {
+        return None;
+    }
+
+    for resources in resources {
+        let Some(xobjects) = dictionary(document, resources, b"XObject") else {
+            continue;
+        };
+        let Ok(object) = xobjects.get(name.as_bytes()) else {
+            continue;
+        };
+        let Ok(id) = object.as_reference() else {
+            continue;
+        };
+        let Ok(Object::Stream(stream)) = document.get_object(id) else {
+            continue;
+        };
+
+        if is_image(stream) {
+            return image_bytes(stream);
+        }
+
+        // `Form XObject` : son propre flux dessine ses images.
+        if is_subtype(stream, b"Form")
+            && let Some(content) = decode_filters(stream)
+            && let Some(nested) = dictionary(document, &stream.dict, b"Resources")
+        {
+            for nested_name in drawn_names(&content) {
+                if let Some(bytes) = image_named(document, &[nested], &nested_name, depth + 1) {
+                    return Some(bytes);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// Parcourt les `XObject` d'un dictionnaire de ressources.
@@ -176,8 +271,13 @@ fn image_bytes(stream: &Stream) -> Option<Vec<u8>> {
 
 /// Applique les filtres d'un flux dans l'ordre, jusqu'à rencontrer un encodage
 /// d'image (qu'on ne décode pas : `image` s'en charge) ou un filtre inconnu.
+///
+/// Un flux **sans** `/Filter` (contenu d'un `Form XObject`, par exemple) est
+/// rendu tel quel.
 fn decode_filters(stream: &Stream) -> Option<Vec<u8>> {
-    let filters = stream.filters().ok()?;
+    let Ok(filters) = stream.filters() else {
+        return Some(stream.content.clone());
+    };
     let mut data = stream.content.clone();
 
     for filter in filters {
@@ -319,6 +419,62 @@ pub(crate) mod tests {
         assert_eq!(cover, jpeg, "le JPEG embarqué est rendu tel quel");
     }
 
+    /// Une page de garde peut dessiner une petite vignette avant une grande
+    /// illustration : c'est la **première** qui est la couverture.
+    #[test]
+    fn the_first_drawn_image_wins_over_a_larger_one() {
+        let first = jpeg(32, 48);
+        let later = jpeg(200, 300);
+
+        let content = b"q 32 0 0 48 0 0 cm /First Do Q q 200 0 0 300 0 0 cm /Later Do Q";
+        let pdf = assemble(vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
+              /Resources << /XObject << /First 4 0 R /Later 5 0 R >> >> /Contents 6 0 R >>"
+                .to_vec(),
+            image_object(&first, 32, 48),
+            image_object(&later, 200, 300),
+            content_object(content),
+        ]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("garde.pdf");
+        std::fs::write(&path, pdf).unwrap();
+
+        assert_eq!(PDF.cover(&path).unwrap(), first);
+    }
+
+    /// InDesign encapsule la planche dans un `Form XObject` : la suivre dans
+    /// l'ordre de dessin donne toujours la bonne image.
+    #[test]
+    fn follows_drawing_order_inside_form_xobjects() {
+        let page_image = jpeg(80, 120);
+        let decoy = jpeg(300, 400);
+
+        let pdf = assemble(vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
+              /Resources << /XObject << /Fm 4 0 R /Decoy 6 0 R >> >> /Contents 7 0 R >>"
+                .to_vec(),
+            // 4 : le formulaire, qui dessine `Page` (5) dans ses ressources.
+            form_object(
+                b"q 80 0 0 120 0 0 cm /Page Do Q",
+                b"<< /XObject << /Page 5 0 R >> >>",
+            ),
+            image_object(&page_image, 80, 120),
+            image_object(&decoy, 300, 400),
+            content_object(b"q /Fm Do Q q /Decoy Do Q"),
+        ]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("form.pdf");
+        std::fs::write(&path, pdf).unwrap();
+
+        assert_eq!(PDF.cover(&path).unwrap(), page_image);
+    }
+
     #[test]
     fn a_text_only_pdf_has_no_cover() {
         let dir = tempfile::tempdir().unwrap();
@@ -330,5 +486,65 @@ pub(crate) mod tests {
                     trailer\n<< /Size 4 /Root 1 0 R >>\n%%EOF\n";
         std::fs::write(&path, pdf).unwrap();
         assert!(PDF.cover(&path).is_none());
+    }
+
+    /// Assemble des objets PDF (1..n) avec une table `xref` juste.
+    fn assemble(objects: Vec<Vec<u8>>) -> Vec<u8> {
+        let mut out: Vec<u8> = b"%PDF-1.4\n".to_vec();
+        let mut offsets: Vec<usize> = Vec::new();
+
+        for (index, body) in objects.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
+            out.extend_from_slice(body);
+            out.extend_from_slice(b"\nendobj\n");
+        }
+
+        let xref = out.len();
+        out.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+        );
+        for offset in &offsets {
+            out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        out
+    }
+
+    fn image_object(jpeg: &[u8], width: u32, height: u32) -> Vec<u8> {
+        let mut body = format!(
+            "<< /Type /XObject /Subtype /Image /Width {width} /Height {height} \
+             /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {} >>\nstream\n",
+            jpeg.len()
+        )
+        .into_bytes();
+        body.extend_from_slice(jpeg);
+        body.extend_from_slice(b"\nendstream");
+        body
+    }
+
+    fn content_object(content: &[u8]) -> Vec<u8> {
+        let mut body = format!("<< /Length {} >>\nstream\n", content.len()).into_bytes();
+        body.extend_from_slice(content);
+        body.extend_from_slice(b"\nendstream");
+        body
+    }
+
+    fn form_object(content: &[u8], resources: &[u8]) -> Vec<u8> {
+        let mut body = format!(
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 612 792] /Resources {} /Length {} >>\nstream\n",
+            String::from_utf8_lossy(resources),
+            content.len()
+        )
+        .into_bytes();
+        body.extend_from_slice(content);
+        body.extend_from_slice(b"\nendstream");
+        body
     }
 }

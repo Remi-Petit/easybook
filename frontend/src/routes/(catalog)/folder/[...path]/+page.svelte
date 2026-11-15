@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import BookCard from '$lib/components/BookCard.svelte';
 	import FolderCard from '$lib/components/FolderCard.svelte';
-	import { childBooks, childFolders, folderUrl, parentOf, previewBook, segments } from '$lib/catalog';
+	import { level, folderUrl, parentOf, previewBook, segments } from '$lib/catalog';
 	import { library } from '$lib/library.svelte';
 
 	const rel = $derived(page.params.path ?? '');
@@ -11,18 +11,12 @@
 	// `books` et `folders` arrivent triés naturellement : filtrer suffit.
 	const folder = $derived(library.folders.find((entry) => entry.rel === rel));
 
-	// Un dossier de premier niveau est une **catégorie** : sa page montre tous ses
-	// livres, y compris ceux rangés dans ses sous-dossiers. C'est la vue « livres
-	// associés » demandée depuis la barre latérale. Un sous-dossier garde, lui, la
-	// présentation par niveau (ses sous-dossiers puis ses livres).
-	const isCategory = $derived(rel !== '' && !rel.includes('/'));
-
-	const subfolders = $derived(isCategory ? [] : childFolders(library.folders, rel));
-	const books = $derived(
-		isCategory
-			? library.books.filter((book) => book.rel.startsWith(`${rel}/`))
-			: childBooks(library.books, rel)
-	);
+	// Un niveau du catalogue : ses sous-dossiers (présentés comme des tuiles)
+	// puis ses livres. C'est récursif : un dossier dans un dossier se présente
+	// de la même façon.
+	const current = $derived(level(library.folders, library.books, rel));
+	const subfolders = $derived(current.folders);
+	const books = $derived(current.books);
 	const crumbs = $derived(segments(rel));
 	const parent = $derived(parentOf(rel));
 

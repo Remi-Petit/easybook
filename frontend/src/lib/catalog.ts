@@ -29,6 +29,25 @@ export function childBooks(books: BookInfo[], parent: string): BookInfo[] {
 }
 
 /**
+ * Contenu d'un niveau du catalogue : ses sous-dossiers, puis ses livres.
+ *
+ * C'est la règle d'affichage de la page d'un dossier — et elle est récursive,
+ * puisqu'un sous-dossier est lui-même un dossier : on rappelle `level` avec son
+ * `rel` pour obtenir son contenu.
+ *
+ * Un sous-dossier est présenté comme **un seul élément** (sa première
+ * couverture, son nom, son nombre de livres), pas comme ses livres : c'est ce
+ * qui permet de replier une série dans le catalogue.
+ */
+export function level(
+	folders: FolderInfo[],
+	books: BookInfo[],
+	parent: string
+): { folders: FolderInfo[]; books: BookInfo[] } {
+	return { folders: childFolders(folders, parent), books: childBooks(books, parent) };
+}
+
+/**
  * Livre dont la couverture représente un dossier : le premier, dans l'ordre
  * naturel du catalogue, qui a réellement une couverture.
  *

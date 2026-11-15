@@ -26,7 +26,6 @@
 		{:else}
 			<span class="fallback" aria-hidden="true">dossier</span>
 		{/if}
-		<span class="cover-tag">dossier</span>
 	</span>
 
 	<span class="body">

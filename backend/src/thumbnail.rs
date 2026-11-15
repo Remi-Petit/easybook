@@ -29,9 +29,10 @@ struct Cached {
 
 /// Couverture d'un livre, en JPEG, à la taille d'une vignette.
 ///
-/// `version` (la date de modification du fichier) fait partie de la clé : un
-/// livre remplacé ne réaffiche pas l'ancienne image.
-pub fn cover(path: &Path, rel: &str, version: u64) -> Option<Vec<u8>> {
+/// `version` fait partie de la clé du cache : la date de modification du fichier
+/// (un livre remplacé change d'image) et, le cas échéant, la révision demandée
+/// par l'interface.
+pub fn cover(path: &Path, rel: &str, version: &str) -> Option<Vec<u8>> {
     let key = format!("{rel}|{version}");
     if let Some(bytes) = lookup(&key) {
         return Some(bytes);

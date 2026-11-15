@@ -238,6 +238,11 @@ struct CoverQuery {
     /// Recopiée dans l'URL, elle rend la réponse « immuable » côté navigateur.
     #[serde(default)]
     v: Option<String>,
+    /// Révision de l'extraction (voir `COVER_REVISION` dans l'interface) : elle
+    /// n'a de sens que pour le cache, et permet de renouveler les images quand
+    /// la façon de les choisir change.
+    #[serde(default)]
+    r: Option<String>,
 }
 
 /// `GET /api/cover?path=&v=` — couverture d'un livre, en vignette JPEG.
@@ -258,7 +263,14 @@ async fn get_cover(State(state): State<AppState>, Query(query): Query<CoverQuery
         .map_or(0, |elapsed| elapsed.as_secs());
 
     let rel = query.path.clone();
-    let cover = tokio::task::spawn_blocking(move || thumbnail::cover(&path, &rel, version)).await;
+    // Clé du cache mémoire : la date du fichier, plus la révision demandée par
+    // l'interface (une extraction qui change doit produire d'autres images).
+    let cache_key = match &query.r {
+        Some(revision) if !revision.is_empty() => format!("{version}|{revision}"),
+        _ => version.to_string(),
+    };
+    let cover =
+        tokio::task::spawn_blocking(move || thumbnail::cover(&path, &rel, &cache_key)).await;
 
     let announced = version.to_string();
     match cover {

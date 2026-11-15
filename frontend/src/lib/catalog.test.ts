@@ -4,6 +4,7 @@ import {
 	childBooks,
 	childFolders,
 	folderUrl,
+	level,
 	parentOf,
 	previewBook,
 	segments
@@ -69,6 +70,50 @@ describe('childFolders / childBooks', () => {
 			'mangas/T2.cbz',
 			'mangas/T10.cbz'
 		]);
+	});
+});
+
+describe('level', () => {
+	const folders = [
+		folder('mangas', 4),
+		folder('mangas/Chainsaw Man', 3),
+		folder('mangas/Chainsaw Man/Extras', 1),
+		folder('électronique', 1)
+	];
+	const books = [
+		book('mangas/T0.cbz'),
+		book('mangas/Chainsaw Man/T1.cbz'),
+		book('mangas/Chainsaw Man/T2.cbz'),
+		book('mangas/Chainsaw Man/Extras/artbook.pdf', 'pdf'),
+		book('électronique/guide.pdf', 'pdf')
+	];
+
+	it('présente un sous-dossier comme un élément, pas comme ses livres', () => {
+		const mangas = level(folders, books, 'mangas');
+		expect(mangas.folders.map((f) => f.rel)).toEqual(['mangas/Chainsaw Man']);
+		expect(mangas.folders[0].count).toBe(3);
+		expect(mangas.books.map((b) => b.rel)).toEqual(['mangas/T0.cbz']);
+	});
+
+	it('est récursif : on descend dans le dossier de la même façon', () => {
+		const series = level(folders, books, 'mangas/Chainsaw Man');
+		expect(series.folders.map((f) => f.rel)).toEqual(['mangas/Chainsaw Man/Extras']);
+		expect(series.books.map((b) => b.rel)).toEqual([
+			'mangas/Chainsaw Man/T1.cbz',
+			'mangas/Chainsaw Man/T2.cbz'
+		]);
+
+		const extras = level(folders, books, 'mangas/Chainsaw Man/Extras');
+		expect(extras.folders).toEqual([]);
+		expect(extras.books.map((b) => b.rel)).toEqual([
+			'mangas/Chainsaw Man/Extras/artbook.pdf'
+		]);
+	});
+
+	it('ne mélange pas les livres des autres catégories', () => {
+		const electronics = level(folders, books, 'électronique');
+		expect(electronics.books.map((b) => b.rel)).toEqual(['électronique/guide.pdf']);
+		expect(electronics.folders).toEqual([]);
 	});
 });
 

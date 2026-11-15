@@ -382,30 +382,8 @@ code {
 	text-transform: uppercase;
 }
 
-/* Dossier : la couverture de son premier livre, assombrie pour que le repère
-   reste lisible. */
-.card.folder .cover::after {
-	content: '';
-	position: absolute;
-	inset: 0;
-	background: linear-gradient(180deg, rgba(9, 9, 13, 0) 45%, rgba(9, 9, 13, 0.62));
-	pointer-events: none;
-}
-
-.cover-tag {
-	position: absolute;
-	top: 8px;
-	left: 8px;
-	padding: 2px 7px;
-	border-radius: 5px;
-	background: rgba(9, 9, 13, 0.72);
-	color: var(--accent);
-	font-size: 10px;
-	font-weight: 600;
-	letter-spacing: 0.09em;
-	text-transform: uppercase;
-	backdrop-filter: blur(4px);
-}
+/* Dossier : la couverture de son premier livre, rien de plus (le nom et le
+   nombre de livres sont sous l'image). */
 
 .body {
 	display: flex;

@@ -44,11 +44,14 @@ easybook/
 - **Un dossier de premier niveau est une catégorie** (`books/mangas`,
   `books/électronique`…). La barre latérale les liste sous « Bibliothèque »,
   avec le nombre de livres de chacune ; cliquer ouvre la catégorie
-  (`/folder/<catégorie>`), qui montre **tous ses livres**, y compris ceux rangés
-  dans ses sous-dossiers, avec un fil d'Ariane.
+  (`/folder/<catégorie>`), avec un fil d'Ariane.
+- **Un sous-dossier s'affiche comme un dossier** : la couverture du premier livre
+  qu'il contient, son nom, et son nombre de livres — à **tous les niveaux**. Il
+  ne contient que ce qu'il contient réellement (ses livres et ses propres
+  sous-dossiers), et se clique pour l'ouvrir : la navigation est récursive.
 - La **page d'accueil** montre la totalité des livres, toutes catégories
   confondues (avec la recherche). Le lecteur s'ouvre en plein écran, et son lien
-  de retour ramène à la catégorie du livre.
+  de retour ramène au dossier du livre.
 
 ## Formats
 
@@ -57,7 +60,7 @@ easybook/
 | `.epub` | ✅ | celle déclarée par le livre (`properties="cover-image"` ou `<meta name="cover">`) | sommaire (`spine` + `toc.ncx` / navigation EPUB 3), chapitres affichés dans l'interface ; images, CSS et polices servis par l'API |
 | `.cbz` | ✅ | première page de l'archive | archive ZIP d'images, pages triées naturellement (`p2` avant `p10`) |
 | `.cbr` | ✅ | première page de l'archive | archive RAR, lue avec unrar (compilé avec le projet) |
-| `.pdf` | ✅ | plus grande image de la première page | le lecteur PDF du navigateur |
+| `.pdf` | ✅ | première image **dessinée** sur la page 1 | le lecteur PDF du navigateur |
 
 Le **conteneur** d'une bande dessinée est détecté par les octets du fichier, pas
 par son extension : beaucoup de `.cbr` distribués en ligne sont des ZIP
@@ -67,6 +70,10 @@ Les couvertures sont **réduites** (400 px de large, JPEG) et gardées en mémoi
 le backend : le catalogue affiche des dizaines de vignettes sans télécharger les
 planches d'origine, qui pèsent plusieurs mégaoctets chacune. Une couverture
 absente n'est pas une erreur — l'interface montre alors un repli avec le format.
+
+L'URL d'une couverture porte la date du fichier (une réponse « immuable » côté
+navigateur) **et** une révision d'extraction (`COVER_REVISION`) : sans elle, un
+changement dans la façon de choisir l'image ne serait jamais réaffiché.
 
 ## Ajouter un format
 
@@ -79,7 +86,7 @@ formats/
 ├── cbz.rs    # bande dessinée (délègue à comic.rs)
 ├── cbr.rs    # bande dessinée RAR (délègue à comic.rs)
 ├── comic.rs  # archives de planches : ZIP ou RAR, choisi par les octets
-└── pdf.rs    # couverture (image de la page 1)
+└── pdf.rs    # couverture (première image dessinée de la page 1)
 ```
 
 1. un fichier qui implémente `BookFormat` (`outline`, `pages`, `cover`,
@@ -147,20 +154,22 @@ puis à chaque changement.
 ## Tests
 
 ```bash
-cd backend  && cargo test        # unitaires + intégration
-cd frontend && bun run test      # logique du catalogue (Vitest)
+cd backend  && cargo test        # 34 unitaires + 10 d'intégration
+cd frontend && bun run test      # logique du catalogue (11 tests Vitest)
 ```
 
 - **Unitaires (backend)** — un module par sujet : tri naturel et détection de
   format, scan du dossier, réécriture HTML/CSS, EPUB (sommaire, chapitres,
   couverture, ressources), CBZ/CBR (pages, ordre, ZIP nommé `.cbr`), PDF
-  (extraction de l'image, PDF sans image), vignettes, chemins sûrs.
+  (première image dessinée, ordre des `Do`, formulaires imbriqués, PDF sans
+  image), vignettes, chemins sûrs.
 - **Intégration (backend)** — `tests/api.rs` monte le **vrai routeur** sur une
   bibliothèque temporaire (EPUB + CBZ + PDF fabriqués) et vérifie le contrat
   HTTP : catalogue, fiches, couvertures des quatre formats, chapitres, pages,
   cache, refus de traversée.
-- **Frontend** — `catalog.ts` (parent, enfants, aperçu d'un dossier, fil
-  d'Ariane, URL).
+- **Frontend** — `catalog.ts` : parent, enfants, `level()` (les sous-dossiers
+  apparaissent comme des dossiers, à chaque niveau, sans mélange entre
+  catégories), aperçu, fil d'Ariane, URL.
 - **E2E navigateur** : non installés ici — ils demanderaient Chromium + les deux
   process lancés, pour vérifier ce que les tests d'intégration couvrent déjà
   côté API. L'interface a été vérifiée manuellement (catalogue, dossiers,
