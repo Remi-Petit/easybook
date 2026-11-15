@@ -1,10 +1,13 @@
+# Ce qui n'entre pas dans le contexte de construction de l'image.
 **/node_modules
 **/target
 frontend/build
 frontend/.svelte-kit
+frontend/coverage
+test-results
 .git
 .vscode
 
-# Les livres ne sont pas nécessaires à la construction des images : ils sont
+# Les livres ne sont pas nécessaires à la construction de l'image : ils sont
 # montés au lancement.
 books/*

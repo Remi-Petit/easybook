@@ -1,43 +1,38 @@
-# easybook — deux process, deux ports.
-#
-#   api : Rust (axum) — scan de books/, lecture des livres, WebSocket.
-#   web : SvelteKit (Node) — l'interface.
-#
-# L'interface appelle l'API **en direct** (CORS ouvert côté API) : elle a donc
-# besoin de connaître son adresse publique, d'où `PUBLIC_EASYBOOK_API`.
+# easybook — **un** conteneur, **un** port.
 #
 #   docker compose up --build
-#   → interface : http://localhost:5100
-#   → API       : http://localhost:8091/api/books
+#   → interface + API : http://localhost:5100
+#
+# L'image (`Dockerfile`, racine) contient les trois pièces : nginx, l'interface
+# SvelteKit et l'API Rust. nginx est le seul point d'entrée ; il sert les
+# fichiers compilés du frontend, relaie `/api` et `/ws` vers l'API, et le reste
+# vers le serveur SvelteKit.
+#
+# Ce fichier est celui du **développement** : il construit l'image depuis les
+# sources. Pour un déploiement, partir de `docker/docker-compose.yml` (image
+# publiée sur GHCR, rien à compiler).
 
 services:
-  api:
+  easybook:
     build:
       context: .
-      dockerfile: backend/Dockerfile
-    image: easybook-api:dev
+      dockerfile: Dockerfile
+    image: easybook:dev
+    # Compose construit et ne cherche jamais `easybook:dev` sur un registre.
     pull_policy: build
-    container_name: easybook-api
+    container_name: easybook
     restart: unless-stopped
     ports:
-      - "8091:8091"
+      # Seul port publié : nginx. L'API et le serveur SvelteKit écoutent sur la
+      # boucle locale du conteneur et ne sont pas joignables de l'extérieur
+      # (l'API n'a pas d'authentification).
+      - "5100:8080"
     volumes:
-      # La bibliothèque. En lecture seule pour le moment : le serveur n'écrit
-      # jamais dans ce dossier.
-      - ./books:/books:ro
-
-  web:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    image: easybook-web:dev
-    pull_policy: build
-    container_name: easybook-web
-    restart: unless-stopped
-    depends_on:
-      - api
-    ports:
-      - "5100:3000"
-    environment:
-      # Vue depuis le navigateur : c'est l'adresse publiée de l'API sur l'hôte.
-      PUBLIC_EASYBOOK_API: http://localhost:8091
+      # La bibliothèque : lue **et écrite** (création de catégories, dépôt de
+      # livres depuis l'interface).
+      #
+      # Sous Docker Desktop (Windows/macOS), le système de fichiers de l'hôte ne
+      # remonte aucun événement inotify : l'interface ne se rafraîchit alors pas
+      # toute seule quand un livre est ajouté **depuis l'hôte** (les ajouts faits
+      # dans l'interface, eux, sont diffusés directement).
+      - ./books:/books

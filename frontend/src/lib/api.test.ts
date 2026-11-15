@@ -5,6 +5,7 @@ import {
 	bookUrl,
 	booksUrl,
 	chapterUrl,
+	configuredBase,
 	coverUrl,
 	createFolderUrl,
 	formatBytes,
@@ -29,6 +30,20 @@ describe('adresses de l’API', () => {
 	it('encode les paramètres', () => {
 		expect(apiUrl('/api/book', { path: 'mangas/T1 été.cbz' })).toBe(
 			'http://127.0.0.1:8091/api/book?path=mangas%2FT1+%C3%A9t%C3%A9.cbz'
+		);
+	});
+
+	it('accepte une API sur la même origine', () => {
+		// Dans l'image Docker, nginx sert l'interface **et** l'API : la base est
+		// relative, donc les adresses n'ont pas d'hôte.
+		expect(configuredBase('/', true)).toBe('');
+		expect(configuredBase(' /', true)).toBe('');
+		expect(configuredBase(undefined, true)).toBeNull();
+		// Côté serveur, une base relative désigne le backend local.
+		expect(configuredBase('/', false)).toBe('http://127.0.0.1:8091');
+		// Une adresse complète est reprise telle quelle, sans barre finale.
+		expect(configuredBase('http://api.exemple.fr:8091/', true)).toBe(
+			'http://api.exemple.fr:8091'
 		);
 	});
 

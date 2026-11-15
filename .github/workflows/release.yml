@@ -1,0 +1,106 @@
+name: Release
+
+# Une release = un tag `vX.Y.Z`. Le job `verify` refuse tout tag dont la version
+# ne correspond pas **exactement** à `backend/Cargo.toml` et
+# `frontend/package.json` : les numéros de version ne peuvent pas dériver.
+#
+#   node scripts/bump-version.mjs 0.2.0
+#   git add -A && git commit -m "Release 0.2.0"
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Ce qui est publié : l'image `ghcr.io/<dépôt>` (nginx + interface + API, un seul
+# conteneur), et une release GitHub. Pas de binaire seul : l'application est le
+# conteneur — une API sans son interface ne servirait à rien.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # créer la release GitHub
+  packages: write # pousser l'image sur GHCR
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Vérifier les versions
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: check
+        name: Tag == Cargo.toml == package.json
+        run: |
+          set -euo pipefail
+          # La lecture/vérification des versions vit dans le script (donc
+          # testable en local) : `--check` n'imprime que la version sur stdout.
+          version="$(node scripts/bump-version.mjs --check "${GITHUB_REF_NAME}")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  docker:
+    name: Image Docker
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - name: Connexion à GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Construire et pousser
+        run: |
+          set -euo pipefail
+          # Une seule image (nginx + interface + API) ; GHCR n'accepte que des
+          # minuscules dans le nom du dépôt.
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          version="${{ needs.verify.outputs.version }}"
+          docker buildx build \
+            --push \
+            --file Dockerfile \
+            . \
+            --tag "$image:$version" \
+            --tag "$image:latest" \
+            --cache-from type=gha,scope=easybook \
+            --cache-to type=gha,mode=max,scope=easybook \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.version=$version"
+          echo "Poussé : $image:$version et $image:latest"
+
+  release:
+    name: Release GitHub
+    needs: [verify, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Publier la release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:${VERSION}"
+
+          # Les notes de version s'écrivent à la main dans
+          # `.github/release-notes/<version>.md` : `--generate-notes` liste des
+          # commits, alors qu'on veut raconter ce que la version apporte. Le
+          # fichier est facultatif — sans lui, on retombe sur les notes générées.
+          notes=(--generate-notes)
+          if [ -f ".github/release-notes/${VERSION}.md" ]; then
+            notes=(--notes-file ".github/release-notes/${VERSION}.md")
+          fi
+
+          # Rejouer le workflow sur un tag déjà publié met à jour la release au
+          # lieu d'échouer. (`gh` refuse `--notes` **et** `--notes-file` : le
+          # corps vient donc de l'un ou de l'autre, jamais des deux.)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "easybook ${VERSION}" "${notes[@]}"
+          else
+            gh release create "$TAG" --title "easybook ${VERSION}" "${notes[@]}"
+          fi

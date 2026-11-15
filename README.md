@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/Remi-Petit/easybook)](LICENSE)
+[![image](https://img.shields.io/badge/image-ghcr.io%2Fremi--petit%2Feasybook-blue)](https://github.com/Remi-Petit/easybook/pkgs/container/easybook)
 <!-- couverture:start -->
 [![couverture backend](https://img.shields.io/badge/coverage%20backend-88.7%25-green)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-95.7%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
 <!-- couverture:end -->
@@ -36,7 +37,11 @@ easybook/
 │   ├── src/hooks.server.ts              # langue de la requête + attribut `lang`
 │   ├── src/lib/components/              # Sidebar, BookCard, FolderCard
 │   └── src/lib/reader/                  # EPUB, bande dessinée, PDF
-└── docker-compose.yml
+├── docker/
+│   ├── nginx.conf          # point d'entrée : /api et /ws vers l'API, le reste vers SvelteKit
+│   └── docker-compose.yml  # déploiement (image publiée sur GHCR)
+├── Dockerfile          # **une** image : nginx + interface + API
+└── docker-compose.yml  # développement (construit l'image)
 ```
 
 ## L'idée
@@ -175,13 +180,28 @@ PUBLIC_EASYBOOK_API=http://192.168.1.10:8091 bun run dev
 
 ## Docker
 
+**Un** conteneur, **un** port : nginx sert les fichiers compilés du frontend,
+relaie `/api` et `/ws` vers l'API Rust, et le reste vers le serveur SvelteKit.
+
 ```bash
 docker compose up --build
-# interface : http://localhost:5100
-# API       : http://localhost:8091/api/books
+# interface + API : http://localhost:5100
 ```
 
-`books/` est monté dans le conteneur de l'API (`/books`, via `BOOKS_ROOT`).
+Pour un déploiement, l'image publiée (rien à compiler) :
+
+```bash
+cd docker && docker compose up -d
+# ou, à la main :
+docker run -d --name easybook -p 5100:8080 -v "$PWD/books:/books" \
+  ghcr.io/remi-petit/easybook:latest
+```
+
+`books/` est monté dans le conteneur (`/books`, via `BOOKS_ROOT`) et doit être
+**inscriptible** : l'interface y crée des catégories et y dépose des livres. Sous
+Linux, le conteneur tourne sous l'utilisateur `node` (uid 1000) — le dossier
+monté doit lui appartenir (`chown -R 1000:1000 books`).
+
 L'image de compilation installe `g++` et `make` : `unrar` (CBR) compile ses
 sources C++ avec le projet.
 
@@ -259,10 +279,10 @@ touche que le README ne lance rien.
 | `audit` | `cargo audit` (avis RustSec) — bloquant |
 | `frontend` | `bun run test`, `bun run check`, `bun run build` |
 | `couverture` | calcule les taux et réécrit les badges ci-dessus (uniquement sur `master`) |
-| `trivy` | les **deux images** construites par `docker compose` : CRITICAL bloquant, HIGH en rapport |
+| `trivy` | l'**image unique** construite par `docker compose` : CRITICAL bloquant, HIGH en rapport |
 
-Les images sont construites sans être publiées, avec un cache GHA par image :
-la CI vérifie ce que l'utilisateur lance vraiment, pas seulement les lockfiles.
+L'image est construite sans être publiée, avec un cache GHA : la CI vérifie ce
+que l'utilisateur lance vraiment, pas seulement les lockfiles.
 
 Les badges de couverture ne sont **jamais** saisis à la main : le job les
 réécrit, et ne commite que s'ils ont bougé (`README.md` n'est pas dans les
@@ -304,7 +324,7 @@ Variables d'environnement :
 | `EASYBOOK_CONFIG` | `config.yml` | autre fichier de configuration |
 | `EASYBOOK_HOST` | `127.0.0.1` | interface d'écoute de l'API (`0.0.0.0` en conteneur) |
 | `PORT` | `8091` | port de l'API |
-| `PUBLIC_EASYBOOK_API` (frontend) | `http://<hôte>:8091` | adresse de l'API vue par le navigateur |
+| `PUBLIC_EASYBOOK_API` (frontend) | `http://<hôte>:8091` | adresse de l'API vue par le navigateur — `/` quand c'est le **même serveur** qui sert les deux (cas de l'image Docker) |
 
 ⚠️ L'API n'a **aucune authentification** : elle écoute sur la boucle locale par
 défaut. Publier un port, c'est décider d'exposer la bibliothèque.

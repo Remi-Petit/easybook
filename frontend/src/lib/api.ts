@@ -57,24 +57,53 @@ const DEFAULT_PORT = '8091';
  * machine. À défaut, on vise le port par défaut de l'API sur l'hôte courant.
  */
 export function apiBase(): string {
-	const configured = env.PUBLIC_EASYBOOK_API?.trim();
-	if (configured) return configured.replace(/\/+$/, '');
+	const configured = configuredBase(env.PUBLIC_EASYBOOK_API, browser);
+	if (configured !== null) return configured;
 	if (browser) return `${location.protocol}//${location.hostname}:${DEFAULT_PORT}`;
 	return `http://127.0.0.1:${DEFAULT_PORT}`;
 }
 
+/**
+ * Base déduite de la valeur configurée ; `null` quand rien n'est configuré.
+ *
+ * Une valeur **relative** (`/`) signifie « l'API est servie par le serveur qui
+ * sert déjà l'interface » : c'est le cas de l'image Docker, où nginx prend les
+ * deux en charge. La base vaut alors `''` — les adresses produites sont
+ * relatives (`/api/books`), donc valables quel que soit l'hôte. Côté serveur
+ * (SSR), une base relative désigne le backend local, qui écoute à côté.
+ *
+ * Fonction pure : le contexte est un paramètre, ce qui la rend testable.
+ */
+export function configuredBase(
+	configured: string | undefined,
+	inBrowser: boolean
+): string | null {
+	const value = configured?.trim();
+	if (!value) return null;
+	const trimmed = value.replace(/\/+$/, '');
+	if (/^https?:\/\//i.test(trimmed)) return trimmed;
+	return inBrowser ? trimmed : `http://127.0.0.1:${DEFAULT_PORT}`;
+}
+
 /** Adresse du WebSocket du catalogue. */
 export function wsUrl(): string {
-	return `${apiBase().replace(/^http/, 'ws')}/ws`;
+	const base = apiBase();
+	if (base) return `${base.replace(/^http/, 'ws')}/ws`;
+	// Même origine : le schéma et l'hôte sont ceux de la page.
+	const secure = browser && location.protocol === 'https:';
+	const host = browser ? location.host : `127.0.0.1:${DEFAULT_PORT}`;
+	return `${secure ? 'wss' : 'ws'}://${host}/ws`;
 }
 
 /** Construit une URL d'API avec ses paramètres. */
 export function apiUrl(path: string, params: Record<string, string | number>): string {
-	const url = new URL(path, `${apiBase()}/`);
+	// Pas de `new URL` : la base peut être **relative** (`''`), ce qu'une URL de
+	// base doit être absolue pour accepter.
+	const query = new URLSearchParams();
 	for (const [key, value] of Object.entries(params)) {
-		url.searchParams.set(key, String(value));
+		query.set(key, String(value));
 	}
-	return url.toString();
+	return `${apiBase()}${path}?${query}`;
 }
 
 /** Lien interne vers le lecteur (un segment par dossier, encodé). */

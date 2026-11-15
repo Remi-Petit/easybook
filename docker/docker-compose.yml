@@ -1,0 +1,22 @@
+services:
+  easybook:
+    image: ghcr.io/remi-petit/easybook:latest
+    container_name: easybook
+    restart: unless-stopped
+    ports:
+      # Un seul port : nginx sert l'interface **et** relaie l'API (`/api`, `/ws`).
+      # L'API n'a pas d'authentification : elle n'écoute que dans le conteneur.
+      - "5100:8080"
+    volumes:
+      # La bibliothèque : lue **et écrite** (création de catégories, dépôt de
+      # livres depuis l'interface).
+      #
+      # Sous Docker Desktop (Windows/macOS), le système de fichiers de l'hôte ne
+      # remonte aucun événement inotify : l'interface ne se rafraîchit alors pas
+      # toute seule quand un livre est ajouté **depuis l'hôte** (les ajouts faits
+      # dans l'interface, eux, sont diffusés directement).
+      #
+      # Le conteneur tourne sous l'utilisateur `node` (uid 1000) : sous Linux, ce
+      # dossier doit lui appartenir (`chown -R 1000:1000 books`) pour que le
+      # dépôt de livres fonctionne.
+      - ./books:/books

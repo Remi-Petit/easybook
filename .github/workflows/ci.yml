@@ -15,6 +15,8 @@ on:
       - 'backend/**'
       - 'frontend/**'
       - 'scripts/**'
+      - 'docker/**'
+      - 'Dockerfile'
       - 'docker-compose.yml'
       - '.dockerignore'
       - '.github/workflows/**'
@@ -23,6 +25,8 @@ on:
       - 'backend/**'
       - 'frontend/**'
       - 'scripts/**'
+      - 'docker/**'
+      - 'Dockerfile'
       - 'docker-compose.yml'
       - '.dockerignore'
       - '.github/workflows/**'
@@ -69,8 +73,9 @@ jobs:
             scripts:
               - 'scripts/**'
             docker:
-              - 'backend/Dockerfile'
-              - 'frontend/Dockerfile'
+              - 'Dockerfile'
+              - 'docker/**'
+              - 'scripts/docker-entrypoint.sh'
               - 'docker-compose.yml'
               - '.dockerignore'
               - '.github/workflows/**'
@@ -242,9 +247,12 @@ jobs:
           git commit -m 'docs: badges de couverture' README.md
           git push
 
-  # Sécurité des **images** (Trivy) : ce qui part chez l'utilisateur est le
+  # Sécurité de **l'image** (Trivy) : ce qui part chez l'utilisateur est le
   # conteneur, pas node_modules. Scanner `bun.lock` ferait remonter des avis dans
   # les outils de compilation, qui ne sont jamais livrés.
+  #
+  # Une seule image depuis que nginx, l'interface et l'API vivent dans le même
+  # conteneur : une seule construction, un seul scan.
   #
   # Seuils : **CRITICAL bloque** (avec `--ignore-unfixed` : sans version
   # corrigée, il n'y a rien à faire) ; **HIGH est affiché** sans bloquer, car les
@@ -256,7 +264,7 @@ jobs:
   # 2026-11-03. Version épinglée, image tirée du registre, et aucune action
   # tierce de plus dans le workflow.
   trivy:
-    name: Trivy (images)
+    name: Trivy (image)
     needs: changes
     if: >-
       needs.changes.outputs.backend == 'true' ||
@@ -267,37 +275,29 @@ jobs:
     defaults:
       run:
         working-directory: .
-    strategy:
-      matrix:
-        include:
-          - image: easybook-api:ci
-            dockerfile: backend/Dockerfile
-            scope: api
-          - image: easybook-web:ci
-            dockerfile: frontend/Dockerfile
-            scope: web
+    env:
+      IMAGE: easybook:ci
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
       # Même construction que `docker compose up --build`, **sans publication**.
-      # Un cache par image (`scope`) : les deux ne se marchent pas dessus.
       - name: Construire l'image
         run: |
           docker buildx build \
             --load \
-            --file ${{ matrix.dockerfile }} \
-            --tag ${{ matrix.image }} \
-            --cache-from type=gha,scope=${{ matrix.scope }} \
-            --cache-to type=gha,mode=max,scope=${{ matrix.scope }},ignore-error=true \
+            --file Dockerfile \
+            --tag "$IMAGE" \
+            --cache-from type=gha,scope=easybook \
+            --cache-to type=gha,mode=max,scope=easybook,ignore-error=true \
             .
       - name: CRITICAL (bloquant)
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.76.1 image \
-            --severity CRITICAL --ignore-unfixed --exit-code 1 ${{ matrix.image }}
+            --severity CRITICAL --ignore-unfixed --exit-code 1 "$IMAGE"
       - name: HIGH (rapport, non bloquant)
         if: always()
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.76.1 image \
-            --severity HIGH --ignore-unfixed --exit-code 0 ${{ matrix.image }}
+            --severity HIGH --ignore-unfixed --exit-code 0 "$IMAGE"
