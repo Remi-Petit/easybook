@@ -855,10 +855,23 @@ code {
 	grid-template-rows: 1fr;
 }
 
+/* Mode plein livre : la page touche les bords — ni marge autour de la planche,
+   ni rembourrage autour du texte. */
+.reader[data-chrome='off'] .page-view img {
+	top: 0;
+	width: 100%;
+	height: 100%;
+	border-radius: 0;
+}
+
+.reader[data-chrome='off'] .prose {
+	padding: 0;
+}
+
 /* Une image du livre peut alors dépasser ce que laissait l'en-tête. */
 .reader[data-chrome='off'] .prose img,
 .reader[data-chrome='off'] .prose svg {
-	max-height: calc(100dvh - 40px);
+	max-height: 100dvh;
 }
 
 .reader-head {
