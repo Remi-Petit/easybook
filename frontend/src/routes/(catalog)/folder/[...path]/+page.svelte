@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import AddBooks from '$lib/components/AddBooks.svelte';
 	import BookCard from '$lib/components/BookCard.svelte';
 	import FolderCard from '$lib/components/FolderCard.svelte';
+	import NewFolder from '$lib/components/NewFolder.svelte';
 	import { level, folderUrl, parentOf, previewBook, segments } from '$lib/catalog';
 	import { library } from '$lib/library.svelte';
 	import { t } from '$lib/i18n/state.svelte';
@@ -59,6 +61,12 @@
 			{/if}
 			<code>books/{rel}</code>
 		</p>
+		{#if rel}
+			<div class="intro-actions">
+				<AddBooks folder={rel} />
+				<NewFolder parent={rel} label={t('folder.newSeries')} />
+			</div>
+		{/if}
 	</section>
 
 	{#if missing}

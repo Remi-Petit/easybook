@@ -101,14 +101,28 @@ pub fn epub(dir: &Path) -> PathBuf {
 /// Bande dessinée ZIP à `pages` pages (`page1.jpg`, `page2.jpg`, …).
 pub fn cbz(dir: &Path, name: &str, pages: usize) -> PathBuf {
     let path = dir.join(name);
-    let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
-    for page in 1..=pages {
-        zip.start_file(format!("page{page}.jpg"), SimpleFileOptions::default())
-            .unwrap();
-        zip.write_all(&jpeg(40, 60)).unwrap();
-    }
-    zip.finish().unwrap();
+    fs::write(&path, cbz_bytes(name, pages)).unwrap();
     path
+}
+
+/// Le contenu d'une bande dessinée de test, sans passer par le disque.
+///
+/// Sert au dépôt par l'API : ce qui est envoyé est exactement ce qu'un
+/// navigateur enverrait.
+pub fn cbz_bytes(name: &str, pages: usize) -> Vec<u8> {
+    let mut out = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = zip::ZipWriter::new(&mut out);
+        for page in 1..=pages {
+            zip.start_file(format!("page{page}.jpg"), SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(&jpeg(40, 60)).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+    let bytes = out.into_inner();
+    assert!(!bytes.is_empty(), "{name} : archive vide");
+    bytes
 }
 
 /// PDF d'une page, entièrement composée d'une image JPEG.

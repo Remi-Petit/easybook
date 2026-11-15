@@ -3,6 +3,7 @@
 	import { childFolders, folderUrl } from '$lib/catalog';
 	import { library } from '$lib/library.svelte';
 	import { LOCALES, chooseLocale, locale, t } from '$lib/i18n/state.svelte';
+	import NewFolder from '$lib/components/NewFolder.svelte';
 
 	// Un dossier de premier niveau de `books/` est une **catégorie**.
 	const categories = $derived(childFolders(library.folders, ''));
@@ -44,6 +45,8 @@
 		{:else if library.status !== 'connecting'}
 			<p class="nav-empty">{t('nav.empty')}</p>
 		{/if}
+
+		<NewFolder parent="" label={t('nav.newFolder')} />
 	</nav>
 
 	<div class="sidebar-lang">

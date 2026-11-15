@@ -16,15 +16,17 @@
 //! | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 //! | `GET /api/page?path=&index=` | page d'une bande dessinée (image) |
 //! | `GET /api/raw?path=` | fichier tel quel (PDF, EPUB) |
+//! | `POST /api/folder` | crée une catégorie (ou une série dans un dossier) |
+//! | `PUT /api/book?folder=&name=` | dépose un livre (corps = le fichier) |
 //! | `GET /ws` | catalogue poussé à chaque changement du dossier |
 
 use crate::formats::{self, Format};
-use crate::{library, rewrite, thumbnail};
+use crate::{library, rewrite, thumbnail, write};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -114,6 +116,9 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/asset", get(get_asset))
         .route("/api/page", get(get_page))
         .route("/api/raw", get(get_raw))
+        // Écriture : ce que le catalogue affiche, il doit pouvoir le créer.
+        .route("/api/folder", post(create_folder))
+        .route("/api/book", put(upload_book))
         .route("/ws", get(ws_library))
         // L'interface est servie par un autre process : elle appelle l'API en
         // direct, sans relais (les images et les polices d'un EPUB comprises).
@@ -545,6 +550,172 @@ async fn snapshot_now(state: &AppState) -> String {
 fn file_in(root: &Path, rel: &str) -> Option<PathBuf> {
     let path = safe_join(root, rel)?;
     path.is_file().then_some(path)
+}
+
+/// Un dossier de la bibliothèque existant, ou `None` (`""` = la racine).
+///
+/// Un segment commençant par `.` est refusé : le scan ignore les dossiers
+/// cachés, donc écrire dedans créerait un livre que personne ne verrait.
+fn folder_in(root: &Path, rel: &str) -> Option<PathBuf> {
+    if rel.is_empty() {
+        return root.is_dir().then(|| root.to_path_buf());
+    }
+    if rel.split('/').any(|segment| segment.starts_with('.')) {
+        return None;
+    }
+    let path = safe_join(root, rel)?;
+    path.is_dir().then_some(path)
+}
+
+#[derive(Deserialize)]
+struct NewFolder {
+    /// Dossier parent, relatif à `books/` (`""` pour la racine).
+    #[serde(default)]
+    parent: String,
+    name: String,
+}
+
+/// `POST /api/folder` — crée une catégorie (`parent: ""`) ou une série.
+///
+/// Le dossier créé apparaît tout de suite : le catalogue est rediffusé sans
+/// attendre l'événement du watcher (il arrive, mais avec quelques dizaines de
+/// millisecondes de debounce).
+async fn create_folder(State(state): State<AppState>, Json(body): Json<NewFolder>) -> Response {
+    let root = state.root();
+    if folder_in(&root, &body.parent).is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            format!("dossier introuvable : {}", body.parent),
+        )
+            .into_response();
+    }
+    let name = body.name;
+    let rel_parent = body.parent;
+
+    let created = tokio::task::spawn_blocking(move || {
+        // Le parent est déjà résolu : `write::create_folder` refait la
+        // validation du nom, pas celle du chemin.
+        let rel = write::create_folder(&root, &rel_parent, &name)?;
+        Ok::<String, write::WriteError>(rel)
+    })
+    .await;
+
+    match created {
+        Ok(Ok(rel)) => {
+            refresh_snapshot(&state).await;
+            (StatusCode::CREATED, Json(serde_json::json!({ "rel": rel }))).into_response()
+        }
+        Ok(Err(e)) => (e.status(), e.message().to_string()).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct UploadQuery {
+    /// Dossier d'accueil, relatif à `books/` (`""` pour la racine).
+    #[serde(default)]
+    folder: String,
+    /// Nom du fichier (le corps ne porte pas de nom).
+    name: String,
+}
+
+/// `PUT /api/book?folder=&name=` — dépose un livre.
+///
+/// Le corps **est** le fichier : `fetch(url, { method: 'PUT', body: file })`
+/// l'envoie en flux, sans encodage multipart ni copie en mémoire — une planche
+/// de 400 Mo passe donc sans faire gonfler le serveur. L'écriture passe par un
+/// fichier temporaire caché (voir [`crate::write`]) : interrompue, elle ne laisse
+/// rien dans le catalogue.
+async fn upload_book(
+    State(state): State<AppState>,
+    Query(query): Query<UploadQuery>,
+    body: axum::body::Body,
+) -> Response {
+    let root = state.root();
+    let (name, _format) = match write::book_name(&query.name) {
+        Ok(valid) => valid,
+        Err(e) => return (e.status(), e.message().to_string()).into_response(),
+    };
+    let Some(folder) = folder_in(&root, &query.folder) else {
+        return (
+            StatusCode::NOT_FOUND,
+            format!("dossier introuvable : {}", query.folder),
+        )
+            .into_response();
+    };
+
+    let target = folder.join(&name);
+    if target.exists() {
+        return (
+            StatusCode::CONFLICT,
+            format!("« {name} » existe déjà dans ce dossier"),
+        )
+            .into_response();
+    }
+
+    let incoming = write::incoming_path(&target);
+    let written = stream_to(&incoming, body).await;
+    let result = match written {
+        Ok(true) => tokio::task::spawn_blocking(move || write::commit_incoming(&incoming, &target))
+            .await
+            .unwrap_or_else(|e| Err(write::WriteError::Failed(e.to_string()))),
+        // Fichier vide : le formulaire a envoyé autre chose qu'un livre.
+        Ok(false) => {
+            let _ = tokio::fs::remove_file(&incoming).await;
+            Err(write::WriteError::Invalid(
+                "fichier vide : rien n'a été déposé".to_string(),
+            ))
+        }
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&incoming).await;
+            Err(e)
+        }
+    };
+
+    match result {
+        Ok(()) => {
+            refresh_snapshot(&state).await;
+            let rel = if query.folder.is_empty() {
+                name
+            } else {
+                format!("{}/{}", query.folder, name)
+            };
+            (StatusCode::CREATED, Json(serde_json::json!({ "rel": rel }))).into_response()
+        }
+        Err(e) => (e.status(), e.message().to_string()).into_response(),
+    }
+}
+
+/// Écrit le corps de la requête dans `path` ; `false` s'il est vide.
+async fn stream_to(path: &Path, body: axum::body::Body) -> Result<bool, write::WriteError> {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let mut file = tokio::fs::File::create(path)
+        .await
+        .map_err(|e| write::WriteError::Failed(format!("{} : {e}", path.display())))?;
+
+    let mut received: u64 = 0;
+    let mut stream = body.into_data_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk =
+            chunk.map_err(|e| write::WriteError::Failed(format!("envoi interrompu : {e}")))?;
+        received += chunk.len() as u64;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| write::WriteError::Failed(format!("{} : {e}", path.display())))?;
+    }
+    file.flush()
+        .await
+        .map_err(|e| write::WriteError::Failed(format!("{} : {e}", path.display())))?;
+
+    Ok(received > 0)
+}
+
+/// Recalcule le catalogue et le rediffuse tout de suite.
+async fn refresh_snapshot(state: &AppState) {
+    let state = state.clone();
+    let _ = tokio::task::spawn_blocking(move || broadcast_snapshot(&state)).await;
 }
 
 /// Construit un chemin sous `root`, en rejetant toute traversée.

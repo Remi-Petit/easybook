@@ -59,6 +59,48 @@ async fn json(app: &Router, uri: &str) -> (StatusCode, Value) {
     (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
 }
 
+/// Appelle une route avec une méthode, un corps JSON ou binaire.
+async fn send(
+    app: &Router,
+    method: &str,
+    uri: &str,
+    content_type: Option<&str>,
+    body: Vec<u8>,
+) -> (StatusCode, Vec<u8>) {
+    let mut builder = Request::builder().method(method).uri(uri);
+    if let Some(content_type) = content_type {
+        builder = builder.header(header::CONTENT_TYPE, content_type);
+    }
+    let response = app
+        .clone()
+        .oneshot(builder.body(Body::from(body)).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+    (status, body)
+}
+
+/// `POST /api/folder` avec un corps JSON.
+async fn create_folder(app: &Router, parent: &str, name: &str) -> (StatusCode, Value) {
+    let payload = serde_json::json!({ "parent": parent, "name": name });
+    let (status, body) = send(
+        app,
+        "POST",
+        "/api/folder",
+        Some("application/json"),
+        payload.to_string().into_bytes(),
+    )
+    .await;
+    (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+}
+
 fn header_is(headers: &HeaderMap, name: header::HeaderName, expected: &str) -> bool {
     headers
         .get(name)
@@ -356,4 +398,133 @@ async fn raw_files_keep_their_type_and_name() {
         Some("inline; filename=\"livre.epub\"")
     );
     assert!(!body.is_empty());
+}
+
+/// Créer une catégorie depuis l'interface : le dossier apparaît dans le
+/// catalogue, et une seconde création du même nom est un conflit.
+#[tokio::test]
+async fn a_category_can_be_created_from_the_api() {
+    let (dir, app) = library();
+    let root = dir.path();
+
+    let (status, body) = create_folder(&app, "", "  Beaux livres  ").await;
+    assert_eq!(status, StatusCode::CREATED, "création acceptée");
+    assert_eq!(body["rel"], "Beaux livres", "le nom est rogné");
+    assert!(root.join("Beaux livres").is_dir());
+
+    // Le catalogue est rediffusé tout de suite, sans attendre le watcher.
+    let (_, catalogue) = json(&app, "/api/books").await;
+    let folders = catalogue["folders"].as_array().unwrap();
+    assert!(
+        folders.iter().any(|folder| folder["rel"] == "Beaux livres"),
+        "le nouveau dossier doit être dans le catalogue"
+    );
+
+    // Une série dans une catégorie existante.
+    let (status, body) = create_folder(&app, "mangas", "Série").await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["rel"], "mangas/Série");
+    assert!(root.join("mangas/Série").is_dir());
+
+    // Doublon.
+    let (status, _) = create_folder(&app, "", "Beaux livres").await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // Nom refusé, parent inconnu.
+    let (status, _) = create_folder(&app, "", "../evade").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = create_folder(&app, "Absent", "Série").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Déposer un livre : le corps **est** le fichier, il finit dans le catalogue.
+#[tokio::test]
+async fn a_book_can_be_dropped_onto_the_api() {
+    let (dir, app) = library();
+    let root = dir.path();
+    let payload = common::cbz_bytes("Déposé.cbz", 2);
+
+    let (status, body) = send(
+        &app,
+        "PUT",
+        "/api/book?folder=mangas&name=D%C3%A9pos%C3%A9.cbz",
+        Some("application/octet-stream"),
+        payload.clone(),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    assert_eq!(body_json(&body)["rel"], "mangas/Déposé.cbz");
+
+    let written = root.join("mangas/Déposé.cbz");
+    assert_eq!(fs::read(&written).unwrap(), payload, "contenu intact");
+
+    // Aucun fichier temporaire ne reste dans le dossier.
+    let leftovers: Vec<String> = fs::read_dir(root.join("mangas"))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .filter(|name| name.starts_with('.'))
+        .collect();
+    assert!(leftovers.is_empty(), "restes : {leftovers:?}");
+
+    // Le catalogue le voit, avec son nombre de pages.
+    let (_, catalogue) = json(&app, "/api/books").await;
+    let book = catalogue["books"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|book| book["rel"] == "mangas/Déposé.cbz")
+        .expect("livre déposé dans le catalogue");
+    assert_eq!(book["pages"], 2);
+
+    // Même nom, deuxième dépôt : conflit, et l'ancien contenu est conservé.
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/book?folder=mangas&name=D%C3%A9pos%C3%A9.cbz",
+        None,
+        common::cbz_bytes("x", 1),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(fs::read(&written).unwrap(), payload);
+
+    // Corps vide, format inconnu, dossier inconnu.
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/book?folder=mangas&name=vide.cbz",
+        None,
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/book?folder=mangas&name=notes.txt",
+        None,
+        b"pas un livre".to_vec(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/book?folder=Absent&name=T3.cbz",
+        None,
+        payload.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Le JSON d'une réponse de création.
+fn body_json(body: &[u8]) -> Value {
+    serde_json::from_slice(body).unwrap_or(Value::Null)
 }

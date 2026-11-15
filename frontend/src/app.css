@@ -339,6 +339,223 @@ code {
 	text-decoration: underline;
 }
 
+/* ── Ajouter depuis l'interface ──────────────────────────────────────────── */
+
+/* Le champ de fichier natif : présent pour le clavier et les tests, invisible
+   à l'écran (le bouton « Ajouter des livres » s'en charge). */
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	border: 0;
+	clip-path: inset(50%);
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+/* Actions du haut de page : ajouter des livres, créer une série. */
+.intro-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin-top: 16px;
+}
+
+.add-books,
+.new-folder-open {
+	padding: 9px 14px;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	background: var(--panel);
+	color: var(--text);
+	font-size: 13px;
+	transition:
+		border-color 120ms ease,
+		color 120ms ease;
+}
+
+.add-books:hover,
+.new-folder-open:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+/* Dans la barre latérale, le bouton est un lien de plus. */
+.sidebar .new-folder-open {
+	margin: 6px 10px 0;
+	padding: 6px 8px;
+	border-style: dashed;
+	color: var(--muted);
+	font-size: 12.5px;
+	text-align: left;
+}
+
+.new-folder {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+.sidebar .new-folder {
+	margin: 6px 10px 0;
+}
+
+.new-folder input {
+	min-width: 0;
+	flex: 1 1 180px;
+	padding: 7px 10px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	color: var(--text);
+	font: inherit;
+	font-size: 13px;
+	outline: none;
+}
+
+.new-folder input:focus {
+	border-color: var(--accent);
+}
+
+.new-folder-ok,
+.new-folder-cancel {
+	padding: 7px 12px;
+	border-radius: 8px;
+	font-size: 13px;
+}
+
+.new-folder-ok {
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+
+.new-folder-ok:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.new-folder-cancel {
+	color: var(--muted);
+}
+
+.new-folder-error {
+	flex-basis: 100%;
+	color: var(--danger);
+	font-size: 12.5px;
+}
+
+/* Invite de dépôt : plein écran, sous le curseur. */
+.drop-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 40;
+	display: grid;
+	place-items: center;
+	background: rgba(10, 10, 14, 0.72);
+	backdrop-filter: blur(2px);
+	pointer-events: none;
+}
+
+.drop-overlay div {
+	display: grid;
+	gap: 4px;
+	padding: 26px 34px;
+	border: 2px dashed var(--accent);
+	border-radius: 16px;
+	background: var(--panel);
+	text-align: center;
+}
+
+.drop-overlay strong {
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.drop-overlay span {
+	color: var(--accent);
+	font-size: 13.5px;
+}
+
+/* Suivi des envois, en bas à droite. */
+.uploads {
+	position: fixed;
+	right: 18px;
+	bottom: 18px;
+	z-index: 30;
+	display: grid;
+	gap: 8px;
+	width: min(320px, calc(100vw - 36px));
+}
+
+.upload {
+	display: grid;
+	gap: 6px;
+	padding: 10px 12px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	font-size: 12.5px;
+}
+
+.upload-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.upload-name {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.upload-close {
+	color: var(--muted);
+	font-size: 15px;
+	line-height: 1;
+}
+
+.upload-bar {
+	height: 4px;
+	border-radius: 2px;
+	background: var(--line);
+	overflow: hidden;
+}
+
+.upload-bar span {
+	display: block;
+	height: 100%;
+	background: var(--accent);
+	transition: width 120ms linear;
+}
+
+.upload-state {
+	color: var(--muted);
+}
+
+.upload[data-state='done'] .upload-bar span {
+	background: #5cc98a;
+}
+
+.upload[data-state='exists'] .upload-bar span,
+.upload[data-state='failed'] .upload-bar span {
+	background: var(--danger);
+}
+
+.upload[data-state='done'] .upload-state {
+	color: #5cc98a;
+}
+
+.upload[data-state='exists'] .upload-state,
+.upload[data-state='failed'] .upload-state {
+	color: var(--danger);
+}
+
 .group {
 	margin-top: 34px;
 }

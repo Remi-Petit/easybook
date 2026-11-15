@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AddBooks from '$lib/components/AddBooks.svelte';
 	import BookCard from '$lib/components/BookCard.svelte';
 	import { library, reload } from '$lib/library.svelte';
 	import { t } from '$lib/i18n/state.svelte';
@@ -37,6 +38,9 @@
 			placeholder={t('home.search')}
 			aria-label={t('home.searchLabel')}
 		/>
+		<div class="intro-actions">
+			<AddBooks folder="" />
+		</div>
 	</section>
 
 	{#if library.error && library.books.length === 0}

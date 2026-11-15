@@ -5,6 +5,7 @@
 //! - [`formats`] : formats reconnus — **un module par format**.
 //! - [`archive`] : ouverture des archives ZIP (helpers partagés EPUB/CBZ).
 //! - [`rewrite`] : réécriture des URL d'un document (HTML, CSS).
+//! - [`write`] : création d'une catégorie, dépôt d'un livre (validation, renommage).
 //! - [`thumbnail`] : couvertures (extraction, vignette, cache).
 //! - [`pages`] : nombre de pages d'un livre (comptage, cache).
 //! - [`watcher`] : interprétation des événements du système de fichiers.
@@ -19,3 +20,4 @@ pub mod pages;
 pub mod rewrite;
 pub mod thumbnail;
 pub mod watcher;
+pub mod write;

@@ -3,11 +3,7 @@
 [![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/Remi-Petit/easybook)](LICENSE)
 <!-- couverture:start -->
-<<<<<<< HEAD
-[![couverture backend](https://img.shields.io/badge/coverage%20backend-87.6%25-green)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-95.5%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
-=======
-[![couverture backend](https://img.shields.io/badge/coverage%20backend-77.3%25-yellowgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-100.0%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
->>>>>>> 0a559f492d165567ca9c8ca7ed419fb524ec3567
+[![couverture backend](https://img.shields.io/badge/coverage%20backend-88.5%25-green)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-95.7%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
 <!-- couverture:end -->
 
 Bibliothèque de livres locale : un dossier `books/`, un backend Rust qui le
@@ -47,6 +43,12 @@ easybook/
 
 - Le **backend ne fait qu'une chose** : décrire `books/` et servir le contenu des
   livres. Aucune base de données, aucun index à maintenir.
+- On peut **aussi ranger ses livres depuis l'interface** : créer une catégorie ou
+  une série, et déposer des ouvrages par **glisser-déposer** (ou par le bouton
+  « Ajouter des livres »). Le serveur écrit le fichier en flux, dans un
+  temporaire caché renommé une fois complet : un envoi interrompu ne laisse
+  jamais un livre tronqué dans le catalogue. Un nom déjà pris est refusé (409),
+  jamais écrasé silencieusement.
 - Le dossier est **surveillé** (`notify`) : un fichier ajouté, renommé ou
   supprimé est poussé aux navigateurs par WebSocket. **Pas de sondage.**
 - Un livre est reconnu à son **extension** ; son contenu n'est lu qu'au moment
@@ -178,6 +180,8 @@ sources C++ avec le projet.
 | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 | `GET /api/page?path=&index=` | page d'une bande dessinée |
 | `GET /api/raw?path=` | fichier tel quel (PDF, EPUB) |
+| `POST /api/folder` | crée une catégorie (`parent: ""`) ou une série |
+| `PUT /api/book?folder=&name=` | dépose un livre (le corps **est** le fichier) |
 | `GET /ws` | catalogue poussé à chaque changement de `books/` |
 
 `path` est toujours **relatif à `books/`** (`Chainsaw Man/T01.cbz`) et rejeté
@@ -194,8 +198,8 @@ puis à chaque changement.
 ## Tests
 
 ```bash
-cd backend  && cargo test        # 57 unitaires + 13 d'intégration
-cd frontend && bun run test      # catalogue, langues, URL et tailles (34 tests Vitest)
+cd backend  && cargo test        # 64 unitaires + 15 d'intégration
+cd frontend && bun run test      # catalogue, langues, URL, dépôts (38 tests Vitest)
 ```
 
 - **Unitaires (backend)** — un module par sujet : tri naturel et détection de

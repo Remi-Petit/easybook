@@ -6,11 +6,13 @@ import {
 	booksUrl,
 	chapterUrl,
 	coverUrl,
+	createFolderUrl,
 	formatBytes,
 	formatDate,
 	pageUrl,
 	rawUrl,
 	readUrl,
+	uploadUrl,
 	wsUrl
 } from './api';
 import { applyLocale, formatNumber, intlLocale, locale } from './i18n/state.svelte';
@@ -55,6 +57,15 @@ describe('adresses de l’API', () => {
 		expect(withDate).toContain('v=1781354862');
 		// Sans date connue (livre tout juste vu), l'URL reste valable.
 		expect(coverUrl('mangas/T1.cbz', null)).not.toContain('v=');
+	});
+
+	it('vise les routes d’écriture', () => {
+		expect(createFolderUrl()).toBe('http://127.0.0.1:8091/api/folder');
+		// Le dossier et le nom voyagent dans l'URL ; le corps est le fichier.
+		expect(uploadUrl('mangas/Chainsaw Man', 'T1 été.cbz')).toBe(
+			'http://127.0.0.1:8091/api/book?folder=mangas%2FChainsaw+Man&name=T1+%C3%A9t%C3%A9.cbz'
+		);
+		expect(uploadUrl('', 'T1.cbz')).toBe('http://127.0.0.1:8091/api/book?folder=&name=T1.cbz');
 	});
 });
 

@@ -85,6 +85,18 @@ export function readUrl(rel: string): string {
 export const booksUrl = () => `${apiBase()}/api/books`;
 export const bookUrl = (rel: string) => apiUrl('/api/book', { path: rel });
 
+/** Adresse de création d'un dossier (catégorie, série). Corps JSON. */
+export const createFolderUrl = () => `${apiBase()}/api/folder`;
+
+/**
+ * Adresse de dépôt d'un livre.
+ *
+ * Le corps de la requête **est** le fichier : rien à encoder, rien à copier en
+ * mémoire, et le serveur l'écrit en flux (voir `PUT /api/book`).
+ */
+export const uploadUrl = (folder: string, name: string) =>
+	apiUrl('/api/book', { folder, name });
+
 /**
  * Version de l'extraction des couvertures.
  *
