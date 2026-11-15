@@ -6,6 +6,7 @@
 //! un livre rangé trois niveaux plus bas n'a rien de particulier.
 
 use crate::formats::{self, Format};
+use crate::pages;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -28,6 +29,9 @@ pub struct BookInfo {
     pub size: u64,
     /// Dernière modification, en secondes Unix.
     pub modified: Option<u64>,
+    /// Nombre de pages (nombre de chapitres pour un EPUB), `None` si le livre
+    /// n'a pas pu être ouvert.
+    pub pages: Option<usize>,
     /// Titre affiché : le nom sans extension.
     pub title: String,
 }
@@ -146,6 +150,7 @@ fn walk(root: &Path, dir: &Path, books: &mut Vec<BookInfo>, folders: &mut Vec<Fo
         books.push(BookInfo {
             folder,
             title: title_of(&name),
+            pages: pages::count(&path, format),
             name,
             format: format.id(),
             readable: format.readable(),

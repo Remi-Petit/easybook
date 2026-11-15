@@ -30,6 +30,12 @@ impl BookFormat for Epub {
         Ok(Some(outline(path)?))
     }
 
+    /// Nombre de **chapitres** : le texte d'un EPUB se recompose à l'écran, il
+    /// n'a pas de pages fixes. C'est le `spine` qui fixe les documents du livre.
+    fn pages(&self, path: &Path) -> Result<Option<usize>, String> {
+        Ok(Some(outline(path)?.chapters.len()))
+    }
+
     fn cover(&self, path: &Path) -> Option<Vec<u8>> {
         cover(path)
     }

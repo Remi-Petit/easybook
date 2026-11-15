@@ -1,8 +1,8 @@
 //! Formats de livres : **un module par format**.
 //!
-//! Le catalogue ne s'appuie que sur l'**extension** pour savoir ce qu'est un
-//! fichier : ouvrir chaque livre coûterait une lecture d'archive par entrée, à
-//! chaque scan. Le contenu n'est lu qu'au moment où on l'ouvre.
+//! Le catalogue s'appuie sur l'**extension** pour savoir ce qu'est un fichier,
+//! et l'ouvre **une seule fois** pour compter ses pages ([`crate::pages`] garde
+//! ce comptage). Le reste du contenu n'est lu qu'au moment où on ouvre le livre.
 //!
 //! Chaque format implémente [`BookFormat`] et s'enregistre dans [`module`]. Tout
 //! ce que l'API sait demander à un livre passe par ce trait — ajouter un format
@@ -99,7 +99,9 @@ pub trait BookFormat: Send + Sync {
         Ok(None)
     }
 
-    /// Nombre de pages — les formats paginés (bande dessinée).
+    /// Nombre de pages — les formats paginés (bande dessinée, PDF). Pour un
+    /// EPUB, c'est le nombre de chapitres du `spine` : le texte se recompose à
+    /// l'écran, il n'a pas de pages fixes.
     fn pages(&self, _path: &Path) -> Result<Option<usize>, String> {
         Ok(None)
     }

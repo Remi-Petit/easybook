@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { coverUrl, formatBytes, readUrl, type BookInfo } from '$lib/api';
+	import { extent } from '$lib/catalog';
 
 	let { book }: { book: BookInfo } = $props();
+
+	// Nombre de pages (chapitres pour un EPUB), quand il est connu.
+	const pages = $derived(extent(book));
 
 	// Tous les livres n'ont pas de couverture : un PDF n'en a pas (aucun rendu
 	// de page ici), un CBR non plus (archive RAR), et une archive peut n'en
@@ -28,6 +32,7 @@
 		<span class="title">{book.title}</span>
 		<span class="foot">
 			{formatBytes(book.size)} · {book.format}
+			{#if pages}· {pages}{/if}
 			{#if !book.readable}· non pris en charge{/if}
 		</span>
 	</span>

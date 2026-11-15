@@ -25,6 +25,11 @@ impl BookFormat for Pdf {
         "pdf"
     }
 
+    fn pages(&self, path: &Path) -> Result<Option<usize>, String> {
+        let document = Document::load(path).map_err(|e| format!("{} : {e}", path.display()))?;
+        Ok(Some(document.get_pages().len()))
+    }
+
     fn cover(&self, path: &Path) -> Option<Vec<u8>> {
         cover(path)
     }

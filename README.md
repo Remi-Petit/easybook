@@ -38,7 +38,8 @@ easybook/
 - Le dossier est **surveillé** (`notify`) : un fichier ajouté, renommé ou
   supprimé est poussé aux navigateurs par WebSocket. **Pas de sondage.**
 - Un livre est reconnu à son **extension** ; son contenu n'est lu qu'au moment
-  où on l'ouvre.
+  où on l'ouvre — sauf le **nombre de pages**, compté une fois au scan puis
+  gardé en mémoire (`pages.rs`), parce que chaque carte l'affiche.
 - `books/` peut contenir les livres à sa racine **et** dans des sous-dossiers,
   sur n'importe quelle profondeur.
 - **Un dossier de premier niveau est une catégorie** (`books/mangas`,
@@ -67,6 +68,10 @@ easybook/
 Le **conteneur** d'une bande dessinée est détecté par les octets du fichier, pas
 par son extension : beaucoup de `.cbr` distribués en ligne sont des ZIP
 renommés, et ils se lisent aussi (et inversement).
+
+Chaque carte annonce **le nombre de pages** (`N pages`) sous le livre. Pour un
+EPUB, c'est le nombre de **chapitres** : son texte se recompose à l'écran, il
+n'a pas de pages fixes. Un livre qui n'a pas pu être ouvert n'annonce rien.
 
 Les couvertures sont **réduites** (400 px de large, JPEG) et gardées en mémoire par
 le backend : le catalogue affiche des dizaines de vignettes sans télécharger les
@@ -150,29 +155,34 @@ sources C++ avec le projet.
 s'il contient `..`, un chemin absolu ou s'il sort de la racine une fois
 canonicalisé.
 
+Chaque livre du catalogue porte son `pages` : le nombre de planches (CBZ/CBR),
+les pages du document (PDF), ou les chapitres du `spine` (EPUB). `null` si le
+livre n'a pas pu être ouvert.
+
 Le message du WebSocket est exactement le JSON de `/api/books` : à la connexion,
 puis à chaque changement.
 
 ## Tests
 
 ```bash
-cd backend  && cargo test        # 34 unitaires + 10 d'intégration
-cd frontend && bun run test      # logique du catalogue (11 tests Vitest)
+cd backend  && cargo test        # 37 unitaires + 11 d'intégration
+cd frontend && bun run test      # logique du catalogue (16 tests Vitest)
 ```
 
 - **Unitaires (backend)** — un module par sujet : tri naturel et détection de
   format, scan du dossier, réécriture HTML/CSS, EPUB (sommaire, chapitres,
   couverture, ressources), CBZ/CBR (pages, ordre, ZIP nommé `.cbr`), PDF
   (première image dessinée, ordre des `Do`, formulaires imbriqués, PDF sans
-  image), vignettes, chemins sûrs.
+  image), vignettes, comptage des pages et son cache, chemins sûrs.
 - **Intégration (backend)** — `tests/api.rs` monte le **vrai routeur** sur une
   bibliothèque temporaire (EPUB + CBZ + PDF fabriqués) et vérifie le contrat
-  HTTP : catalogue, fiches, couvertures des quatre formats, chapitres, pages,
-  cache, refus de traversée.
+  HTTP : catalogue (dont le nombre de pages annoncé pour chaque livre), fiches,
+  couvertures des quatre formats, chapitres, pages, cache, refus de traversée.
 - **Frontend** — `catalog.ts` : parent, enfants, `level()` (les sous-dossiers
   apparaissent comme des dossiers, à chaque niveau, sans mélange entre
   catégories), `previewBook()` (premier livre **direct**, repli récursif sur le
-  premier sous-dossier), fil d'Ariane, URL.
+  premier sous-dossier), `extent()` (pages, ou chapitres pour un EPUB), fil
+  d'Ariane, URL.
 - **E2E navigateur** : non installés ici — ils demanderaient Chromium + les deux
   process lancés, pour vérifier ce que les tests d'intégration couvrent déjà
   côté API. L'interface a été vérifiée manuellement (catalogue, dossiers,

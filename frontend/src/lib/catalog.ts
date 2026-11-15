@@ -72,6 +72,23 @@ export function previewBook(
 	return undefined;
 }
 
+/**
+ * Précision de lecture affichée sous un livre : son nombre de pages.
+ *
+ * Une bande dessinée et un PDF ont des pages ; un EPUB n'en a pas — son texte se
+ * recompose à l'écran — et annonce donc ses chapitres.
+ *
+ * `null` quand le livre n'a pas pu être ouvert (ou qu'il est vide) : mieux vaut
+ * ne rien dire qu'un « 0 page ».
+ */
+export function extent(book: BookInfo): string | null {
+	if (!book.pages) return null;
+	const plural = book.pages > 1 ? 's' : '';
+	return book.format === 'epub'
+		? `${book.pages} chapitre${plural}`
+		: `${book.pages} page${plural}`;
+}
+
 /** Segments d'un chemin, chacun avec son `rel` (fil d'Ariane). */
 export function segments(rel: string): { name: string; rel: string }[] {
 	let path = '';

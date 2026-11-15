@@ -10,6 +10,9 @@ export type BookInfo = {
 	readable: boolean;
 	size: number;
 	modified: number | null;
+	/// Nombre de pages — le nombre de chapitres pour un EPUB. `null` quand le
+	/// livre n'a pas pu être ouvert.
+	pages: number | null;
 	title: string;
 };
 

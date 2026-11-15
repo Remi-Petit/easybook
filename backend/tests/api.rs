@@ -110,6 +110,28 @@ async fn catalogue_lists_books_and_folders() {
 }
 
 #[tokio::test]
+async fn catalogue_announces_the_pages_of_each_book() {
+    let (_dir, app) = library();
+    let (status, body) = json(&app, "/api/books").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let pages = |rel: &str| -> Value {
+        body["books"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|book| book["rel"] == rel)
+            .unwrap_or_else(|| panic!("{rel} absent du catalogue"))["pages"]
+            .clone()
+    };
+
+    assert_eq!(pages("mangas/T1.cbz"), 3, "trois planches");
+    assert_eq!(pages("mangas/sous/T9.cbz"), 1);
+    assert_eq!(pages("mangas/guide.pdf"), 1);
+    assert_eq!(pages("livre.epub"), 2, "deux chapitres");
+}
+
+#[tokio::test]
 async fn book_details_follow_the_format() {
     let (_dir, app) = library();
 
@@ -122,7 +144,7 @@ async fn book_details_follow_the_format() {
     assert_eq!(chapters.len(), 2);
     assert_eq!(chapters[0]["title"], "Début");
     assert_eq!(chapters[1]["title"], "Suite");
-    assert!(epub["pages"].is_null(), "un EPUB n'est pas paginé ici");
+    assert_eq!(epub["pages"], 2, "un EPUB annonce ses chapitres");
 
     let (status, cbz) = json(&app, "/api/book?path=mangas%2FT1.cbz").await;
     assert_eq!(status, StatusCode::OK);
@@ -134,7 +156,7 @@ async fn book_details_follow_the_format() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(pdf["format"], "pdf");
     assert_eq!(pdf["supported"], true);
-    assert!(pdf["pages"].is_null());
+    assert_eq!(pdf["pages"], 1, "le PDF de test n'a qu'une page");
 }
 
 #[tokio::test]
