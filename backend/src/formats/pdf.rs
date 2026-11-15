@@ -492,6 +492,130 @@ pub(crate) mod tests {
         assert!(PDF.cover(&path).is_none());
     }
 
+    /// PDF d'une page dont l'unique XObject est l'image fournie.
+    fn pdf_with_image(image: Vec<u8>) -> Vec<u8> {
+        assemble(vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
+              /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>"
+                .to_vec(),
+            image,
+            content_object(b"q /Im0 Do Q"),
+        ])
+    }
+
+    /// Un objet image décrit par son dictionnaire (`/ColorSpace`, `/Filter`…).
+    fn described_image(data: &[u8], width: u32, height: u32, extra: &str) -> Vec<u8> {
+        let mut body = format!(
+            "<< /Type /XObject /Subtype /Image /Width {width} /Height {height} {extra} /Length {} >>\nstream\n",
+            data.len()
+        )
+        .into_bytes();
+        body.extend_from_slice(data);
+        body.extend_from_slice(b"\nendstream");
+        body
+    }
+
+    /// Un scan sans filtre : les pixels sont bruts, il faut les encoder.
+    #[test]
+    fn raw_rgb_pixels_become_a_cover() {
+        let (width, height) = (2u32, 3u32);
+        let mut pixels = Vec::new();
+        for y in 0..height {
+            for x in 0..width {
+                pixels.extend_from_slice(&[(x * 40) as u8, (y * 60) as u8, 128]);
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("brut.pdf");
+        std::fs::write(
+            &path,
+            pdf_with_image(described_image(
+                &pixels,
+                width,
+                height,
+                "/ColorSpace /DeviceRGB /BitsPerComponent 8",
+            )),
+        )
+        .unwrap();
+
+        let cover = PDF.cover(&path).expect("pixels encodés en couverture");
+        assert_eq!(&cover[..4], b"\x89PNG", "ré-encodée en PNG");
+    }
+
+    /// Combinaison la plus courante d'un scan : `FlateDecode` devant des pixels.
+    #[test]
+    fn a_flate_encoded_image_is_inflated_first() {
+        let (width, height) = (4u32, 4u32);
+        let pixels: Vec<u8> = (0..(width * height)).map(|i| (i * 16) as u8).collect();
+
+        let mut zlib = Vec::new();
+        {
+            use std::io::Write;
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(&mut zlib, flate2::Compression::default());
+            encoder.write_all(&pixels).unwrap();
+            encoder.finish().unwrap();
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("flate.pdf");
+        std::fs::write(
+            &path,
+            pdf_with_image(described_image(
+                &zlib,
+                width,
+                height,
+                "/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode",
+            )),
+        )
+        .unwrap();
+
+        assert!(PDF.cover(&path).is_some(), "les pixels sont décompressés");
+    }
+
+    /// Un filtre qu'on ne sait pas défaire (`LZWDecode`) : pas de fausse
+    /// couverture, l'interface affichera son repli.
+    #[test]
+    fn an_unknown_filter_gives_no_cover() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lzw.pdf");
+        std::fs::write(
+            &path,
+            pdf_with_image(described_image(
+                b"peu importe",
+                4,
+                4,
+                "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /LZWDecode",
+            )),
+        )
+        .unwrap();
+
+        assert!(PDF.cover(&path).is_none());
+    }
+
+    /// Les images à 1 bit par composant (fax, bitmap ancien) ne sont pas des
+    /// couvertures utilisables ici — et surtout, elles ne plantent pas.
+    #[test]
+    fn a_one_bit_image_gives_no_cover() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bitmap.pdf");
+        std::fs::write(
+            &path,
+            pdf_with_image(described_image(
+                &[0xF0, 0x0F],
+                4,
+                4,
+                "/ColorSpace /DeviceGray /BitsPerComponent 1",
+            )),
+        )
+        .unwrap();
+
+        assert!(PDF.cover(&path).is_none());
+    }
+
     /// Assemble des objets PDF (1..n) avec une table `xref` juste.
     fn assemble(objects: Vec<Vec<u8>>) -> Vec<u8> {
         let mut out: Vec<u8> = b"%PDF-1.4\n".to_vec();

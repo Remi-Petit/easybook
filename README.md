@@ -3,7 +3,7 @@
 [![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/Remi-Petit/easybook)](LICENSE)
 <!-- couverture:start -->
-[![couverture backend](https://img.shields.io/badge/coverage%20backend-77.1%25-yellowgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-100.0%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
+[![couverture backend](https://img.shields.io/badge/coverage%20backend-87.6%25-green)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-95.5%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
 <!-- couverture:end -->
 
 Bibliothèque de livres locale : un dossier `books/`, un backend Rust qui le
@@ -190,25 +190,29 @@ puis à chaque changement.
 ## Tests
 
 ```bash
-cd backend  && cargo test        # 37 unitaires + 11 d'intégration
-cd frontend && bun run test      # catalogue + langues (25 tests Vitest)
+cd backend  && cargo test        # 57 unitaires + 13 d'intégration
+cd frontend && bun run test      # catalogue, langues, URL et tailles (34 tests Vitest)
 ```
 
 - **Unitaires (backend)** — un module par sujet : tri naturel et détection de
-  format, scan du dossier, réécriture HTML/CSS, EPUB (sommaire, chapitres,
-  couverture, ressources), CBZ/CBR (pages, ordre, ZIP nommé `.cbr`), PDF
-  (première image dessinée, ordre des `Do`, formulaires imbriqués, PDF sans
-  image), vignettes, comptage des pages et son cache, chemins sûrs.
+  format, scan du dossier, réécriture HTML/CSS, EPUB (EPUB 2 `toc.ncx` et EPUB 3,
+  sommaire, chapitres, couverture déclarée ou devinée), CBZ/CBR (pages, ordre,
+  ZIP nommé `.cbr`), PDF (première image dessinée, ordre des `Do`, formulaires
+  imbriqués, filtres `FlateDecode`, pixels bruts, filtres inconnus), vignettes,
+  comptage des pages, configuration (fichier, environnement, YAML cassé),
+  événements du watcher, chemins sûrs.
 - **Intégration (backend)** — `tests/api.rs` monte le **vrai routeur** sur une
   bibliothèque temporaire (EPUB + CBZ + PDF fabriqués) et vérifie le contrat
   HTTP : catalogue (dont le nombre de pages annoncé pour chaque livre), fiches,
-  couvertures des quatre formats, chapitres, pages, cache, refus de traversée.
+  couvertures des quatre formats, chapitres, ressources, pages, cache, fichiers
+  bruts, réponses d'erreur (404 / 422), refus de traversée.
 - **Frontend** — `catalog.ts` : parent, enfants, `level()` (les sous-dossiers
   apparaissent comme des séries, à chaque niveau, sans mélange entre
   catégories), `previewBook()` (premier livre **direct**, repli récursif sur la
   première sous-série), fil d'Ariane, URL. `i18n.test.ts` : mêmes clés dans
   toutes les langues, pluriels, remplacement des paramètres, négociation de la
-  langue.
+  langue. `api.test.ts` : URL de l'API, tailles et dates dans chaque langue,
+  changement de langue.
 - **E2E navigateur** : non installés ici — ils demanderaient Chromium + les deux
   process lancés, pour vérifier ce que les tests d'intégration couvrent déjà
   côté API. L'interface a été vérifiée manuellement (catalogue, dossiers,
@@ -247,9 +251,17 @@ node scripts/coverage.mjs          # réécrit les badges
 node scripts/coverage.mjs --check  # exit 1 s'ils sont périmés
 ```
 
-Périmètre : les lignes couvertes par les tests **unitaires**. Côté frontend, les
-composants et les modules qui dépendent de SvelteKit (`$app/…`) sont hors
-périmètre — voir `frontend/vitest.config.ts`.
+Périmètre : les lignes que les tests **unitaires** peuvent atteindre.
+
+- **Frontend** : les modules de logique (`catalog.ts`, `api.ts`,
+  `i18n/messages.ts`, `i18n/state.svelte.ts`). Les composants et les pages
+  `.svelte` sont vérifiés dans le navigateur ; les compter afficherait 0 % pour
+  du code qui fonctionne (voir `frontend/vitest.config.ts`).
+- **Backend** : tout le crate, `main.rs` compris. Son `main()` (bannière,
+  démarrage du serveur, thread du watcher) n'est atteignable par aucun test :
+  c'est du câblage, et tout ce qu'il appelle est testé. Les boucles WebSocket de
+  `api.rs` et le lecteur RAR de `comic.rs` demandent un client ou une archive
+  qu'on ne construit pas en test — ce sont les principaux restes.
 
 ## Configuration
 

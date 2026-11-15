@@ -293,3 +293,67 @@ async fn traversal_is_refused() {
     let (status, _, _) = call(&app, "/api/asset?path=livre.epub&inner=..%2Fsecret").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// Ce qui n'existe pas, ou qui n'est pas un livre : 404 ; ce qui existe mais ne
+/// peut pas être lu : 422 avec le message du format.
+#[tokio::test]
+async fn missing_and_unreadable_books_are_answered_precisely() {
+    let (_dir, app) = library();
+
+    // Fichier absent du disque.
+    let (status, body) = json(&app, "/api/book?path=mangas%2Fabsent.cbz").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(body.is_null());
+
+    // Présent, mais pas un format de livre.
+    let (status, _, body) = call(&app, "/api/book?path=notes.txt").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        String::from_utf8_lossy(&body).contains("format non reconnu"),
+        "message du format attendu"
+    );
+
+    // Un PDF n'a pas de planches : /api/page n'a rien à servir.
+    let (status, _, _) = call(&app, "/api/page?path=mangas%2Fguide.pdf&index=0").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Un EPUB non plus (ce sont des chapitres, pas des pages).
+    let (status, _, _) = call(&app, "/api/page?path=notes.txt&index=0").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Chapitre hors du sommaire.
+    let (status, _, _) = call(&app, "/api/chapter?path=livre.epub&index=42").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Ressource absente de l'archive.
+    let (status, _, _) = call(
+        &app,
+        "/api/asset?path=livre.epub&inner=OEBPS%2FStyles%2Fabsent.css",
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Fichier qui n'est pas un livre : aucune ressource interne à servir.
+    let (status, _, _) = call(&app, "/api/asset?path=notes.txt&inner=note.css").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Le fichier brut est proposé au lecteur du navigateur avec son nom d'origine.
+#[tokio::test]
+async fn raw_files_keep_their_type_and_name() {
+    let (_dir, app) = library();
+    let (status, headers, body) = call(&app, "/api/raw?path=livre.epub").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(header_is(
+        &headers,
+        header::CONTENT_TYPE,
+        "application/epub+zip"
+    ));
+    assert_eq!(
+        headers
+            .get(header::CONTENT_DISPOSITION)
+            .and_then(|value| value.to_str().ok()),
+        Some("inline; filename=\"livre.epub\"")
+    );
+    assert!(!body.is_empty());
+}

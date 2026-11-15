@@ -321,4 +321,45 @@ mod tests {
         assert!(!is_noise("Manga/p1.jpg"));
         assert!(!is_noise("p1.jpg"));
     }
+
+    #[test]
+    fn archive_entries_use_forward_slashes() {
+        assert_eq!(normalize_entry("Manga\\T1\\p1.jpg"), "Manga/T1/p1.jpg");
+        assert_eq!(normalize_entry("Manga/T1/p1.jpg"), "Manga/T1/p1.jpg");
+    }
+
+    #[test]
+    fn resources_get_the_right_mime_type() {
+        assert_eq!(
+            content_type("OEBPS/Text/chap1.xhtml"),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            content_type("OEBPS/Styles/style.CSS"),
+            "text/css; charset=utf-8"
+        );
+        assert_eq!(content_type("OEBPS/Images/cover.jpeg"), "image/jpeg");
+        assert_eq!(content_type("OEBPS/Images/cover.png"), "image/png");
+        assert_eq!(content_type("OEBPS/Fonts/livre.woff2"), "font/woff2");
+        assert_eq!(
+            content_type("OEBPS/toc.ncx"),
+            "application/xml; charset=utf-8"
+        );
+        // Extensions inconnues et noms sans extension : flux binaire.
+        assert_eq!(content_type("OEBPS/notes.xyz"), "application/octet-stream");
+        assert_eq!(content_type("OEBPS/LICENSE"), "application/octet-stream");
+    }
+
+    #[test]
+    fn natural_order_compares_numbers_by_value() {
+        use std::cmp::Ordering;
+
+        assert_eq!(natural_cmp("T02", "T2"), Ordering::Equal);
+        assert_eq!(natural_cmp("T2", "T10"), Ordering::Less);
+        assert_eq!(natural_cmp("T10", "T2"), Ordering::Greater);
+        // La casse ne départage pas deux noms identiques.
+        assert_eq!(natural_cmp("manga", "MANGA"), Ordering::Equal);
+        // Un préfixe plus court passe avant.
+        assert_eq!(natural_cmp("T1", "T1 bis"), Ordering::Less);
+    }
 }

@@ -495,4 +495,91 @@ mod tests {
         let (_dir, path) = epub();
         assert!(chapter(&path, 5, "Test.epub", "http://x").is_err());
     }
+
+    /// EPUB **2** : `toc.ncx` au lieu d'un document de navigation, et la
+    /// couverture déclarée par `<meta name="cover">`. C'est le format de la
+    /// majorité des livres déjà distribués.
+    fn epub2() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Ancien.epub");
+        let mut zip = zip::ZipWriter::new(File::create(&path).unwrap());
+
+        let entries: Vec<(&str, &str)> = vec![
+            (
+                "META-INF/container.xml",
+                r#"<?xml version="1.0"?>
+                <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+                </container>"#,
+            ),
+            (
+                "OEBPS/content.opf",
+                r#"<?xml version="1.0"?>
+                <package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="id">
+                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:title>Livre Deux</dc:title>
+                    <dc:creator>Autrice</dc:creator>
+                    <meta name="cover" content="cover-img"/>
+                  </metadata>
+                  <manifest>
+                    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+                    <item id="cover-img" href="Images/cover.png" media-type="image/png"/>
+                    <item id="c1" href="Text/chap1.xhtml" media-type="application/xhtml+xml"/>
+                  </manifest>
+                  <spine toc="ncx"><itemref idref="c1"/></spine>
+                </package>"#,
+            ),
+            (
+                "OEBPS/toc.ncx",
+                r#"<?xml version="1.0"?>
+                <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+                  <navMap>
+                    <navPoint id="n1" playOrder="1">
+                      <navLabel><text>Le début</text></navLabel>
+                      <content src="Text/chap1.xhtml"/>
+                    </navPoint>
+                  </navMap>
+                </ncx>"#,
+            ),
+            (
+                "OEBPS/Text/chap1.xhtml",
+                r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Un</h1></body></html>"#,
+            ),
+            ("OEBPS/Images/cover.png", "couverture"),
+        ];
+
+        for (name, content) in entries {
+            zip.start_file(name, SimpleFileOptions::default()).unwrap();
+            zip.write_all(content.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn reads_an_epub2_toc_and_declared_cover() {
+        let (_dir, path) = epub2();
+
+        let outline = outline(&path).unwrap();
+        assert_eq!(outline.title.as_deref(), Some("Livre Deux"));
+        assert_eq!(outline.chapters.len(), 1);
+        // Le libellé vient du `toc.ncx`, pas d'un repli « Chapitre 1 ».
+        assert_eq!(outline.chapters[0].title, "Le début");
+
+        assert_eq!(cover(&path).as_deref(), Some(&b"couverture"[..]));
+    }
+
+    #[test]
+    fn an_undeclared_cover_falls_back_to_the_first_image() {
+        // Le livre de test n'a ni `cover-image` ni `<meta name="cover">`.
+        let (_dir, path) = epub();
+        assert_eq!(cover(&path).as_deref(), Some(&b"jpeg"[..]));
+    }
+
+    #[test]
+    fn the_page_count_is_the_number_of_spine_documents() {
+        let (_dir, path) = epub();
+        let pages = BookFormat::pages(&EPUB, &path).unwrap();
+        assert_eq!(pages, Some(2));
+    }
 }

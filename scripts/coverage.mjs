@@ -98,7 +98,12 @@ if (debut === -1 || fin === -1 || fin < debut) {
 // (`<!-- … -->`) commencé en début de ligne avale tout le reste de la ligne :
 // les badges posés entre deux marqueurs en ligne s'affichent alors en clair au
 // lieu d'être rendus (constaté sur GitHub).
-const bloc = `${START}\n${badges}\n${END}`;
+//
+// Le séparateur suit celui du fichier : un README en CRLF (poste Windows) ne
+// doit pas être réécrit à chaque passage — sinon `--check` échoue toujours et la
+// CI commiterait pour rien.
+const eol = texte.includes('\r\n') ? '\r\n' : '\n';
+const bloc = `${START}${eol}${badges}${eol}${END}`;
 const maj = texte.slice(0, debut) + bloc + texte.slice(fin + END.length);
 
 console.log(
