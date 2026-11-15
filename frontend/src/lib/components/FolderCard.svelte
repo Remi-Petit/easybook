@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { coverUrl, type BookInfo, type FolderInfo } from '$lib/api';
 	import { folderUrl } from '$lib/catalog';
+	import { t } from '$lib/i18n/state.svelte';
 
 	let {
 		folder,
 		preview
 	}: { folder: FolderInfo; preview: BookInfo | undefined } = $props();
 
-	// La couverture du dossier est celle de son premier livre qui en a une :
-	// si elle manque (PDF, CBR, archive sans image), le dossier garde un repli
+	// La couverture de la série est celle de son premier livre qui en a une :
+	// si elle manque (PDF, CBR, archive sans image), la tuile garde un repli
 	// lisible.
 	let failed = $state(false);
 </script>
@@ -24,7 +25,7 @@
 				onerror={() => (failed = true)}
 			/>
 		{:else}
-			<span class="fallback" aria-hidden="true">dossier</span>
+			<span class="fallback" aria-hidden="true">{t('card.series')}</span>
 		{/if}
 	</span>
 
@@ -32,9 +33,9 @@
 		<span class="title">{folder.name}</span>
 		<span class="foot">
 			{#if folder.count === 0}
-				aucun livre
+				{t('card.noBooks')}
 			{:else}
-				{folder.count} livre{folder.count > 1 ? 's' : ''}
+				{t('books.count', { count: folder.count })}
 			{/if}
 		</span>
 	</span>

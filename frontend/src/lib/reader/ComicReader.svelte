@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { pageUrl } from '$lib/api';
+	import { t } from '$lib/i18n/state.svelte';
 
 	let { rel, pages }: { rel: string; pages: number } = $props();
 
@@ -56,14 +57,14 @@
 	<div class="stage">
 		<div class="viewport" bind:this={stage}>
 			<div class="page-view">
-				<img src={source} alt="Page {index + 1} sur {pages}" />
+				<img src={source} alt={t('reader.pageAlt', { index: index + 1, total: pages })} />
 			</div>
 		</div>
 
 		<nav class="pager">
-			<button disabled={atStart} onclick={() => go(index - 1)}>← Précédente</button>
+			<button disabled={atStart} onclick={() => go(index - 1)}>← {t('reader.previous')}</button>
 			<span>{index + 1} / {pages}</span>
-			<button disabled={atEnd} onclick={() => go(index + 1)}>Suivante →</button>
+			<button disabled={atEnd} onclick={() => go(index + 1)}>{t('reader.next')} →</button>
 		</nav>
 	</div>
 </div>

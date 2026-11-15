@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { chapterUrl, type BookDetail } from '$lib/api';
+	import { t } from '$lib/i18n/state.svelte';
 
 	let { rel, detail }: { rel: string; detail: BookDetail } = $props();
 
@@ -79,7 +80,7 @@
 
 <div class="reader-body">
 	<aside class="toc">
-		<h2>Chapitres</h2>
+		<h2>{t('reader.chapters')}</h2>
 		{#each chapters as chapter (chapter.index)}
 			<button aria-current={chapter.index === index} onclick={() => go(chapter.index)}>
 				{chapter.title}
@@ -92,21 +93,21 @@
 			{#if error}
 				<div class="state">
 					<div>
-						<strong>Chapitre illisible</strong>
+						<strong>{t('reader.chapterError')}</strong>
 						{error}
 					</div>
 				</div>
 			{:else if html}
 				<article class="prose">{@html html}</article>
 			{:else}
-				<div class="state">Chargement du chapitre…</div>
+				<div class="state">{t('reader.loadingChapter')}</div>
 			{/if}
 		</div>
 
 		<nav class="pager">
-			<button disabled={atStart} onclick={() => go(index - 1)}>← Précédent</button>
+			<button disabled={atStart} onclick={() => go(index - 1)}>← {t('reader.previous')}</button>
 			<span>{index + 1} / {chapters.length}</span>
-			<button disabled={atEnd} onclick={() => go(index + 1)}>Suivant →</button>
+			<button disabled={atEnd} onclick={() => go(index + 1)}>{t('reader.next')} →</button>
 		</nav>
 	</div>
 </div>

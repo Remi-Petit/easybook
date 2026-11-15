@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
+import { formatNumber, intlLocale, t } from './i18n/state.svelte';
 
 /// Un livre du catalogue, tel que le backend le décrit.
 export type BookInfo = {
@@ -111,24 +112,25 @@ export const chapterUrl = (rel: string, index: number) =>
 export const pageUrl = (rel: string, index: number) => apiUrl('/api/page', { path: rel, index });
 export const rawUrl = (rel: string) => apiUrl('/api/raw', { path: rel });
 
-/** Taille lisible (`12,4 Mo`). */
+/** Taille lisible (`12,4 Mo` en français, `12.4 MB` en anglais). */
 export function formatBytes(size: number): string {
-	if (size < 1024) return `${size} o`;
-	const units = ['Ko', 'Mo', 'Go'];
+	if (size < 1024) return `${formatNumber(size)} ${t('size.bytes')}`;
+
+	const units = ['size.kilobytes', 'size.megabytes', 'size.gigabytes'] as const;
 	let value = size / 1024;
 	let unit = 0;
 	while (value >= 1024 && unit < units.length - 1) {
 		value /= 1024;
 		unit += 1;
 	}
-	const rounded = value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
-	return `${String(rounded).replace('.', ',')} ${units[unit]}`;
+	// Un chiffre après la virgule sous 10 (12,4 Mo), aucun au-dessus (268 Mo).
+	return `${formatNumber(value, value >= 10 ? 0 : 1)} ${t(units[unit])}`;
 }
 
-/** Date courte (`12 nov. 2026`). */
+/** Date courte, dans la langue courante (`12 nov. 2026`). */
 export function formatDate(seconds: number | null): string {
 	if (!seconds) return '';
-	return new Date(seconds * 1000).toLocaleDateString('fr-FR', {
+	return new Date(seconds * 1000).toLocaleDateString(intlLocale(), {
 		day: 'numeric',
 		month: 'short',
 		year: 'numeric'

@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { childFolders, folderUrl } from '$lib/catalog';
 	import { library } from '$lib/library.svelte';
+	import { LOCALES, chooseLocale, locale, t } from '$lib/i18n/state.svelte';
 
 	// Un dossier de premier niveau de `books/` est une **catégorie**.
 	const categories = $derived(childFolders(library.folders, ''));
@@ -18,15 +19,15 @@
 <aside class="sidebar">
 	<div class="brand">
 		<a class="mark" href="/">easybook</a>
-		<span class="tagline">bibliothèque locale</span>
+		<span class="tagline">{t('brand.tagline')}</span>
 	</div>
 
-	<nav aria-label="Navigation">
+	<nav aria-label={t('nav.label')}>
 		<a class="nav-item" href="/" aria-current={path === '/' ? 'page' : undefined}>
-			<span class="name">Accueil</span>
+			<span class="name">{t('nav.home')}</span>
 		</a>
 
-		<p class="nav-section">Bibliothèque</p>
+		<p class="nav-section">{t('nav.library')}</p>
 
 		{#if categories.length > 0}
 			{#each categories as category (category.rel)}
@@ -41,19 +42,33 @@
 				</a>
 			{/each}
 		{:else if library.status !== 'connecting'}
-			<p class="nav-empty">Aucune catégorie</p>
+			<p class="nav-empty">{t('nav.empty')}</p>
 		{/if}
 	</nav>
+
+	<div class="sidebar-lang">
+		<label for="easybook-locale">{t('language.label')}</label>
+		<select
+			id="easybook-locale"
+			value={locale()}
+			title={t('language.choose')}
+			onchange={(event) => chooseLocale(event.currentTarget.value)}
+		>
+			{#each LOCALES as entry (entry.code)}
+				<option value={entry.code}>{entry.name}</option>
+			{/each}
+		</select>
+	</div>
 
 	<div class="sidebar-foot">
 		<span class="status" data-status={library.status}>
 			<span class="dot"></span>
 			{#if library.status === 'live'}
-				en direct
+				{t('status.live')}
 			{:else if library.status === 'connecting'}
-				connexion…
+				{t('status.connecting')}
 			{:else}
-				hors ligne
+				{t('status.offline')}
 			{/if}
 		</span>
 		<span class="nav-count">{library.total}</span>

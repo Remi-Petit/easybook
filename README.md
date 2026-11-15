@@ -22,10 +22,12 @@ easybook/
 ├── frontend/         # SvelteKit — bibliothèque + lecteurs
 │   ├── src/routes/(catalog)/+layout.svelte   # coquille : barre latérale + contenu
 │   ├── src/routes/(catalog)/+page.svelte     # accueil : tous les livres
-│   ├── src/routes/(catalog)/folder/[...path]/ # une catégorie / un dossier
+│   ├── src/routes/(catalog)/folder/[...path]/ # une catégorie / une série
 │   ├── src/routes/read/[...path]/       # le lecteur (plein écran)
 │   ├── src/lib/catalog.ts               # découpage des listes plates en arborescence
 │   ├── src/lib/library.svelte.ts        # état partagé + WebSocket
+│   ├── src/lib/i18n/                    # langues (un fichier JSON par langue)
+│   ├── src/hooks.server.ts              # langue de la requête + attribut `lang`
 │   ├── src/lib/components/              # Sidebar, BookCard, FolderCard
 │   └── src/lib/reader/                  # EPUB, bande dessinée, PDF
 └── docker-compose.yml
@@ -46,15 +48,32 @@ easybook/
   `books/électronique`…). La barre latérale les liste sous « Bibliothèque »,
   avec le nombre de livres de chacune ; cliquer ouvre la catégorie
   (`/folder/<catégorie>`), avec un fil d'Ariane.
-- **Un sous-dossier s'affiche comme un dossier** : la couverture de son **premier
+- **Un sous-dossier s'affiche comme une série** : la couverture de son **premier
   livre direct**, son nom, et son nombre de livres — à **tous les niveaux**. Un
-  livre rangé dans un sous-dossier ne sert jamais de couverture au dossier
-  parent (une histoire bonus mise à part ne devient pas la couverture de la
-  série) ; si le dossier n'a aucun livre à lui, on descend dans son premier
-  sous-dossier, récursivement. Le dossier se clique pour l'ouvrir.
+  livre rangé dans un sous-dossier ne sert jamais de couverture au niveau
+  au-dessus (une histoire bonus mise à part ne devient pas la couverture de la
+  série) ; si la série n'a aucun livre à elle, on descend dans sa première
+  sous-série, récursivement. La tuile se clique pour l'ouvrir.
 - La **page d'accueil** montre la totalité des livres, toutes catégories
   confondues (avec la recherche). Le lecteur s'ouvre en plein écran, et son lien
   de retour ramène au dossier du livre.
+
+## Langues
+
+L'interface parle **français, anglais, allemand, espagnol, italien et
+portugais** ; la langue se choisit dans le pied de la barre latérale.
+
+- Le choix est retenu dans le cookie `easybook_locale` : le serveur le relit à
+  chaque requête (`hooks.server.ts`), donc la page arrive **déjà traduite** —
+  pas de bascule après le chargement.
+- Sans choix explicite, la langue du navigateur (`Accept-Language`) est suivie,
+  à défaut le français.
+- Ajouter une langue = **un fichier** `src/lib/i18n/locales/<code>.json` (copie
+  du français, traduite) + une entrée dans `LOCALES`
+  (`src/lib/i18n/messages.ts`). Une clé manquante ne compile pas.
+- Les pluriels passent par `Intl.PluralRules` : chaque message est soit une
+  phrase, soit ses formes (`{ "one": "{count} page", "other": "{count} pages" }`).
+  Les nombres et les tailles suivent aussi la langue (`268 Mo` / `268 MB`).
 
 ## Formats
 
@@ -166,7 +185,7 @@ puis à chaque changement.
 
 ```bash
 cd backend  && cargo test        # 37 unitaires + 11 d'intégration
-cd frontend && bun run test      # logique du catalogue (16 tests Vitest)
+cd frontend && bun run test      # catalogue + langues (25 tests Vitest)
 ```
 
 - **Unitaires (backend)** — un module par sujet : tri naturel et détection de
@@ -179,10 +198,11 @@ cd frontend && bun run test      # logique du catalogue (16 tests Vitest)
   HTTP : catalogue (dont le nombre de pages annoncé pour chaque livre), fiches,
   couvertures des quatre formats, chapitres, pages, cache, refus de traversée.
 - **Frontend** — `catalog.ts` : parent, enfants, `level()` (les sous-dossiers
-  apparaissent comme des dossiers, à chaque niveau, sans mélange entre
-  catégories), `previewBook()` (premier livre **direct**, repli récursif sur le
-  premier sous-dossier), `extent()` (pages, ou chapitres pour un EPUB), fil
-  d'Ariane, URL.
+  apparaissent comme des séries, à chaque niveau, sans mélange entre
+  catégories), `previewBook()` (premier livre **direct**, repli récursif sur la
+  première sous-série), fil d'Ariane, URL. `i18n.test.ts` : mêmes clés dans
+  toutes les langues, pluriels, remplacement des paramètres, négociation de la
+  langue.
 - **E2E navigateur** : non installés ici — ils demanderaient Chromium + les deux
   process lancés, pour vérifier ce que les tests d'intégration couvrent déjà
   côté API. L'interface a été vérifiée manuellement (catalogue, dossiers,

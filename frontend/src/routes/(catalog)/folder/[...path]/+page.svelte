@@ -5,6 +5,7 @@
 	import FolderCard from '$lib/components/FolderCard.svelte';
 	import { level, folderUrl, parentOf, previewBook, segments } from '$lib/catalog';
 	import { library } from '$lib/library.svelte';
+	import { t } from '$lib/i18n/state.svelte';
 
 	const rel = $derived(page.params.path ?? '');
 
@@ -32,13 +33,13 @@
 </script>
 
 <svelte:head>
-	<title>{folder?.name ?? 'Dossier'} · easybook</title>
+	<title>{folder?.name ?? t('folder.fallbackTitle')} · easybook</title>
 </svelte:head>
 
 <div class="page">
 	{#if rel}
-		<nav class="crumbs" aria-label="Fil d’Ariane">
-			<a href="/">bibliothèque</a>
+		<nav class="crumbs" aria-label={t('folder.breadcrumb')}>
+			<a href="/">{t('nav.library')}</a>
 			{#each crumbs as crumb, index (crumb.rel)}
 				<span class="sep">/</span>
 				{#if index === crumbs.length - 1}
@@ -54,7 +55,7 @@
 		<h1>{folder?.name ?? crumbs.at(-1)?.name ?? ''}</h1>
 		<p>
 			{#if folder}
-				{folder.count} livre{folder.count > 1 ? 's' : ''} ·
+				{t('books.count', { count: folder.count })} ·
 			{/if}
 			<code>books/{rel}</code>
 		</p>
@@ -62,15 +63,16 @@
 
 	{#if missing}
 		<p class="notice">
-			Ce dossier n’existe plus. <a href={parent ? folderUrl(parent) : '/'}>Revenir en arrière</a>
+			{t('folder.missing')}
+			<a href={parent ? folderUrl(parent) : '/'}>{t('folder.back')}</a>
 		</p>
 	{:else if subfolders.length === 0 && books.length === 0}
-		<p class="notice">Ce dossier ne contient aucun livre.</p>
+		<p class="notice">{t('folder.empty')}</p>
 	{:else}
 		{#if subfolders.length > 0}
 			<section class="group">
 				<h2>
-					dossiers
+					{t('group.series')}
 					<span class="count">{subfolders.length}</span>
 				</h2>
 				<div class="grid">
@@ -87,7 +89,7 @@
 		{#if books.length > 0}
 			<section class="group">
 				<h2>
-					livres
+					{t('group.books')}
 					<span class="count">{books.length}</span>
 				</h2>
 				<div class="grid">

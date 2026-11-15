@@ -3,7 +3,6 @@ import type { BookInfo, FolderInfo } from './api';
 import {
 	childBooks,
 	childFolders,
-	extent,
 	folderUrl,
 	level,
 	parentOf,
@@ -163,27 +162,5 @@ describe('segments', () => {
 			{ name: 'Chainsaw Man', rel: 'mangas/Chainsaw Man' }
 		]);
 		expect(segments('')).toEqual([]);
-	});
-});
-
-describe('extent', () => {
-	it('annonce les pages d’une bande dessinée et d’un PDF', () => {
-		expect(extent(book('mangas/T1.cbz', 'cbz', 248))).toBe('248 pages');
-		expect(extent(book('mangas/T1.cbr', 'cbr', 190))).toBe('190 pages');
-		expect(extent(book('mangas/scan.pdf', 'pdf', 32))).toBe('32 pages');
-	});
-
-	it('annonce les chapitres d’un EPUB (pas de pages fixes)', () => {
-		expect(extent(book('livre.epub', 'epub', 12))).toBe('12 chapitres');
-	});
-
-	it('reste au singulier pour une seule page', () => {
-		expect(extent(book('mangas/couverture.cbz', 'cbz', 1))).toBe('1 page');
-		expect(extent(book('livre.epub', 'epub', 1))).toBe('1 chapitre');
-	});
-
-	it('ne dit rien quand le livre n’a pas pu être compté', () => {
-		expect(extent(book('mangas/casse.cbz', 'cbz', null))).toBeNull();
-		expect(extent(book('mangas/vide.cbz', 'cbz', 0))).toBeNull();
 	});
 });

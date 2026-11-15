@@ -36,7 +36,9 @@ export function start(): void {
 async function refresh(): Promise<void> {
 	try {
 		const response = await fetch(booksUrl());
-		if (!response.ok) throw new Error(`Catalogue indisponible (${response.status})`);
+		// Seul le code est retenu : le message se compose à l'affichage, donc dans
+		// la langue courante (elle peut changer sans recharger la page).
+		if (!response.ok) throw new Error(String(response.status));
 		apply((await response.json()) as Library);
 	} catch (error) {
 		library.error = error instanceof Error ? error.message : String(error);

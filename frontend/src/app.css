@@ -174,12 +174,56 @@ code {
 }
 
 .sidebar-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 10px 10px 0;
+}
+
+/* Langue : le choix vit dans le pied de la barre latérale, au-dessus de l'état
+   de la connexion. Un `<select>` natif suffit — la liste tient à l'écran, et le
+   clavier comme le téléphone le connaissent. */
+.sidebar-lang {
 	margin-top: auto;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	gap: 10px;
 	padding: 12px 10px 0;
 	border-top: 1px solid var(--line);
+	color: var(--muted);
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
+.sidebar-lang select {
+	appearance: none;
+	padding: 5px 24px 5px 9px;
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	background-color: var(--panel);
+	/* Chevron dessiné, pour ôter la flèche du système (qui ignore le thème). */
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none' stroke='%238b8b96' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 8px center;
+	color: var(--text);
+	font: inherit;
+	font-size: 12px;
+	font-weight: 500;
+	letter-spacing: 0;
+	text-transform: none;
+	cursor: pointer;
+}
+
+.sidebar-lang select:hover {
+	border-color: var(--accent);
+}
+
+.sidebar-lang select:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
 }
 
 .content {

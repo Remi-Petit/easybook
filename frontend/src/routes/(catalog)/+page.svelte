@@ -1,6 +1,7 @@
 <script lang="ts">
 	import BookCard from '$lib/components/BookCard.svelte';
 	import { library, reload } from '$lib/library.svelte';
+	import { t } from '$lib/i18n/state.svelte';
 
 	let filter = $state('');
 
@@ -20,41 +21,41 @@
 </script>
 
 <svelte:head>
-	<title>Ma bibliothèque · easybook</title>
+	<title>{t('home.title')} · easybook</title>
 </svelte:head>
 
 <div class="page">
 	<section class="intro">
-		<h1>Ma bibliothèque</h1>
+		<h1>{t('home.title')}</h1>
 		<p>
-			{library.total}
-			livre{library.total > 1 ? 's' : ''} · dans <code>books/</code>, en temps réel
+			{t('books.count', { count: library.total })}
+			· {t('home.in')} <code>books/</code>, {t('home.live')}
 		</p>
 		<input
 			class="search"
 			bind:value={filter}
-			placeholder="Filtrer par titre, dossier, format…"
-			aria-label="Filtrer la bibliothèque"
+			placeholder={t('home.search')}
+			aria-label={t('home.searchLabel')}
 		/>
 	</section>
 
 	{#if library.error && library.books.length === 0}
 		<p class="notice">
-			Impossible de joindre l’API ({library.error}). <button onclick={() => reload()}>Réessayer</button>
+			{t('home.error', { error: library.error })}
+			<button onclick={() => reload()}>{t('home.retry')}</button>
 		</p>
 	{:else if matchingBooks.length === 0}
 		<p class="notice">
 			{#if library.books.length === 0}
-				Aucun livre pour le moment : déposez un EPUB, un CBZ ou un PDF dans <code>books/</code>,
-				il apparaîtra ici sans recharger la page.
+				{t('home.emptyBefore')} <code>books/</code> {t('home.emptyAfter')}
 			{:else}
-				Aucun livre ne correspond à « {filter} ».
+				{t('home.noMatch', { query: filter })}
 			{/if}
 		</p>
 	{:else}
 		<section class="group">
 			<h2>
-				livres
+				{t('group.books')}
 				<span class="count">{matchingBooks.length}</span>
 			</h2>
 			<div class="grid">
