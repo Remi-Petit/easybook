@@ -33,6 +33,7 @@
 	"folder.create": "Neuer Ordner",
 	"folder.createIn": "Er wird in „{folder}“ angelegt.",
 	"folder.createAtRoot": "Sie wird im Wurzelverzeichnis der Bibliothek angelegt.",
+	"folder.created": "Ordner „{name}“ angelegt",
 	"folder.newName": "Ordnername",
 	"nav.newFolder": "Neue Kategorie",
 	"help.open": "Hilfe",
@@ -56,7 +57,10 @@
 	"upload.done": "hinzugefügt",
 	"upload.exists": "existiert bereits",
 	"upload.failed": "Upload fehlgeschlagen",
-	"upload.unsupported": "„{name}“ ist kein EPUB, CBZ, CBR oder PDF.",
+	"upload.refused": {
+		"one": "{count} Datei übersprungen (unbekanntes Format)",
+		"other": "{count} Dateien übersprungen (unbekanntes Format)"
+	},
 	"card.series": "Serie",
 	"card.noBooks": "kein Buch",
 	"card.pages": {

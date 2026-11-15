@@ -578,13 +578,129 @@ code {
 	color: var(--muted);
 }
 
-/* Bilan d'un dépôt : les doublons sont nommés, pas comptés deux fois. */
-.upload-duplicates {
+/* ── Messages éphémères ──────────────────────────────────────────────────── */
+
+/* Empilés en bas à droite, au-dessus du suivi d'envoi. */
+.toasts {
+	position: fixed;
+	right: 18px;
+	bottom: 18px;
+	z-index: 50;
+	display: grid;
+	gap: 8px;
+	width: min(340px, calc(100vw - 36px));
+	pointer-events: none;
+}
+
+.toast {
+	position: relative;
+	display: grid;
+	gap: 4px;
+	padding: 11px 13px 14px;
+	overflow: hidden;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	font-size: 12.5px;
+	box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+	pointer-events: auto;
+	animation: toast-in 160ms ease-out;
+}
+
+.toast-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+}
+
+.toast-text {
+	flex: 1;
+	line-height: 1.35;
+}
+
+.toast-close {
+	color: var(--muted);
+	font-size: 15px;
+	line-height: 1;
+}
+
+.toast-close:hover {
+	color: var(--text);
+}
+
+.toast-detail {
+	display: -webkit-box;
+	overflow: hidden;
 	color: var(--muted);
 	font-size: 11.5px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	line-height: 1.4;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow-wrap: anywhere;
+}
+
+/* La barre **est** la minuterie : sa largeur va de 100 % à 0 pendant `life`, et
+   `onanimationend` retire le message. Le survol la met en pause, donc on peut
+   lire sans que le message s'échappe. */
+.toast-bar {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 3px;
+	background: rgba(255, 255, 255, 0.07);
+}
+
+.toast-bar span {
+	display: block;
+	width: 100%;
+	height: 100%;
+	background: var(--accent);
+	animation-name: toast-life;
+	animation-timing-function: linear;
+	animation-fill-mode: forwards;
+}
+
+.toast:hover .toast-bar span {
+	animation-play-state: paused;
+}
+
+.toast[data-tone='ok'] .toast-bar span {
+	background: #5cc98a;
+}
+
+.toast[data-tone='warn'] .toast-bar span {
+	background: #d8a748;
+}
+
+.toast[data-tone='error'] .toast-bar span {
+	background: var(--danger);
+}
+
+@keyframes toast-life {
+	from {
+		width: 100%;
+	}
+	to {
+		width: 0;
+	}
+}
+
+@keyframes toast-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.toast {
+		animation: none;
+	}
 }
 
 .upload[data-state='done'] .upload-bar span {

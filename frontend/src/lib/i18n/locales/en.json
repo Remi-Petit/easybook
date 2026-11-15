@@ -33,6 +33,7 @@
 	"folder.create": "New folder",
 	"folder.createIn": "It will be created in “{folder}”.",
 	"folder.createAtRoot": "It will be created at the root of the library.",
+	"folder.created": "Folder “{name}” created",
 	"folder.newName": "Folder name",
 	"nav.newFolder": "New category",
 	"help.open": "Help",
@@ -56,7 +57,10 @@
 	"upload.done": "added",
 	"upload.exists": "already exists",
 	"upload.failed": "upload failed",
-	"upload.unsupported": "“{name}” is not an EPUB, CBZ, CBR or PDF.",
+	"upload.refused": {
+		"one": "{count} file skipped (unknown format)",
+		"other": "{count} files skipped (unknown format)"
+	},
 	"card.series": "series",
 	"card.noBooks": "no book",
 	"card.pages": {

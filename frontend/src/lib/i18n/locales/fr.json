@@ -33,6 +33,7 @@
 	"folder.create": "Nouveau dossier",
 	"folder.createIn": "Il sera créé dans « {folder} ».",
 	"folder.createAtRoot": "Elle sera créée à la racine de la bibliothèque.",
+	"folder.created": "Dossier « {name} » créé",
 	"folder.newName": "Nom du dossier",
 	"nav.newFolder": "Nouvelle catégorie",
 	"help.open": "Aide",
@@ -56,7 +57,10 @@
 	"upload.done": "ajouté",
 	"upload.exists": "existe déjà",
 	"upload.failed": "échec de l’envoi",
-	"upload.unsupported": "« {name} » n’est pas un EPUB, CBZ, CBR ou PDF.",
+	"upload.refused": {
+		"one": "{count} fichier ignoré (format inconnu)",
+		"other": "{count} fichiers ignorés (format inconnu)"
+	},
 	"card.series": "série",
 	"card.noBooks": "aucun livre",
 	"card.pages": {

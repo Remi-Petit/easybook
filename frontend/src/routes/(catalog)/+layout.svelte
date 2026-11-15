@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import Toasts from '$lib/components/Toasts.svelte';
 
 	let { children } = $props();
 </script>
@@ -10,3 +11,6 @@
 		{@render children()}
 	</main>
 </div>
+
+<!-- Les messages vivent au-dessus des pages : ils survolent, ils ne poussent rien. -->
+<Toasts />

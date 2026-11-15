@@ -18,13 +18,12 @@
 // À la fin d'un dépôt, un résumé remplace la liste ligne à ligne.
 
 import { createFolderUrl, uploadUrl } from './api';
+import { t } from './i18n/state.svelte';
 import { library } from './library.svelte';
+import { notify } from './toasts.svelte';
 
 /** Fichier accepté : les formats que le serveur sait lire. */
 const ACCEPTED = /\.(epub|cbz|cbr|pdf)$/i;
-
-/** Délai avant de retirer le résumé d'un dépôt terminé. */
-const KEEP_DONE_MS = 8000;
 
 export type UploadState = 'waiting' | 'sending' | 'done' | 'exists' | 'failed';
 
@@ -38,8 +37,8 @@ export type Upload = {
 	detail?: string;
 };
 
-/** Bilan du dernier dépôt. */
-export type UploadSummary = {
+/** Bilan du dépôt en cours. */
+type Counts = {
 	/** Livres écrits. */
 	added: number;
 	/** Livres déjà présents, donc ignorés (envoyés ou non). */
@@ -49,11 +48,7 @@ export type UploadSummary = {
 	duplicates: string[];
 };
 
-export const uploads = $state({
-	items: [] as Upload[],
-	/** Rempli quand un dépôt se termine ; `null` pendant l'envoi. */
-	summary: null as UploadSummary | null
-});
+export const uploads = $state({ items: [] as Upload[] });
 
 /** Un fichier à déposer, avec le dossier (relatif) qui le reçoit. */
 export type Deposit = { folder: string; file: File };
@@ -66,7 +61,7 @@ let sending = false;
 /** Ce qui reste à traiter dans le dépôt en cours. */
 let pending = 0;
 /** Compteurs du dépôt en cours, remis à zéro quand il commence. */
-let counts: UploadSummary = { added: 0, exists: 0, failed: 0, duplicates: [] };
+let counts: Counts = { added: 0, exists: 0, failed: 0, duplicates: [] };
 
 /** Le fichier a-t-il un nom de livre ? (pure, testée) */
 export function accepts(name: string): boolean {
@@ -116,10 +111,9 @@ export function enqueue(files: File[], folder: string): number {
 
 /** Même chose, mais chaque fichier porte son propre dossier (dossier déposé). */
 export function enqueueDropped(deposits: Deposit[]): number {
-	// Un nouveau dépôt remplace le bilan du précédent.
+	// Un nouveau dépôt reprend les compteurs du précédent.
 	if (pending === 0) {
 		counts = { added: 0, exists: 0, failed: 0, duplicates: [] };
-		uploads.summary = null;
 		uploads.items = [];
 	}
 
@@ -301,29 +295,58 @@ function finish(): void {
 }
 
 /**
- * Clôt le dépôt : le détail ligne à ligne laisse la place à un bilan.
+ * Clôt le dépôt : le détail ligne à ligne laisse la place à un **message**.
  *
  * Un dépôt de trente livres où trois existaient déjà ne doit pas afficher
- * trente lignes dont trois en rouge : les doublons ne sont pas des échecs.
+ * trente lignes dont trois en rouge : les doublons ne sont pas des échecs. Le
+ * message part tout seul au bout de son temps, sa barre dit combien il en reste.
  */
 function finishBatch(): void {
-	uploads.summary = {
-		added: counts.added,
-		exists: counts.exists,
-		failed: counts.failed,
-		duplicates: [...counts.duplicates]
-	};
-	uploads.items = [];
+	const parts: string[] = [];
+	if (counts.added > 0) parts.push(t('upload.sumAdded', { count: counts.added }));
+	if (counts.exists > 0) parts.push(t('upload.sumExists', { count: counts.exists }));
+	if (counts.failed > 0) parts.push(t('upload.sumFailed', { count: counts.failed }));
 
-	setTimeout(() => {
-		// Un nouveau dépôt a pu démarrer entre-temps : on ne l'efface pas.
-		if (pending === 0) uploads.summary = null;
-	}, KEEP_DONE_MS);
+	// Rien n'est passé par la file (tout a été refusé, par exemple) : l'avis de
+	// refus a déjà parlé, un « dépôt terminé » vide n'apprendrait rien.
+	if (parts.length === 0) {
+		uploads.items = [];
+		return;
+	}
+
+	const duplicates =
+		counts.duplicates.length > 0
+			? t('upload.duplicates', { names: names(counts.duplicates) })
+			: undefined;
+
+	notify(t('upload.summaryTitle'), {
+		detail: [parts.join(' · '), duplicates].filter(Boolean).join(' — '),
+		tone: counts.failed > 0 ? 'error' : counts.added > 0 ? 'ok' : 'warn',
+		// Plus long que les autres : il y a jusqu'à trois nombres à lire.
+		life: 8000
+	});
+
+	uploads.items = [];
 }
 
-/** Ferme le bilan du dernier dépôt. */
-export function dismissSummary(): void {
-	uploads.summary = null;
+/** Trois noms suffisent dans un message : le reste est dans l'infobulle. */
+function names(duplicates: string[]): string {
+	const shown = duplicates.slice(0, 3).join(', ');
+	return duplicates.length > 3 ? `${shown}…` : shown;
+}
+
+/** Refus d'un ou plusieurs fichiers (format inconnu), en un seul message. */
+export function refuse(names: string[]): void {
+	if (names.length === 0) return;
+	notify(t('upload.refused', { count: names.length }), {
+		detail: names.slice(0, 3).join(', ') + (names.length > 3 ? '…' : ''),
+		tone: 'warn'
+	});
+}
+
+/** Confirmation de création d'un dossier. */
+export function created(name: string): void {
+	notify(t('folder.created', { name }));
 }
 
 /** Retire une ligne de la liste (envoi en cours). */

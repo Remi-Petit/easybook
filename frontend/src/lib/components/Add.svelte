@@ -4,14 +4,15 @@
 	import {
 		accepts,
 		createFolders,
+		created,
 		depositFolder,
 		dismiss,
-		dismissSummary,
 		dropEntries,
 		enqueue,
 		enqueueDropped,
 		foldersOf,
 		readDrop,
+		refuse,
 		uploads
 	} from '$lib/uploads.svelte';
 
@@ -60,7 +61,8 @@
 			if (!response.ok) {
 				throw new Error((await response.text()).trim() || `Erreur ${response.status}`);
 			}
-			// Le catalogue est rediffusé par le serveur : rien d'autre à faire.
+			// Le catalogue est rediffusé par le serveur ; le message confirme.
+			created(name.trim());
 			createDialog?.close();
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : String(cause);
@@ -78,8 +80,6 @@
 
 	/** Vrai pendant qu'un fichier survole la page. */
 	let over = $state(false);
-	/** Fichiers refusés au dernier dépôt (format inconnu). */
-	let refused = $state<string[]>([]);
 	/** Dossiers en cours de création avant l'envoi. */
 	let preparing = $state(0);
 	let picker = $state<HTMLInputElement | null>(null);
@@ -120,7 +120,6 @@
 	 * repli, sans structure.
 	 */
 	async function drop(entries: FileSystemEntry[], files: File[]) {
-		refused = [];
 		if (entries.length === 0) {
 			loadPlain(files);
 			return;
@@ -129,8 +128,9 @@
 		preparing += 1;
 		try {
 			const deposits = await readDrop(entries, folder);
-			const rejected = deposits.filter((deposit) => !accepts(deposit.file.name));
-			refused = rejected.map((deposit) => deposit.file.name);
+			refuse(
+				deposits.filter((deposit) => !accepts(deposit.file.name)).map((deposit) => deposit.file.name)
+			);
 			await createFolders(foldersOf(deposits));
 			enqueueDropped(deposits);
 		} finally {
@@ -139,7 +139,7 @@
 	}
 
 	function loadPlain(files: File[]) {
-		refused = files.map((file) => file.name).filter((name) => !accepts(name));
+		refuse(files.map((file) => file.name).filter((name) => !accepts(name)));
 		enqueue(files, folder);
 	}
 
@@ -154,12 +154,6 @@
 	const examplePath = $derived(
 		folder ? `${folder}/Un dossier/…` : 'Un dossier/…'
 	);
-
-	/** Trois noms suffisent ici : la liste complète est dans l'infobulle. */
-	function names(duplicates: string[]): string {
-		const shown = duplicates.slice(0, 3).join(', ');
-		return duplicates.length > 3 ? `${shown}…` : shown;
-	}
 </script>
 
 <svelte:window ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
@@ -259,14 +253,6 @@
 	aria-hidden="true"
 />
 
-{#if refused.length > 0}
-	<p class="notice">
-		{#each refused as name (name)}
-			{t('upload.unsupported', { name })}
-		{/each}
-	</p>
-{/if}
-
 {#if over}
 	<div class="drop-overlay" aria-hidden="true">
 		<div>
@@ -285,45 +271,7 @@
 	</div>
 {/if}
 
-{#if uploads.summary}
-	{@const summary = uploads.summary}
-	<div class="uploads" role="status">
-		<div
-			class="upload"
-			data-state={summary.failed > 0 ? 'failed' : summary.added === 0 && summary.exists > 0 ? 'exists' : 'done'}
-		>
-			<div class="upload-head">
-				<span class="upload-name">{t('upload.summaryTitle')}</span>
-				<button
-					class="upload-close"
-					type="button"
-					aria-label={t('common.dismiss')}
-					onclick={dismissSummary}
-				>
-					×
-				</button>
-			</div>
-			<span class="upload-state">
-				{#if summary.added > 0}
-					{t('upload.sumAdded', { count: summary.added })}
-				{/if}
-				{#if summary.exists > 0}
-					{#if summary.added > 0} · {/if}
-					{t('upload.sumExists', { count: summary.exists })}
-				{/if}
-				{#if summary.failed > 0}
-					{#if summary.added > 0 || summary.exists > 0} · {/if}
-					{t('upload.sumFailed', { count: summary.failed })}
-				{/if}
-			</span>
-			{#if summary.duplicates.length > 0}
-				<span class="upload-duplicates" title={summary.duplicates.join(', ')}>
-					{t('upload.duplicates', { names: names(summary.duplicates) })}
-				</span>
-			{/if}
-		</div>
-	</div>
-{:else if uploads.items.length > 0}
+{#if uploads.items.length > 0}
 	<div class="uploads" role="status">
 		{#each uploads.items as item (item.id)}
 			<div class="upload" data-state={item.state}>

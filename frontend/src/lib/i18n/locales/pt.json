@@ -33,6 +33,7 @@
 	"folder.create": "Nova pasta",
 	"folder.createIn": "Será criada em «{folder}».",
 	"folder.createAtRoot": "Será criada na raiz da biblioteca.",
+	"folder.created": "Pasta «{name}» criada",
 	"folder.newName": "Nome da pasta",
 	"nav.newFolder": "Nova categoria",
 	"help.open": "Ajuda",
@@ -56,7 +57,10 @@
 	"upload.done": "adicionado",
 	"upload.exists": "já existe",
 	"upload.failed": "falha no envio",
-	"upload.unsupported": "«{name}» não é um EPUB, CBZ, CBR ou PDF.",
+	"upload.refused": {
+		"one": "{count} ficheiro ignorado (formato desconhecido)",
+		"other": "{count} ficheiros ignorados (formato desconhecido)"
+	},
 	"card.series": "série",
 	"card.noBooks": "nenhum livro",
 	"card.pages": {

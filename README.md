@@ -59,6 +59,11 @@ easybook/
   un dossier déjà présent reçoit simplement les nouveaux livres, et la fin d'un
   dépôt affiche un bilan — *« 12 ajoutés · 2 déjà présents »* avec les noms des
   doublons — au lieu d'une ligne d'erreur par fichier. Rien n'est jamais écrasé.
+- Les messages sont **éphémères** : bilan d'un dépôt, dossiers créés et fichiers
+  ignorés s'empilent en bas à droite dans des encarts qui **partent tout seuls**,
+  avec une **barre qui se vide** pour montrer le temps restant. La barre *est* la
+  minuterie (une animation CSS de `100 %` à `0`) : le message n'est retiré qu'à sa
+  fin, et le survol la met en pause pour laisser le temps de lire.
 - Le dossier est **surveillé** (`notify`) : un fichier ajouté, renommé ou
   supprimé est poussé aux navigateurs par WebSocket. **Pas de sondage.**
 - Un livre est reconnu à son **extension** ; son contenu n'est lu qu'au moment
@@ -209,7 +214,7 @@ puis à chaque changement.
 
 ```bash
 cd backend  && cargo test        # 64 unitaires + 15 d'intégration
-cd frontend && bun run test      # catalogue, langues, URL, dépôts (38 tests Vitest)
+cd frontend && bun run test      # catalogue, langues, URL, dépôts (43 tests Vitest)
 ```
 
 - **Unitaires (backend)** — un module par sujet : tri naturel et détection de

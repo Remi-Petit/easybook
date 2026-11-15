@@ -33,6 +33,7 @@
 	"folder.create": "Nueva carpeta",
 	"folder.createIn": "Se creará en «{folder}».",
 	"folder.createAtRoot": "Se creará en la raíz de la biblioteca.",
+	"folder.created": "Carpeta «{name}» creada",
 	"folder.newName": "Nombre de la carpeta",
 	"nav.newFolder": "Nueva categoría",
 	"help.open": "Ayuda",
@@ -56,7 +57,10 @@
 	"upload.done": "añadido",
 	"upload.exists": "ya existe",
 	"upload.failed": "error al subir",
-	"upload.unsupported": "«{name}» no es un EPUB, CBZ, CBR o PDF.",
+	"upload.refused": {
+		"one": "{count} archivo omitido (formato desconocido)",
+		"other": "{count} archivos omitidos (formato desconocido)"
+	},
 	"card.series": "serie",
 	"card.noBooks": "ningún libro",
 	"card.pages": {
