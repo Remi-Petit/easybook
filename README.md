@@ -45,10 +45,12 @@ easybook/
   `books/électronique`…). La barre latérale les liste sous « Bibliothèque »,
   avec le nombre de livres de chacune ; cliquer ouvre la catégorie
   (`/folder/<catégorie>`), avec un fil d'Ariane.
-- **Un sous-dossier s'affiche comme un dossier** : la couverture du premier livre
-  qu'il contient, son nom, et son nombre de livres — à **tous les niveaux**. Il
-  ne contient que ce qu'il contient réellement (ses livres et ses propres
-  sous-dossiers), et se clique pour l'ouvrir : la navigation est récursive.
+- **Un sous-dossier s'affiche comme un dossier** : la couverture de son **premier
+  livre direct**, son nom, et son nombre de livres — à **tous les niveaux**. Un
+  livre rangé dans un sous-dossier ne sert jamais de couverture au dossier
+  parent (une histoire bonus mise à part ne devient pas la couverture de la
+  série) ; si le dossier n'a aucun livre à lui, on descend dans son premier
+  sous-dossier, récursivement. Le dossier se clique pour l'ouvrir.
 - La **page d'accueil** montre la totalité des livres, toutes catégories
   confondues (avec la recherche). Le lecteur s'ouvre en plein écran, et son lien
   de retour ramène au dossier du livre.
@@ -169,7 +171,8 @@ cd frontend && bun run test      # logique du catalogue (11 tests Vitest)
   cache, refus de traversée.
 - **Frontend** — `catalog.ts` : parent, enfants, `level()` (les sous-dossiers
   apparaissent comme des dossiers, à chaque niveau, sans mélange entre
-  catégories), aperçu, fil d'Ariane, URL.
+  catégories), `previewBook()` (premier livre **direct**, repli récursif sur le
+  premier sous-dossier), fil d'Ariane, URL.
 - **E2E navigateur** : non installés ici — ils demanderaient Chromium + les deux
   process lancés, pour vérifier ce que les tests d'intégration couvrent déjà
   côté API. L'interface a été vérifiée manuellement (catalogue, dossiers,

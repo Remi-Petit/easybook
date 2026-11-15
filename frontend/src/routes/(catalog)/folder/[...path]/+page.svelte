@@ -75,7 +75,10 @@
 				</h2>
 				<div class="grid">
 					{#each subfolders as subfolder (subfolder.rel)}
-						<FolderCard folder={subfolder} preview={previewBook(library.books, subfolder.rel)} />
+						<FolderCard
+							folder={subfolder}
+							preview={previewBook(library.folders, library.books, subfolder.rel)}
+						/>
 					{/each}
 				</div>
 			</section>

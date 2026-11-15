@@ -118,22 +118,39 @@ describe('level', () => {
 });
 
 describe('previewBook', () => {
-	it('prend le premier livre du dossier qui a une couverture', () => {
-		const books = [
-			book('mangas/guide.pdf', 'pdf'),
-			book('mangas/T1.cbz'),
-			book('mangas/T2.cbz')
-		];
-		expect(previewBook(books, 'mangas')?.rel).toBe('mangas/T1.cbz');
+	it('prend le premier livre posé directement dans le dossier', () => {
+		const books = [book('mangas/T1.cbz'), book('mangas/T2.cbz')];
+		expect(previewBook([folder('mangas')], books, 'mangas')?.rel).toBe('mangas/T1.cbz');
 	});
 
-	it('se rabat sur le premier livre quand aucun n’a de couverture', () => {
-		const books = [book('mangas/guide.pdf', 'pdf'), book('mangas/scan.pdf', 'pdf')];
-		expect(previewBook(books, 'mangas')?.rel).toBe('mangas/guide.pdf');
+	it('ignore les livres rangés dans un sous-dossier', () => {
+		// Une histoire bonus mise à part ne devient pas la couverture de la série,
+		// même si son titre passe avant dans l’ordre naturel.
+		const folders = [folder('mangas/Chainsaw Man'), folder('mangas/Chainsaw Man/Bonus')];
+		const books = [
+			book('mangas/Chainsaw Man/Bonus/Buddy Stories.epub', 'epub'),
+			book('mangas/Chainsaw Man/T1.cbz'),
+			book('mangas/Chainsaw Man/T2.cbz')
+		];
+		expect(previewBook(folders, books, 'mangas/Chainsaw Man')?.rel).toBe(
+			'mangas/Chainsaw Man/T1.cbz'
+		);
+	});
+
+	it('descend dans le premier sous-dossier quand le dossier n’a aucun livre à lui', () => {
+		const folders = [
+			folder('mangas/série'),
+			folder('mangas/série/T1'),
+			folder('mangas/série/T1/extras')
+		];
+		const books = [book('mangas/série/T1/extras/artbook.pdf', 'pdf')];
+		expect(previewBook(folders, books, 'mangas/série')?.rel).toBe(
+			'mangas/série/T1/extras/artbook.pdf'
+		);
 	});
 
 	it('rend undefined pour un dossier vide', () => {
-		expect(previewBook([], 'vide')).toBeUndefined();
+		expect(previewBook([], [], 'vide')).toBeUndefined();
 	});
 });
 

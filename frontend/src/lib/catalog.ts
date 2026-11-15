@@ -48,16 +48,28 @@ export function level(
 }
 
 /**
- * Livre dont la couverture représente un dossier : le premier, dans l'ordre
- * naturel du catalogue, qui a réellement une couverture.
+ * Livre dont la couverture représente un dossier : le **premier livre posé
+ * directement** dedans (le catalogue arrive déjà trié naturellement).
  *
- * Un PDF ou un CBR en tête de dossier ne doit pas laisser la tuile vide alors
- * que les livres suivants en ont une.
+ * Un livre rangé dans un sous-dossier ne compte pas : une histoire bonus mise à
+ * part ne doit pas devenir la couverture de la série.
+ *
+ * Récursif : si le dossier n'a aucun livre à lui, on descend dans son premier
+ * sous-dossier, jusqu'à trouver une couverture — ou rien du tout.
  */
-export function previewBook(books: BookInfo[], folderRel: string): BookInfo | undefined {
-	const prefix = `${folderRel}/`;
-	const inside = books.filter((book) => book.rel.startsWith(prefix));
-	return inside.find((book) => book.format === 'epub' || book.format === 'cbz') ?? inside[0];
+export function previewBook(
+	folders: FolderInfo[],
+	books: BookInfo[],
+	folderRel: string
+): BookInfo | undefined {
+	const direct = childBooks(books, folderRel);
+	if (direct.length > 0) return direct[0];
+
+	for (const child of childFolders(folders, folderRel)) {
+		const found = previewBook(folders, books, child.rel);
+		if (found) return found;
+	}
+	return undefined;
 }
 
 /** Segments d'un chemin, chacun avec son `rel` (fil d'Ariane). */
