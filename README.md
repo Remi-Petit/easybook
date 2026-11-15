@@ -1,6 +1,10 @@
 # easybook
 
 [![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
+[![license](https://img.shields.io/github/license/Remi-Petit/easybook)](LICENSE)
+<!-- couverture:start -->
+[![couverture backend](https://img.shields.io/badge/coverage%20backend-77.1%25-yellowgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-100.0%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
+<!-- couverture:end -->
 
 Bibliothèque de livres locale : un dossier `books/`, un backend Rust qui le
 surveille, une interface SvelteKit pour lire ce qu'il contient.
@@ -225,10 +229,27 @@ touche que le README ne lance rien.
 | `msrv` | `rust-version` de `Cargo.toml` tient (cargo-hack) |
 | `audit` | `cargo audit` (avis RustSec) — bloquant |
 | `frontend` | `bun run test`, `bun run check`, `bun run build` |
+| `couverture` | calcule les taux et réécrit les badges ci-dessus (uniquement sur `master`) |
 | `trivy` | les **deux images** construites par `docker compose` : CRITICAL bloquant, HIGH en rapport |
 
 Les images sont construites sans être publiées, avec un cache GHA par image :
 la CI vérifie ce que l'utilisateur lance vraiment, pas seulement les lockfiles.
+
+Les badges de couverture ne sont **jamais** saisis à la main : le job les
+réécrit, et ne commite que s'ils ont bougé (`README.md` n'est pas dans les
+`paths` du workflow, donc ce commit ne relance pas la CI). Même calcul en local :
+
+```bash
+cd backend  && mkdir -p target/cov && cargo llvm-cov --json --summary-only \
+                --output-path target/cov/backend-coverage.json
+cd frontend && bun run test:coverage
+node scripts/coverage.mjs          # réécrit les badges
+node scripts/coverage.mjs --check  # exit 1 s'ils sont périmés
+```
+
+Périmètre : les lignes couvertes par les tests **unitaires**. Côté frontend, les
+composants et les modules qui dépendent de SvelteKit (`$app/…`) sont hors
+périmètre — voir `frontend/vitest.config.ts`.
 
 ## Configuration
 

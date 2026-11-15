@@ -14,6 +14,7 @@ on:
     paths:
       - 'backend/**'
       - 'frontend/**'
+      - 'scripts/**'
       - 'docker-compose.yml'
       - '.dockerignore'
       - '.github/workflows/**'
@@ -21,6 +22,7 @@ on:
     paths:
       - 'backend/**'
       - 'frontend/**'
+      - 'scripts/**'
       - 'docker-compose.yml'
       - '.dockerignore'
       - '.github/workflows/**'
@@ -45,6 +47,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      scripts: ${{ steps.filter.outputs.scripts }}
       docker: ${{ steps.filter.outputs.docker }}
     steps:
       - uses: actions/checkout@v6
@@ -63,6 +66,8 @@ jobs:
             frontend:
               - 'frontend/**'
               - '.github/workflows/**'
+            scripts:
+              - 'scripts/**'
             docker:
               - 'backend/Dockerfile'
               - 'frontend/Dockerfile'
@@ -182,6 +187,60 @@ jobs:
       - run: bun run test
       - run: bun run check
       - run: bun run build
+
+  # Couverture (badges du README) : le taux n'est jamais saisi à la main, il est
+  # calculé ici puis écrit dans `README.md` par `scripts/coverage.mjs`.
+  #
+  # Deux badges séparés (backend, frontend) : un chiffre unique cacherait un
+  # petit frontend derrière des milliers de lignes de Rust. `scripts/coverage.mjs`
+  # additionne quand même les lignes pour le journal.
+  #
+  # Le commit ne porte que sur `README.md`, absent des `paths` ci-dessus : il ne
+  # relance donc pas la CI. Sur une pull request (et a fortiori depuis un fork,
+  # où le jeton est en lecture seule) le job ne tourne pas : la mise à jour se
+  # fera au merge.
+  couverture:
+    name: Couverture (badges)
+    needs: changes
+    if: >-
+      github.event_name == 'push' &&
+      (needs.changes.outputs.backend == 'true' ||
+       needs.changes.outputs.frontend == 'true' ||
+       needs.changes.outputs.scripts == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Le crate vit dans `backend/` : ce job, lui, travaille à la racine.
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - run: rustup component add llvm-tools-preview
+      - name: Couverture backend
+        working-directory: backend
+        run: |
+          mkdir -p target/cov
+          cargo llvm-cov --json --summary-only --output-path target/cov/backend-coverage.json
+      - name: Couverture frontend
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run test:coverage
+      - run: node scripts/coverage.mjs
+      - run: |
+          if git diff --quiet -- README.md; then
+            echo "Badges déjà à jour."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs: badges de couverture' README.md
+          git push
 
   # Sécurité des **images** (Trivy) : ce qui part chez l'utilisateur est le
   # conteneur, pas node_modules. Scanner `bun.lock` ferait remonter des avis dans
