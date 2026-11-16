@@ -55,3 +55,7 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+# Décodage d'images et rendu PDF : ~45x plus lents sans optimisation (une
+# couverture de CBZ passe de 3,5 s à 80 ms). Seules les dépendances sont
+# optimisées, le code d'easybook reste rapide à recompiler.
+opt-level = 3
