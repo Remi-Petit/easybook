@@ -38,6 +38,15 @@ impl BookFormat for Pdf {
     }
 
     fn pages(&self, path: &Path) -> Result<Option<usize>, String> {
+        // `load_metadata` ne lit que l'arbre des pages : `Document::load` parse
+        // tous les objets du fichier (~800 Mo de RAM pour 45 PDF au scan).
+        if let Ok(metadata) = Document::load_metadata(path)
+            && metadata.page_count > 0
+        {
+            return Ok(Some(metadata.page_count as usize));
+        }
+
+        // Repli : fichier que le chargeur léger ne sait pas lire (zéro page).
         let document = Document::load(path).map_err(|e| format!("{} : {e}", path.display()))?;
         Ok(Some(document.get_pages().len()))
     }
