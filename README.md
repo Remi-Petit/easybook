@@ -131,6 +131,16 @@ le backend : le catalogue affiche des dizaines de vignettes sans télécharger l
 planches d'origine, qui pèsent plusieurs mégaoctets chacune. Une couverture
 absente n'est pas une erreur — l'interface montre alors un repli avec le format.
 
+Elles sont aussi **stockées sur disque**, dans `books/.easybook/covers/` (dossier
+caché : le scan et le watcher l'ignorent) : un redémarrage ne refait pas le rendu
+des PDF. Elles sont **préchauffées** en tâche de fond : au démarrage, puis à chaque
+ajout, remplacement ou suppression de livre, le backend produit les vignettes
+manquantes (un livre à la fois) et supprime celles des livres disparus, sans
+attendre que l'interface les demande. Une vignette est liée au chemin, à la taille
+et à la date du livre. Supprimer le dossier est sans risque, il se reconstruit
+tout seul. Un `books/` en lecture seule reste utilisable (les couvertures restent
+en mémoire seulement).
+
 L'URL d'une couverture porte la date du fichier (une réponse « immuable » côté
 navigateur) **et** une révision d'extraction (`COVER_REVISION`) : sans elle, un
 changement dans la façon de choisir l'image ne serait jamais réaffiché.
@@ -322,6 +332,7 @@ Variables d'environnement :
 |---|---|---|
 | `BOOKS_ROOT` | `books_root` du YAML | dossier des livres (gagne sur le fichier) |
 | `EASYBOOK_CONFIG` | `config.yml` | autre fichier de configuration |
+| `EASYBOOK_CACHE_DIR` | `<books>/.easybook/covers` | dossier du cache disque des couvertures |
 | `EASYBOOK_HOST` | `127.0.0.1` | interface d'écoute de l'API (`0.0.0.0` en conteneur) |
 | `PORT` | `8091` | port de l'API |
 | `PUBLIC_EASYBOOK_API` (frontend) | `http://<hôte>:8091` | adresse de l'API vue par le navigateur — `/` quand c'est le **même serveur** qui sert les deux (cas de l'image Docker) |

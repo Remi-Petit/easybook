@@ -56,7 +56,7 @@ pub fn touches_library(root: &Path, events: &[DebouncedEvent]) -> bool {
     })
 }
 
-fn is_hidden(root: &Path, path: &Path) -> bool {
+pub fn is_hidden(root: &Path, path: &Path) -> bool {
     path.strip_prefix(root).is_ok_and(|rel| {
         rel.components()
             .any(|component| component.as_os_str().to_string_lossy().starts_with('.'))

@@ -50,6 +50,8 @@ const SNAPSHOT_TTL: Duration = Duration::from_secs(2);
 pub struct AppState {
     /// Racine de la bibliothèque.
     root: Arc<PathBuf>,
+    /// Dossier du cache disque des couvertures (caché, sous la racine par défaut).
+    cache_dir: Arc<PathBuf>,
     /// Diffusion du catalogue aux WebSocket ouverts.
     ws: broadcast::Sender<String>,
     /// Dernier catalogue sérialisé, et son instant de production.
@@ -61,8 +63,10 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(root: impl Into<PathBuf>, ws: broadcast::Sender<String>) -> Self {
+        let root = root.into();
         Self {
-            root: Arc::new(root.into()),
+            cache_dir: Arc::new(root.join(thumbnail::DEFAULT_CACHE_DIR)),
+            root: Arc::new(root),
             ws,
             snapshot: Arc::new(RwLock::new(String::new())),
             snapshot_at: Arc::new(std::sync::Mutex::new(None)),
@@ -73,6 +77,18 @@ impl AppState {
     /// Racine courante de la bibliothèque.
     pub fn root(&self) -> PathBuf {
         self.root.as_ref().clone()
+    }
+
+    /// Dossier du cache disque des couvertures.
+    pub fn cache_dir(&self) -> PathBuf {
+        self.cache_dir.as_ref().clone()
+    }
+
+    /// Place le cache disque des couvertures ailleurs que sous la racine.
+    #[must_use]
+    pub fn with_cache_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.cache_dir = Arc::new(dir.into());
+        self
     }
 
     /// Catalogue encore frais, s'il y en a un.
@@ -268,14 +284,17 @@ async fn get_cover(State(state): State<AppState>, Query(query): Query<CoverQuery
         .map_or(0, |elapsed| elapsed.as_secs());
 
     let rel = query.path.clone();
+    let cache_dir = state.cache_dir.as_ref().clone();
     // Clé du cache mémoire : la date du fichier, plus la révision demandée par
     // l'interface (une extraction qui change doit produire d'autres images).
     let cache_key = match &query.r {
         Some(revision) if !revision.is_empty() => format!("{version}|{revision}"),
         _ => version.to_string(),
     };
-    let cover =
-        tokio::task::spawn_blocking(move || thumbnail::cover(&path, &rel, &cache_key)).await;
+    let cover = tokio::task::spawn_blocking(move || {
+        thumbnail::cover(&path, &rel, &cache_key, Some(&cache_dir))
+    })
+    .await;
 
     let announced = version.to_string();
     match cover {

@@ -5,7 +5,7 @@
 //! ajouté, renommé ou supprimé est poussé aux navigateurs par WebSocket, sans
 //! rechargement de page et sans sondage.
 
-use easybook::{api, config, formats, watcher};
+use easybook::{api, config, formats, thumbnail, watcher};
 use notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, new_debouncer};
 use std::path::PathBuf;
@@ -45,6 +45,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Canal broadcast : le catalogue sérialisé (JSON) part à tous les clients WS.
     let (ws_tx, _) = broadcast::channel::<String>(16);
     let state = api::AppState::new(root.clone(), ws_tx);
+    // `EASYBOOK_CACHE_DIR` : cache des couvertures hors de `books/` (sinon
+    // `books/.easybook/covers`).
+    let state = match std::env::var("EASYBOOK_CACHE_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => state.with_cache_dir(dir),
+        _ => state,
+    };
 
     // API + WebSocket sur le pool Tokio.
     let server = tokio::spawn({
@@ -56,12 +62,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Préchauffage des couvertures : un thread dédié, déclenché au démarrage
+    // puis à chaque changement de la bibliothèque. Les demandes qui arrivent
+    // pendant un passage sont fusionnées en un seul passage suivant.
+    let (warm_tx, warm_rx) = channel::<()>();
+    std::thread::spawn({
+        let root = root.clone();
+        let cache_dir = state.cache_dir();
+        move || {
+            while warm_rx.recv().is_ok() {
+                while warm_rx.try_recv().is_ok() {}
+                let started = std::time::Instant::now();
+                let report = thumbnail::warm(&root, &cache_dir);
+                if report.made + report.removed > 0 {
+                    println!(
+                        "Couvertures : {} créée(s), {} déjà en cache, {} sans couverture, {} supprimée(s) ({:.1} s)",
+                        report.made,
+                        report.kept,
+                        report.missing,
+                        report.removed,
+                        started.elapsed().as_secs_f32()
+                    );
+                }
+            }
+        }
+    });
+    let _ = warm_tx.send(());
+
     // Watcher : thread dédié (`notify` bloque le thread qui l'appelle).
     std::thread::spawn({
         let state = state.clone();
         let root = root.clone();
         move || {
-            if let Err(e) = watch(root, state) {
+            if let Err(e) = watch(root, state, warm_tx) {
                 eprintln!("Erreur watcher : {e}");
             }
         }
@@ -96,7 +129,11 @@ fn canonical_root(path: PathBuf) -> PathBuf {
 }
 
 /// Surveille la bibliothèque et rediffuse le catalogue à chaque changement.
-fn watch(root: PathBuf, state: api::AppState) -> notify::Result<()> {
+fn watch(
+    root: PathBuf,
+    state: api::AppState,
+    warm: std::sync::mpsc::Sender<()>,
+) -> notify::Result<()> {
     let (tx, rx) = channel();
 
     // Le debouncer regroupe la rafale d'événements d'une même action (copier un
@@ -129,7 +166,12 @@ fn watch(root: PathBuf, state: api::AppState) -> notify::Result<()> {
 
         // Un gros fichier en cours d'écriture produit un lot par bloc : on ne
         // répète pas deux fois de suite la même ligne.
-        for message in events.iter().filter_map(watcher::describe_event) {
+        // Un élément caché (le cache des couvertures, `.DS_Store`) n'est pas un
+        // livre : on ne le journalise pas.
+        let visible = events
+            .iter()
+            .filter(|event| !event.paths.iter().all(|p| watcher::is_hidden(&root, p)));
+        for message in visible.filter_map(watcher::describe_event) {
             if last_message.as_deref() != Some(message.as_str()) {
                 println!("{message}");
                 last_message = Some(message);
@@ -138,6 +180,7 @@ fn watch(root: PathBuf, state: api::AppState) -> notify::Result<()> {
 
         if watcher::touches_library(&root, &events) {
             api::broadcast_snapshot(&state);
+            let _ = warm.send(());
         }
     }
 
