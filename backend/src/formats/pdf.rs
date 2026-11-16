@@ -1,18 +1,30 @@
 //! PDF : le document est affiché par le lecteur du navigateur ; ici, on en
-//! extrait seulement **la couverture**.
+//! produit seulement **la couverture** : la première page, rendue en image.
 //!
-//! Rendre une page demanderait un moteur complet (MuPDF, pdfium…). Ce n'est pas
-//! nécessaire : dans un scan ou un manga, une page est une image, et c'est cette
-//! image qu'on prend pour la vignette. Un PDF de texte n'en a pas — l'interface
-//! affiche alors son repli.
+//! Le rendu est fait par `hayro`, en Rust pur (pas de bibliothèque native à
+//! installer). Si la page ne se rend pas (PDF corrompu, rendu qui échoue ou
+//! panique), on se rabat sur l'image embarquée de la première page : dans un
+//! scan ou un manga, la page est une image.
 
 use std::io::Cursor;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 
+use hayro::hayro_interpret::InterpreterSettings;
+use hayro::hayro_syntax::Pdf as HayroPdf;
+use hayro::vello_cpu::color::palette::css::WHITE;
+use hayro::{PixmapSettings, RenderCache, RenderSettings, render};
 use image::{DynamicImage, GrayImage, ImageFormat, RgbImage};
 use lopdf::{Dictionary, Document, Object, Stream};
 
 use crate::formats::BookFormat;
+
+/// Largeur visée du rendu, en pixels : la vignette finale en fait 400, un peu
+/// de marge garde les petits caractères lisibles après réduction.
+const RENDER_WIDTH: f32 = 600.0;
+/// Plus grande dimension tolérée : une page très haute (affiche, plan) ne doit
+/// pas produire une image géante.
+const RENDER_MAX_SIDE: f32 = 1600.0;
 
 /// Format PDF, tel que l'enregistre [`super::module`].
 pub struct Pdf;
@@ -31,8 +43,41 @@ impl BookFormat for Pdf {
     }
 
     fn cover(&self, path: &Path) -> Option<Vec<u8>> {
-        cover(path)
+        render_first_page(path).or_else(|| embedded_image(path))
     }
+}
+
+/// La première page, rendue en PNG.
+///
+/// `hayro` est un moteur jeune : un PDF qui le fait paniquer ne doit pas faire
+/// tomber le serveur, d'où `catch_unwind`.
+fn render_first_page(path: &Path) -> Option<Vec<u8>> {
+    let data = std::fs::read(path).ok()?;
+    catch_unwind(AssertUnwindSafe(|| {
+        let pdf = HayroPdf::new(data).ok()?;
+        let page = pdf.pages().iter().next()?;
+
+        let (width, height) = page.render_dimensions();
+        if width < 1.0 || height < 1.0 {
+            return None;
+        }
+        let scale = (RENDER_WIDTH / width).min(RENDER_MAX_SIDE / height);
+
+        let pixmap = render(
+            page,
+            &RenderCache::new(),
+            &InterpreterSettings::default(),
+            &RenderSettings::default(),
+            &PixmapSettings {
+                x_scale: scale,
+                y_scale: scale,
+                bg_color: WHITE,
+            },
+        );
+        pixmap.into_png().ok()
+    }))
+    .ok()
+    .flatten()
 }
 
 /// L'image de la première page, si elle existe.
@@ -42,7 +87,7 @@ impl BookFormat for Pdf {
 /// une vignette de couverture, ou une planche plein format plus légère que
 /// l'image décorative. L'ordre du flux est le seul qui dise ce que le lecteur
 /// voit d'abord.
-fn cover(path: &Path) -> Option<Vec<u8>> {
+fn embedded_image(path: &Path) -> Option<Vec<u8>> {
     let document = Document::load(path).ok()?;
     let page = *document.get_pages().values().next()?;
     let resources = page_resources(&document, page);
@@ -431,7 +476,7 @@ pub(crate) mod tests {
         let path = dir.path().join("scan.pdf");
         std::fs::write(&path, &pdf).unwrap();
 
-        let cover = PDF.cover(&path).expect("couverture extraite");
+        let cover = embedded_image(&path).expect("couverture extraite");
         assert_eq!(cover, jpeg, "le JPEG embarqué est rendu tel quel");
     }
 
@@ -458,7 +503,7 @@ pub(crate) mod tests {
         let path = dir.path().join("garde.pdf");
         std::fs::write(&path, pdf).unwrap();
 
-        assert_eq!(PDF.cover(&path).unwrap(), first);
+        assert_eq!(embedded_image(&path).unwrap(), first);
     }
 
     /// InDesign encapsule la planche dans un `Form XObject` : la suivre dans
@@ -488,11 +533,11 @@ pub(crate) mod tests {
         let path = dir.path().join("form.pdf");
         std::fs::write(&path, pdf).unwrap();
 
-        assert_eq!(PDF.cover(&path).unwrap(), page_image);
+        assert_eq!(embedded_image(&path).unwrap(), page_image);
     }
 
     #[test]
-    fn a_text_only_pdf_has_no_cover() {
+    fn a_text_only_pdf_has_no_embedded_image() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("texte.pdf");
         // Page sans image : aucun XObject.
@@ -501,7 +546,7 @@ pub(crate) mod tests {
                     3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n\
                     trailer\n<< /Size 4 /Root 1 0 R >>\n%%EOF\n";
         std::fs::write(&path, pdf).unwrap();
-        assert!(PDF.cover(&path).is_none());
+        assert!(embedded_image(&path).is_none());
     }
 
     /// PDF d'une page dont l'unique XObject est l'image fournie.
@@ -553,7 +598,7 @@ pub(crate) mod tests {
         )
         .unwrap();
 
-        let cover = PDF.cover(&path).expect("pixels encodés en couverture");
+        let cover = embedded_image(&path).expect("pixels encodés en couverture");
         assert_eq!(&cover[..4], b"\x89PNG", "ré-encodée en PNG");
     }
 
@@ -585,7 +630,10 @@ pub(crate) mod tests {
         )
         .unwrap();
 
-        assert!(PDF.cover(&path).is_some(), "les pixels sont décompressés");
+        assert!(
+            embedded_image(&path).is_some(),
+            "les pixels sont décompressés"
+        );
     }
 
     /// Encode en LZW comme un PDF (MSB, `EarlyChange` par défaut).
@@ -613,7 +661,7 @@ pub(crate) mod tests {
         )
         .unwrap();
 
-        assert_eq!(PDF.cover(&path).unwrap(), jpeg);
+        assert_eq!(embedded_image(&path).unwrap(), jpeg);
     }
 
     #[test]
@@ -632,7 +680,55 @@ pub(crate) mod tests {
         )
         .unwrap();
 
-        assert!(PDF.cover(&path).is_some());
+        assert!(embedded_image(&path).is_some());
+    }
+
+    /// Un PDF de texte (aucune image) a quand même une couverture : sa page 1.
+    #[test]
+    fn a_text_page_is_rendered_as_the_cover() {
+        let pdf = assemble(vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] \
+              /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+                .to_vec(),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
+            content_object(b"BT /F1 48 Tf 20 200 Td (Titre) Tj ET"),
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("page.pdf");
+        std::fs::write(&path, pdf).unwrap();
+
+        let cover = PDF.cover(&path).expect("page rendue");
+        let image = image::load_from_memory(&cover).unwrap().to_rgb8();
+        assert_eq!(&cover[..4], b"\x89PNG");
+        // 300 x 400 pt → largeur 600 px (RENDER_WIDTH), ratio conservé.
+        assert_eq!((image.width(), image.height()), (600, 800));
+        assert!(
+            image.pixels().any(|p| p.0 != [255, 255, 255]),
+            "le texte est dessiné sur fond blanc"
+        );
+    }
+
+    /// Une page-image est rendue elle aussi (pas l'image brute : c'est la page).
+    #[test]
+    fn an_image_page_is_rendered_too() {
+        let jpeg = jpeg(60, 80);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scan.pdf");
+        std::fs::write(&path, pdf_with_jpeg(&jpeg, 60, 80)).unwrap();
+
+        let cover = PDF.cover(&path).expect("page rendue");
+        assert_eq!(&cover[..4], b"\x89PNG");
+    }
+
+    #[test]
+    fn a_corrupt_pdf_has_no_cover() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("casse.pdf");
+        std::fs::write(&path, b"%PDF-1.4 pas un vrai pdf").unwrap();
+
+        assert!(PDF.cover(&path).is_none());
     }
 
     /// Un filtre qu'on ne sait pas défaire (`CCITTFaxDecode`) : pas de fausse
@@ -652,7 +748,7 @@ pub(crate) mod tests {
         )
         .unwrap();
 
-        assert!(PDF.cover(&path).is_none());
+        assert!(embedded_image(&path).is_none());
     }
 
     /// Les images à 1 bit par composant (fax, bitmap ancien) ne sont pas des
@@ -672,7 +768,7 @@ pub(crate) mod tests {
         )
         .unwrap();
 
-        assert!(PDF.cover(&path).is_none());
+        assert!(embedded_image(&path).is_none());
     }
 
     /// Assemble des objets PDF (1..n) avec une table `xref` juste.

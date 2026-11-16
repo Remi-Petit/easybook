@@ -8,7 +8,7 @@
 //! D'où vient la couverture, selon le format :
 //! - **EPUB** : celle que le livre déclare (voir [`crate::formats::epub`]) ;
 //! - **CBZ** et **CBR** : la première page, par convention du format ;
-//! - **PDF** : la plus grande image de la première page (un scan, une planche).
+//! - **PDF** : la première page, rendue en image (voir [`crate::formats::pdf`]).
 
 use crate::formats::{self, Format};
 use image::{DynamicImage, ImageFormat};
