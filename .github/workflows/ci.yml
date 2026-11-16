@@ -5,7 +5,7 @@ name: CI
 #     (README, livres…) ne déclenche **aucun** job ;
 #   - un changement purement frontend n'exécute pas la matrice Rust, et
 #     inversement (`job changes` + `if:` sur chaque job).
-# Les workflows font partie des filtres : modifier la CI la relance.
+# `ci.yml` fait partie des filtres : modifier la CI la relance (pas `release.yml`).
 #
 # `branches: [master]` : sans ce filtre, pousser un tag relançait toute la CI.
 on:
@@ -19,7 +19,7 @@ on:
       - 'Dockerfile'
       - 'docker-compose.yml'
       - '.dockerignore'
-      - '.github/workflows/**'
+      - '.github/workflows/ci.yml'
   pull_request:
     paths:
       - 'backend/**'
@@ -29,7 +29,7 @@ on:
       - 'Dockerfile'
       - 'docker-compose.yml'
       - '.dockerignore'
-      - '.github/workflows/**'
+      - '.github/workflows/ci.yml'
 
 env:
   CARGO_TERM_COLOR: always
@@ -66,10 +66,10 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-              - '.github/workflows/**'
+              - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
-              - '.github/workflows/**'
+              - '.github/workflows/ci.yml'
             scripts:
               - 'scripts/**'
             docker:
@@ -78,7 +78,7 @@ jobs:
               - 'scripts/docker-entrypoint.sh'
               - 'docker-compose.yml'
               - '.dockerignore'
-              - '.github/workflows/**'
+              - '.github/workflows/ci.yml'
 
   # Le formatage est une convention, pas un débat : `cargo fmt --check` échoue
   # plutôt que de laisser la discussion se rejouer à chaque revue.
