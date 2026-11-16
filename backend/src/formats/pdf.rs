@@ -289,13 +289,25 @@ fn decode_filters(stream: &Stream) -> Option<Vec<u8>> {
             b"FlateDecode" => data = inflate(&data)?,
             // Le flux contient déjà une image complète.
             b"DCTDecode" | b"JPXDecode" => return Some(data),
-            // ASCII85/ASCIIHex/LZW : rare pour une image ; `image` ne saurait
-            // pas les lire de toute façon.
+            b"LZWDecode" => data = lzw(&data)?,
+            // ASCII85, ASCIIHex, CCITT, JBIG2… : `image` ne saurait pas les lire.
             _ => return None,
         }
     }
 
     Some(data)
+}
+
+/// Plafond de la sortie LZW : un flux minuscule peut se décompresser à l'infini.
+const LZW_LIMIT: usize = 256 * 1024 * 1024;
+
+/// Défait un flux LZW (`/EarlyChange` par défaut) avec le décodeur de `lopdf`.
+fn lzw(data: &[u8]) -> Option<Vec<u8>> {
+    let mut dict = Dictionary::new();
+    dict.set("Filter", "LZWDecode");
+    Stream::new(dict, data.to_vec())
+        .decompressed_content_with_limit(LZW_LIMIT)
+        .ok()
 }
 
 fn inflate(data: &[u8]) -> Option<Vec<u8>> {
@@ -576,19 +588,66 @@ pub(crate) mod tests {
         assert!(PDF.cover(&path).is_some(), "les pixels sont décompressés");
     }
 
-    /// Un filtre qu'on ne sait pas défaire (`LZWDecode`) : pas de fausse
+    /// Encode en LZW comme un PDF (MSB, `EarlyChange` par défaut).
+    fn lzw_encode(data: &[u8]) -> Vec<u8> {
+        weezl::encode::Encoder::with_tiff_size_switch(weezl::BitOrder::Msb, 8)
+            .encode(data)
+            .unwrap()
+    }
+
+    /// Cas réel : des PDF dont la première page est un JPEG passé en LZW
+    /// (`/Filter [/LZWDecode /DCTDecode]`).
+    #[test]
+    fn an_lzw_wrapped_jpeg_becomes_a_cover() {
+        let jpeg = jpeg(32, 48);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lzw-jpeg.pdf");
+        std::fs::write(
+            &path,
+            pdf_with_image(described_image(
+                &lzw_encode(&jpeg),
+                32,
+                48,
+                "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/LZWDecode /DCTDecode]",
+            )),
+        )
+        .unwrap();
+
+        assert_eq!(PDF.cover(&path).unwrap(), jpeg);
+    }
+
+    #[test]
+    fn lzw_encoded_pixels_become_a_cover() {
+        let pixels: Vec<u8> = (0..16u8).map(|i| i * 16).collect();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lzw-pixels.pdf");
+        std::fs::write(
+            &path,
+            pdf_with_image(described_image(
+                &lzw_encode(&pixels),
+                4,
+                4,
+                "/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /LZWDecode",
+            )),
+        )
+        .unwrap();
+
+        assert!(PDF.cover(&path).is_some());
+    }
+
+    /// Un filtre qu'on ne sait pas défaire (`CCITTFaxDecode`) : pas de fausse
     /// couverture, l'interface affichera son repli.
     #[test]
     fn an_unknown_filter_gives_no_cover() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("lzw.pdf");
+        let path = dir.path().join("ccitt.pdf");
         std::fs::write(
             &path,
             pdf_with_image(described_image(
                 b"peu importe",
                 4,
                 4,
-                "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /LZWDecode",
+                "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /CCITTFaxDecode",
             )),
         )
         .unwrap();

@@ -43,6 +43,8 @@ unrar = "0.5"
 
 [dev-dependencies]
 tempfile = "3"
+# Tests PDF : fabriquer un flux `LZWDecode` (même version que `lopdf`).
+weezl = "0.2"
 # Tests d'intégration : monter le routeur et l'appeler sans ouvrir de socket.
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
