@@ -112,6 +112,8 @@ fn watch(root: PathBuf, state: api::AppState) -> notify::Result<()> {
 
     println!("Je surveille {} (Ctrl+C pour arrêter)", root.display());
 
+    let mut last_message: Option<String> = None;
+
     loop {
         let events = match rx.recv() {
             Ok(Ok(events)) => events,
@@ -125,8 +127,13 @@ fn watch(root: PathBuf, state: api::AppState) -> notify::Result<()> {
             Err(_) => break,
         };
 
+        // Un gros fichier en cours d'écriture produit un lot par bloc : on ne
+        // répète pas deux fois de suite la même ligne.
         for message in events.iter().filter_map(watcher::describe_event) {
-            println!("{message}");
+            if last_message.as_deref() != Some(message.as_str()) {
+                println!("{message}");
+                last_message = Some(message);
+            }
         }
 
         if watcher::touches_library(&root, &events) {
