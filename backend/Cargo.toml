@@ -24,7 +24,9 @@ roxmltree = "0.20"
 regex = "1.13.1"
 # CORS : l'interface est servie sur une autre origine que l'API (deux process,
 # deux ports) et lui parle en direct — sans relais.
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+# `ServiceExt::oneshot` : appeler `ServeFile` depuis un handler axum.
+tower = { version = "0.5", features = ["util"] }
 # Vignettes de couverture : décodage des images d'un livre et ré-encodage en
 # JPEG. On ne garde que les formats qu'on trouve réellement dans une bande
 # dessinée (une planche scannée est presque toujours en JPEG).
@@ -47,7 +49,6 @@ tempfile = "3"
 # Tests PDF : fabriquer un flux `LZWDecode` (même version que `lopdf`).
 weezl = "0.2"
 # Tests d'intégration : monter le routeur et l'appeler sans ouvrir de socket.
-tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 
 [profile.dev]

@@ -23,7 +23,7 @@
 use crate::formats::{self, Format};
 use crate::{library, rewrite, thumbnail, write};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
+use axum::extract::{Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
@@ -35,7 +35,9 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
+use tower::ServiceExt;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeFile;
 
 /// Durée de validité du catalogue en mémoire.
 ///
@@ -474,14 +476,25 @@ struct RawQuery {
 /// Sert au lecteur PDF du navigateur : il lui faut le document, pas une version
 /// découpée. Le nom de fichier est proposé au téléchargement (`inline`, donc le
 /// lecteur s'ouvre).
-async fn get_raw(State(state): State<AppState>, Query(query): Query<RawQuery>) -> Response {
+///
+/// Le fichier est **servi en flux** (`ServeFile`) : la mémoire reste constante
+/// quelle que soit sa taille, et les requêtes `Range` sont gérées (le lecteur
+/// PDF du navigateur n'a pas à tout télécharger pour afficher une page).
+async fn get_raw(
+    State(state): State<AppState>,
+    Query(query): Query<RawQuery>,
+    request: Request,
+) -> Response {
     let Some(path) = file_in(&state.root(), &query.path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    let Ok(bytes) = tokio::fs::read(&path).await else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
+    let Ok(served) = ServeFile::new(&path).oneshot(request).await;
+    let mut response = served.into_response();
+    if !response.status().is_success() {
+        return response;
+    }
+
     let content_type = Format::from_path(&query.path)
         .map(Format::content_type)
         .unwrap_or("application/octet-stream");
@@ -492,7 +505,7 @@ async fn get_raw(State(state): State<AppState>, Query(query): Query<RawQuery>) -
         .unwrap_or("livre")
         .replace('"', "");
 
-    let mut headers = HeaderMap::new();
+    let headers = response.headers_mut();
     if let Ok(value) = content_type.parse() {
         headers.insert(header::CONTENT_TYPE, value);
     }
@@ -500,8 +513,7 @@ async fn get_raw(State(state): State<AppState>, Query(query): Query<RawQuery>) -
         headers.insert(header::CONTENT_DISPOSITION, value);
     }
     headers.insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());
-
-    (headers, bytes).into_response()
+    response
 }
 
 /// WebSocket : catalogue initial, puis une poussée à chaque changement.

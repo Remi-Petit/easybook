@@ -315,6 +315,27 @@ async fn pdf_is_served_as_is() {
     assert_eq!(&body[..5], b"%PDF-", "le document est servi tel quel");
 }
 
+/// Le lecteur PDF du navigateur demande des tranches : le serveur les honore.
+#[tokio::test]
+async fn raw_files_support_range_requests() {
+    let (_dir, app) = library();
+    let request = Request::builder()
+        .uri("/api/raw?path=mangas%2Fguide.pdf")
+        .header(header::RANGE, "bytes=0-4")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert!(header_is(
+        response.headers(),
+        header::CONTENT_TYPE,
+        "application/pdf"
+    ));
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(&body[..], b"%PDF-");
+}
+
 #[tokio::test]
 async fn traversal_is_refused() {
     let (_dir, app) = library();
