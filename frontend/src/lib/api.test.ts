@@ -65,7 +65,7 @@ describe('adresses de l’API', () => {
 	it('donne à la couverture la date du fichier et la révision d’extraction', () => {
 		const withoutDate = coverUrl('mangas/T1.cbz');
 		expect(withoutDate).toContain('path=mangas%2FT1.cbz');
-		expect(withoutDate).toContain('r=2');
+		expect(withoutDate).toContain('r=3');
 		expect(withoutDate).not.toContain('v=');
 
 		const withDate = coverUrl('mangas/T1.cbz', 1781354862);

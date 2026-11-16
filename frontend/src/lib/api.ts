@@ -133,7 +133,7 @@ export const uploadUrl = (folder: string, name: string) =>
  * déjà servies `immutable` par le navigateur ne seraient sinon jamais
  * redemandées. Fait aussi partie de la clé du cache mémoire du backend.
  */
-const COVER_REVISION = 2;
+const COVER_REVISION = 3;
 
 /**
  * Couverture d'un livre (vignette JPEG produite par le backend).
