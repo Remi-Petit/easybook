@@ -26,7 +26,7 @@ services:
       # Seul port publié : nginx. L'API et le serveur SvelteKit écoutent sur la
       # boucle locale du conteneur et ne sont pas joignables de l'extérieur
       # (l'API n'a pas d'authentification).
-      - "5100:8080"
+      - "5200:8080"
     volumes:
       # La bibliothèque : lue **et écrite** (création de catégories, dépôt de
       # livres depuis l'interface).
