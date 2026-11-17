@@ -71,7 +71,7 @@
 </svelte:head>
 
 <!-- Échap (voir `onMount`) ramène l'en-tête : sans lui, plus de retour au dossier. -->
-<div class="reader" data-chrome={chrome ? 'on' : 'off'}>
+<div class="reader">
 	{#if chrome}
 		<header class="reader-head">
 			<a class="back" href={parent ? folderUrl(parent) : '/'}>← {backLabel}</a>

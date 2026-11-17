@@ -840,48 +840,40 @@ code {
 /* ── Lecteur ─────────────────────────────────────────────────────────────── */
 
 .reader {
-	display: grid;
-	grid-template-rows: auto 1fr;
+	--head-h: 52px;
+	--pager-h: 58px;
+	--glass: rgba(15, 15, 19, 0.55);
+	position: relative;
 	height: 100vh;
 	height: 100dvh;
-	/* Le défilement appartient à la zone de lecture, pas à la page :
-	   l'en-tête et la liste des chapitres restent en place. */
+	/* Le livre occupe toujours tout l'écran ; l'en-tête, le sommaire et le
+	   pager le recouvrent (verre dépoli) au lieu de lui prendre de la place :
+	   rien ne bouge quand on les montre ou les cache. */
 	overflow: hidden;
 }
 
-/* En-tête et pied de page masqués (clic au milieu) : le livre prend toute la
-   hauteur, la grille n'a plus qu'une seule rangée. */
-.reader[data-chrome='off'] {
-	grid-template-rows: 1fr;
-}
-
-/* Mode plein livre : la page touche les bords — ni marge autour de la planche,
-   ni rembourrage autour du texte. */
-.reader[data-chrome='off'] .page-view img {
-	top: 0;
-	width: 100%;
-	height: 100%;
-	border-radius: 0;
-}
-
-.reader[data-chrome='off'] .prose {
-	padding: 0;
-}
-
-/* Une image du livre peut alors dépasser ce que laissait l'en-tête. */
-.reader[data-chrome='off'] .prose img,
-.reader[data-chrome='off'] .prose svg {
-	max-height: 100dvh;
+.reader > .state {
+	position: absolute;
+	inset: 0;
+	min-height: 0;
 }
 
 .reader-head {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 3;
+	box-sizing: border-box;
+	height: var(--head-h);
 	display: flex;
 	align-items: center;
 	gap: 18px;
-	padding: 14px 24px;
-	background: rgba(15, 15, 19, 0.92);
-	border-bottom: 1px solid var(--line);
-	backdrop-filter: blur(8px);
+	padding: 0 24px;
+	background: var(--glass);
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	-webkit-backdrop-filter: blur(16px) saturate(1.4);
+	backdrop-filter: blur(16px) saturate(1.4);
 }
 
 .back {
@@ -923,21 +915,23 @@ code {
 }
 
 .reader-body {
-	min-height: 0;
-	display: grid;
-	grid-template-columns: 260px 1fr;
-}
-
-.reader-body.no-toc {
-	grid-template-columns: 1fr;
+	position: absolute;
+	inset: 0;
 }
 
 .toc {
-	min-height: 0;
+	position: absolute;
+	z-index: 2;
+	top: var(--head-h);
+	bottom: var(--pager-h);
+	left: 0;
+	width: 260px;
 	overflow-y: auto;
 	padding: 18px 12px;
-	border-right: 1px solid var(--line);
-	background: #121217;
+	border-right: 1px solid rgba(255, 255, 255, 0.08);
+	background: var(--glass);
+	-webkit-backdrop-filter: blur(16px) saturate(1.4);
+	backdrop-filter: blur(16px) saturate(1.4);
 }
 
 .toc h2 {
@@ -968,25 +962,24 @@ code {
 	color: var(--accent);
 }
 
-/* La zone de lecture : une ligne qui défile, une barre de navigation fixe.
-   Le pager ne recouvre donc jamais le texte ni la planche. */
+/* La zone de lecture couvre tout l'écran ; le pager flotte par-dessus. */
 .stage {
-	min-height: 0;
-	display: grid;
-	grid-template-rows: 1fr auto;
+	position: relative;
+	height: 100%;
 	overflow: hidden;
 }
 
 .viewport {
-	min-height: 0;
+	height: 100%;
 	overflow-y: auto;
 }
 
-/* Texte d'un EPUB : largeur de lecture confortable, styles du livre conservés. */
+/* Texte d'un EPUB : largeur de lecture confortable, styles du livre conservés.
+   Les marges haute et basse dégagent l'en-tête et le pager au repos. */
 .prose {
 	max-width: 44rem;
 	margin: 0 auto;
-	padding: 46px 32px 48px;
+	padding: calc(var(--head-h) + 24px) 32px calc(var(--pager-h) + 24px);
 	font-family: var(--serif);
 	font-size: 18.5px;
 	line-height: 1.66;
@@ -996,9 +989,9 @@ code {
 .prose img,
 .prose svg {
 	max-width: 100%;
-	/* Une image pleine page ne dépasse jamais l'écran : elle est réduite au
-	   lieu d'obliger à défiler pour la voir entière. */
-	max-height: calc(100dvh - 190px);
+	/* Une image pleine page ne dépasse jamais l'espace entre l'en-tête et le
+	   pager : elle est réduite au lieu d'obliger à défiler pour la voir entière. */
+	max-height: calc(100dvh - var(--head-h) - var(--pager-h) - 48px);
 	width: auto;
 	height: auto;
 }
@@ -1036,21 +1029,21 @@ code {
 
 .page-view img {
 	position: absolute;
-	top: 14px;
-	left: 50%;
-	transform: translateX(-50%);
-	width: calc(100% - 28px);
-	height: calc(100% - 28px);
-	/* La planche est toujours entièrement visible : on rogne les marges
-	   plutôt que la page. */
-	object-fit: contain;
-	border-radius: 4px;
-}
-
-/* PDF : le lecteur du navigateur occupe tout l'écran */
-.pdf {
+	inset: 0;
 	width: 100%;
 	height: 100%;
+	/* La planche est toujours entière, à la taille maximale de l'écran. */
+	object-fit: contain;
+}
+
+/* PDF : le lecteur du navigateur a sa propre barre d'outils, en haut — on
+   le place sous l'en-tête plutôt que de la lui masquer. */
+.pdf {
+	position: absolute;
+	top: var(--head-h);
+	left: 0;
+	width: 100%;
+	height: calc(100% - var(--head-h));
 	border: 0;
 	background: #333;
 }
@@ -1061,16 +1054,24 @@ code {
 	align-items: center;
 	justify-content: center;
 	gap: 18px;
-	padding: 12px;
-	background: #121217;
-	border-top: 1px solid var(--line);
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 2;
+	box-sizing: border-box;
+	height: var(--pager-h);
+	background: var(--glass);
+	border-top: 1px solid rgba(255, 255, 255, 0.08);
+	-webkit-backdrop-filter: blur(16px) saturate(1.4);
+	backdrop-filter: blur(16px) saturate(1.4);
 }
 
 .pager button {
 	padding: 8px 16px;
-	border: 1px solid var(--line);
+	border: 1px solid rgba(255, 255, 255, 0.12);
 	border-radius: 999px;
-	background: var(--panel);
+	background: rgba(255, 255, 255, 0.06);
 	font-size: 13px;
 }
 
@@ -1122,16 +1123,12 @@ code {
 }
 
 @media (max-width: 760px) {
-	.reader-body {
-		grid-template-columns: 1fr;
-	}
-
 	.toc {
 		display: none;
 	}
 
 	.prose {
-		padding: 28px 20px 40px;
+		padding: calc(var(--head-h) + 16px) 20px calc(var(--pager-h) + 16px);
 		font-size: 17.5px;
 	}
 

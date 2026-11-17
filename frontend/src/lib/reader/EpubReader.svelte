@@ -111,7 +111,7 @@
 	});
 </script>
 
-<div class="reader-body" class:no-toc={!chrome}>
+<div class="reader-body">
 	{#if chrome}
 		<aside class="toc">
 			<h2>{t('reader.chapters')}</h2>

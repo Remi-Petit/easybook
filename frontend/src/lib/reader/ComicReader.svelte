@@ -81,7 +81,7 @@
 	});
 </script>
 
-<div class="reader-body no-toc">
+<div class="reader-body">
 	<div class="stage">
 		<div class="viewport" bind:this={stage}>
 			<div class="page-view">
