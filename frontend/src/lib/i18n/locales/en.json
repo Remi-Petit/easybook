@@ -1,6 +1,7 @@
 {
 	"brand.tagline": "local library",
 	"nav.label": "Navigation",
+	"nav.menu": "Menu",
 	"nav.home": "Home",
 	"nav.library": "Library",
 	"nav.empty": "No series",

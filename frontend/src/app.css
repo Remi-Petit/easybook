@@ -91,6 +91,17 @@ code {
 	gap: 2px;
 }
 
+/* Grand écran : la barre et son panneau n'existent pas comme blocs, leurs
+   éléments s'empilent directement dans la colonne. */
+.sidebar-bar,
+.sidebar-panel {
+	display: contents;
+}
+
+.menu-btn {
+	display: none;
+}
+
 .brand {
 	display: flex;
 	flex-direction: column;
@@ -772,9 +783,11 @@ code {
 		border-color 140ms ease;
 }
 
-.card:hover {
-	transform: translateY(-3px);
-	border-color: #3a3a48;
+@media (hover: hover) {
+	.card:hover {
+		transform: translateY(-3px);
+		border-color: #3a3a48;
+	}
 }
 
 /* Couverture : ratio d'un livre, l'image remplit le cadre sans le déformer. */
@@ -840,8 +853,8 @@ code {
 /* ── Lecteur ─────────────────────────────────────────────────────────────── */
 
 .reader {
-	--head-h: 52px;
-	--pager-h: 58px;
+	--head-h: calc(52px + env(safe-area-inset-top, 0px));
+	--pager-h: calc(58px + env(safe-area-inset-bottom, 0px));
 	--glass: rgba(15, 15, 19, 0.55);
 	position: relative;
 	height: 100vh;
@@ -869,7 +882,8 @@ code {
 	display: flex;
 	align-items: center;
 	gap: 18px;
-	padding: 0 24px;
+	padding: env(safe-area-inset-top, 0px) max(24px, env(safe-area-inset-right, 0px)) 0
+		max(24px, env(safe-area-inset-left, 0px));
 	background: var(--glass);
 	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 	-webkit-backdrop-filter: blur(16px) saturate(1.4);
@@ -877,6 +891,11 @@ code {
 }
 
 .back {
+	flex: 0 0 auto;
+	max-width: 40%;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	color: var(--muted);
 	font-size: 13px;
 	white-space: nowrap;
@@ -891,6 +910,8 @@ code {
 }
 
 .reader-title {
+	flex: 0 1 auto;
+	min-width: 0;
 	margin: 0;
 	font-size: 15px;
 	font-weight: 560;
@@ -900,6 +921,11 @@ code {
 }
 
 .reader-sub {
+	/* Les infos secondaires cèdent leur place en premier (retour et titre d'abord). */
+	flex: 0 3 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	color: var(--muted);
 	font-size: 12.5px;
 	white-space: nowrap;
@@ -932,6 +958,11 @@ code {
 	background: var(--glass);
 	-webkit-backdrop-filter: blur(16px) saturate(1.4);
 	backdrop-filter: blur(16px) saturate(1.4);
+}
+
+/* Le bouton du sommaire n'a de sens que là où le sommaire est replié. */
+.toc-btn {
+	display: none;
 }
 
 .toc h2 {
@@ -984,6 +1015,12 @@ code {
 	font-size: 18.5px;
 	line-height: 1.66;
 	color: #e6e4ea;
+	overflow-wrap: break-word;
+}
+
+.prose pre {
+	max-width: 100%;
+	overflow-x: auto;
 }
 
 .prose img,
@@ -1061,6 +1098,8 @@ code {
 	z-index: 2;
 	box-sizing: border-box;
 	height: var(--pager-h);
+	padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+		env(safe-area-inset-left, 0px);
 	background: var(--glass);
 	border-top: 1px solid rgba(255, 255, 255, 0.08);
 	-webkit-backdrop-filter: blur(16px) saturate(1.4);
@@ -1068,6 +1107,9 @@ code {
 }
 
 .pager button {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 	padding: 8px 16px;
 	border: 1px solid rgba(255, 255, 255, 0.12);
 	border-radius: 999px;
@@ -1080,10 +1122,11 @@ code {
 	cursor: default;
 }
 
-.pager span {
+.pager-pos {
 	color: var(--muted);
 	font-size: 12.5px;
 	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
 }
 
 .state {
@@ -1104,35 +1147,257 @@ code {
 
 @media (max-width: 900px) {
 	.shell {
-		grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr);
 	}
 
-	/* La barre latérale passe au-dessus du contenu, sans hauteur fixe. */
+	/* La barre latérale devient un bandeau collé en haut ; le reste (catégories,
+	   langue, état) se déplie dans un menu qui couvre l'écran. */
 	.sidebar {
-		position: static;
+		--bar-h: 56px;
+		z-index: 20;
+		display: block;
 		height: auto;
+		padding: 0;
+		overflow: visible;
 		border-right: 0;
+		background: none;
+	}
+
+	/* Le flou est sur le bandeau, pas sur `.sidebar` : un `backdrop-filter` sur un
+	   ancêtre ferait du menu fixe un bloc positionné par rapport à lui. */
+	.sidebar-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		height: calc(var(--bar-h) + env(safe-area-inset-top, 0px));
+		padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) 0
+			max(16px, env(safe-area-inset-left, 0px));
 		border-bottom: 1px solid var(--line);
-		padding: 18px 16px;
+		background: rgba(16, 16, 21, 0.82);
+		-webkit-backdrop-filter: blur(14px);
+		backdrop-filter: blur(14px);
+	}
+
+	.brand {
+		flex-direction: row;
+		align-items: baseline;
+		gap: 10px;
+		padding: 0;
+		min-width: 0;
+	}
+
+	.menu-btn {
+		display: grid;
+		place-items: center;
+		flex: none;
+		width: 42px;
+		height: 42px;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--panel);
+		color: var(--text);
+	}
+
+	.sidebar-panel {
+		display: none;
+	}
+
+	.sidebar[data-open='true'] .sidebar-panel {
+		position: fixed;
+		z-index: 20;
+		top: calc(var(--bar-h) + env(safe-area-inset-top, 0px));
+		right: 0;
+		bottom: 0;
+		left: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 22px;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		padding: 12px max(16px, env(safe-area-inset-right, 0px))
+			calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+		background: #101015;
+	}
+
+	.nav-item {
+		padding: 12px 10px;
+		font-size: 14.5px;
+	}
+
+	.sidebar-lang {
+		margin-top: 0;
+	}
+
+	/* Menu ouvert : la page derri\u00e8re ne d\u00e9file plus. */
+	html:has(.sidebar[data-open='true']) {
+		overflow: hidden;
 	}
 
 	.sidebar-foot {
 		margin-top: 0;
-		padding: 10px 10px 0;
+	}
+}
+
+/* Le chemin du fichier part en premier : il n'apporte rien sur un écran moyen. */
+@media (max-width: 1100px) {
+	.reader-sub.path {
+		display: none;
+	}
+}
+
+/* Sous 1000 px, le texte (44 rem) et le sommaire (260 px) ne tiennent plus
+   côte à côte : le sommaire se replie derrière son bouton. */
+@media (max-width: 1000px) {
+	.toc {
+		display: none;
+		width: min(86vw, 320px);
+		background: rgba(15, 15, 19, 0.82);
+	}
+
+	.toc[data-open='true'] {
+		display: block;
+	}
+
+	.toc button {
+		padding: 12px 10px;
+	}
+
+	.toc-btn {
+		display: inline-flex;
 	}
 }
 
 @media (max-width: 760px) {
-	.toc {
-		display: none;
-	}
-
 	.prose {
-		padding: calc(var(--head-h) + 16px) 20px calc(var(--pager-h) + 16px);
+		padding: calc(var(--head-h) + 16px) max(20px, env(safe-area-inset-right, 0px))
+			calc(var(--pager-h) + 16px) max(20px, env(safe-area-inset-left, 0px));
 		font-size: 17.5px;
 	}
 
 	.page {
-		padding: 0 18px 60px;
+		padding: 0 max(16px, env(safe-area-inset-right, 0px)) 60px
+			max(16px, env(safe-area-inset-left, 0px));
+	}
+
+	.intro {
+		padding: 26px 0 20px;
+	}
+
+	.crumbs {
+		padding-top: 18px;
+	}
+
+	.crumbs + .intro {
+		padding-top: 12px;
+	}
+
+	.group {
+		margin-top: 26px;
+	}
+
+	/* 16 px : en dessous, iOS zoome la page au focus d'un champ. */
+	.search,
+	.dialog-body input,
+	.sidebar-lang select {
+		font-size: 16px;
+	}
+
+	.search {
+		max-width: none;
+	}
+
+	.reader {
+		--head-h: calc(48px + env(safe-area-inset-top, 0px));
+	}
+
+	.reader-head {
+		gap: 12px;
+		padding-right: max(14px, env(safe-area-inset-right, 0px));
+		padding-left: max(14px, env(safe-area-inset-left, 0px));
+	}
+
+	/* Seuls le retour et le titre tiennent : chemin, auteur et lien vers le fichier
+	   restent sur grand écran. */
+	.reader-sub {
+		display: none;
+	}
+
+	.back {
+		max-width: 42%;
+	}
+
+	.reader-title {
+		flex: 1;
+		font-size: 14px;
+	}
+
+	.pager {
+		gap: 10px;
+	}
+
+	.pager button {
+		min-height: 40px;
+		padding: 8px 14px;
+	}
+
+	.dialog-actions button {
+		min-height: 40px;
+	}
+}
+
+@media (max-width: 560px) {
+	.grid {
+		grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+		gap: 16px 12px;
+	}
+
+	.tagline {
+		display: none;
+	}
+
+	.body {
+		padding: 8px 10px 10px;
+	}
+
+	/* Sur téléphone, les flèches suffisent : les libellés sont lus par les lecteurs d'écran. */
+	.pager button .label {
+		display: none;
+	}
+
+	.pager button {
+		min-width: 52px;
+		justify-content: center;
+	}
+
+	.uploads,
+	.toasts {
+		right: 12px;
+		bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+		width: calc(100vw - 24px);
+	}
+}
+
+/* Écrans bas (téléphone en paysage) : les barres du lecteur s'amincissent. */
+@media (max-height: 500px) {
+	.reader {
+		--head-h: calc(40px + env(safe-area-inset-top, 0px));
+		--pager-h: calc(46px + env(safe-area-inset-bottom, 0px));
+	}
+
+	.pager button {
+		min-height: 34px;
+		padding: 4px 14px;
+	}
+
+	.prose {
+		font-size: 17px;
+	}
+}
+
+@media (pointer: coarse) {
+	.icon-btn {
+		width: 40px;
+		height: 40px;
 	}
 }

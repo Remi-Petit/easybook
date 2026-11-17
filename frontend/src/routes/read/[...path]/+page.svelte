@@ -79,7 +79,7 @@
 			{#if detail?.author}
 				<span class="reader-sub">{detail.author}</span>
 			{/if}
-			<span class="reader-sub">{rel}</span>
+			<span class="reader-sub path">{rel}</span>
 			<a class="reader-sub link" href={rawUrl(rel)} target="_blank" rel="noopener">
 				{t('reader.openFile')}
 			</a>

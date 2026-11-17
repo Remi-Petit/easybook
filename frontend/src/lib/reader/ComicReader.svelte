@@ -91,9 +91,13 @@
 
 		{#if chrome}
 			<nav class="pager">
-				<button disabled={atStart} onclick={() => go(index - 1)}>← {t('reader.previous')}</button>
-				<span>{index + 1} / {pages}</span>
-				<button disabled={atEnd} onclick={() => go(index + 1)}>{t('reader.next')} →</button>
+				<button disabled={atStart} aria-label={t('reader.previous')} onclick={() => go(index - 1)}>
+					<span aria-hidden="true">←</span><span class="label">{t('reader.previous')}</span>
+				</button>
+				<span class="pager-pos">{index + 1} / {pages}</span>
+				<button disabled={atEnd} aria-label={t('reader.next')} onclick={() => go(index + 1)}>
+					<span class="label">{t('reader.next')}</span><span aria-hidden="true">→</span>
+				</button>
 			</nav>
 		{/if}
 	</div>

@@ -1,6 +1,7 @@
 {
 	"brand.tagline": "biblioteca local",
 	"nav.label": "Navegación",
+	"nav.menu": "Menú",
 	"nav.home": "Inicio",
 	"nav.library": "Biblioteca",
 	"nav.empty": "Ninguna serie",

@@ -22,6 +22,8 @@
 	let index = $state(0);
 	let html = $state('');
 	let error = $state<string | null>(null);
+	/** Sommaire ouvert (écrans étroits : il reste masqué tant qu'on ne le demande pas). */
+	let tocOpen = $state(false);
 	/** Zone de lecture : c'est elle qui défile, pas la page. */
 	let stage = $state<HTMLElement | null>(null);
 
@@ -46,6 +48,11 @@
 	 * milieu montre ou cache l'en-tête, le pied de page et le sommaire.
 	 */
 	function onClick(event: MouseEvent) {
+		// Sommaire ouvert : le clic dans le texte le referme, sans tourner la page.
+		if (tocOpen) {
+			tocOpen = false;
+			return;
+		}
 		const selection = window.getSelection();
 		const zone = readingZone(event, selection !== null && !selection.isCollapsed);
 		if (zone === 'previous') go(index - 1);
@@ -113,10 +120,16 @@
 
 <div class="reader-body">
 	{#if chrome}
-		<aside class="toc">
+		<aside class="toc" data-open={tocOpen}>
 			<h2>{t('reader.chapters')}</h2>
 			{#each chapters as chapter (chapter.index)}
-				<button aria-current={chapter.index === index} onclick={() => go(chapter.index)}>
+				<button
+					aria-current={chapter.index === index}
+					onclick={() => {
+						go(chapter.index);
+						tocOpen = false;
+					}}
+				>
 					{chapter.title}
 				</button>
 			{/each}
@@ -141,9 +154,21 @@
 
 		{#if chrome}
 			<nav class="pager">
-				<button disabled={atStart} onclick={() => go(index - 1)}>← {t('reader.previous')}</button>
-				<span>{index + 1} / {chapters.length}</span>
-				<button disabled={atEnd} onclick={() => go(index + 1)}>{t('reader.next')} →</button>
+				<button
+					class="toc-btn"
+					aria-expanded={tocOpen}
+					aria-label={t('reader.chapters')}
+					onclick={() => (tocOpen = !tocOpen)}
+				>
+					<span aria-hidden="true">☰</span>
+				</button>
+				<button disabled={atStart} aria-label={t('reader.previous')} onclick={() => go(index - 1)}>
+					<span aria-hidden="true">←</span><span class="label">{t('reader.previous')}</span>
+				</button>
+				<span class="pager-pos">{index + 1} / {chapters.length}</span>
+				<button disabled={atEnd} aria-label={t('reader.next')} onclick={() => go(index + 1)}>
+					<span class="label">{t('reader.next')}</span><span aria-hidden="true">→</span>
+				</button>
 			</nav>
 		{/if}
 	</div>
