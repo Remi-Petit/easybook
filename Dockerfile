@@ -4,16 +4,21 @@
 # tournent dans le même conteneur, supervisés par `scripts/docker-entrypoint.sh`
 # (voir ce fichier pour le pourquoi du superviseur).
 #
-#   docker compose up --build
-#   → interface + API : http://localhost:5100
+#   docker compose up --build                                  # développement (rapide)
+#   docker compose -f docker-compose.release.yml up --build   # image de production
+#   → interface + API : http://localhost:5200 (dev), :5300 (release)
 #
 # nginx est le seul point d'entrée : il sert les fichiers compilés du frontend,
 # relaie `/api` et `/ws` vers l'API Rust, et le reste vers le serveur SvelteKit.
 # Le navigateur ne connaît donc qu'une seule origine — pas de CORS, pas de
 # second port à publier.
 
-# ── 1. Backend (Rust) ──────────────────────────────────────────────────────
-FROM rust:1.98-slim-bookworm AS backend
+# Profil de compilation du backend : `release` (défaut : c'est l'image publiée et
+# celle de la CI) ou `dev` (compilation incrémentale rapide, binaire non optimisé).
+ARG BACKEND_PROFILE=release
+
+# ── 1. Backend (Rust) ────────────────────────────────────────────────────
+FROM rust:1.98-slim-bookworm AS backend-base
 
 # `unrar` (format CBR) embarque les sources C++ d'unrar et les compile : il faut
 # donc un compilateur C++ en plus de Rust.
@@ -22,6 +27,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build/backend
+
+# ── 1a. Compilation release : reproductible, optimisée, mise en cache par couches ──
+FROM backend-base AS backend-release
 
 # Les dépendances changent rarement : on les compile seules, à partir d'une
 # crate vide. Modifier `src/` ne les recompile alors pas. `Cargo.lock` est
@@ -34,7 +42,25 @@ RUN mkdir -p src \
 
 COPY backend/src ./src
 # `touch` : les vraies sources doivent paraître plus récentes que la crate vide.
-RUN touch src/lib.rs src/main.rs && cargo build --release --locked
+RUN touch src/lib.rs src/main.rs && cargo build --release --locked \
+    && install -D target/release/easybook /out/easybook
+
+# ── 1b. Compilation dev : incrémentale, pour l'aller-retour en local ──────────────
+FROM backend-base AS backend-dev
+
+COPY backend/Cargo.toml backend/Cargo.lock ./
+COPY backend/src ./src
+# `target/` et le registre vivent dans des caches BuildKit, hors de l'image :
+# modifier un fichier de `src/` ne recompile que easybook (les dépendances,
+# optimisées par le profil dev de Cargo.toml, ne le sont qu'une fois). Le binaire
+# est copié dans la même commande : le cache n'est pas visible à l'étape suivante.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/build/backend/target \
+    cargo build --locked \
+    && install -D target/debug/easybook /out/easybook
+
+FROM backend-${BACKEND_PROFILE} AS backend
 
 # ── 2. Frontend (SvelteKit, adapter-node) ──────────────────────────────────
 FROM oven/bun:1.3.8-slim AS frontend
@@ -62,7 +88,7 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY --from=backend /build/backend/target/release/easybook /usr/local/bin/easybook
+COPY --from=backend /out/easybook /usr/local/bin/easybook
 COPY --from=frontend --chown=node:node /build/build /app/build
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

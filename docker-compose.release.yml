@@ -1,0 +1,28 @@
+# easybook — image de **production**, construite en local.
+#
+#   docker compose -f docker-compose.release.yml up --build
+#   → interface + API : http://localhost:5300
+#
+# Même construction que l'image publiée par la CI et la release : backend compilé
+# en `release` (optimisé, mais long : plusieurs minutes au premier passage). À
+# utiliser pour vérifier ce qui part en production (nginx, MIME, ressources
+# statiques…) avant de publier. Au quotidien, `docker-compose.yml` (profil dev,
+# compilation rapide) suffit.
+#
+# Autre nom de conteneur, d'image et de port que le compose de développement :
+# les deux peuvent tourner côte à côte.
+
+services:
+  easybook-release:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BACKEND_PROFILE: release
+    image: easybook:release
+    pull_policy: build
+    container_name: easybook-release
+    ports:
+      - "5300:8080"
+    volumes:
+      - ./books:/books

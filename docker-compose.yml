@@ -1,22 +1,27 @@
 # easybook — **un** conteneur, **un** port.
 #
 #   docker compose up --build
-#   → interface + API : http://localhost:5100
+#   → interface + API : http://localhost:5200
 #
 # L'image (`Dockerfile`, racine) contient les trois pièces : nginx, l'interface
 # SvelteKit et l'API Rust. nginx est le seul point d'entrée ; il sert les
 # fichiers compilés du frontend, relaie `/api` et `/ws` vers l'API, et le reste
 # vers le serveur SvelteKit.
 #
-# Ce fichier est celui du **développement** : il construit l'image depuis les
-# sources. Pour un déploiement, partir de `docker/docker-compose.yml` (image
-# publiée sur GHCR, rien à compiler).
+# Ce fichier est celui du **développement** : le backend est compilé en profil
+# `dev` (incrémental, binaire non optimisé) — la première construction compile
+# les dépendances, les suivantes ne recompilent que ce qui a changé. Pour tester
+# l'image de production (compilation `release`, longue), voir
+# `docker-compose.release.yml`. Pour un déploiement, partir de
+# `docker/docker-compose.yml` (image publiée sur GHCR, rien à compiler).
 
 services:
   easybook:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BACKEND_PROFILE: dev
     image: easybook:dev
     # Compose construit et ne cherche jamais `easybook:dev` sur un registre.
     pull_policy: build
