@@ -35,7 +35,7 @@ const WIDTH: u32 = 400;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;
 /// Nombre maximal de couvertures calculées en même temps (requêtes et
 /// préchauffage confondus) : chaque calcul décode une image entière en pixels.
-const MAX_BUILDS: usize = 4;
+const MAX_BUILDS: usize = 2;
 /// Révision de l'extraction, inscrite dans le nom des fichiers du cache disque.
 ///
 /// À incrémenter quand la façon de produire une vignette change : les anciennes
@@ -374,6 +374,16 @@ fn release_memory() {
     // SAFETY: `malloc_trim` n'a aucune précondition ; il ne fait que rendre des pages libres.
     unsafe {
         libc::malloc_trim(0);
+    }
+}
+
+/// À appeler au démarrage : une seule arène glibc. Avec une arène par thread, la
+/// mémoire décodée par chaque thread de calcul reste répartie et épinglée.
+pub fn tune_allocator() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: `mallopt` règle un paramètre global de l'allocateur, sans précondition.
+    unsafe {
+        libc::mallopt(libc::M_ARENA_MAX, 1);
     }
 }
 

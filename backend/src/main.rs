@@ -13,8 +13,14 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 use tokio::sync::broadcast;
 
+// Réglage de l'allocateur avant la création des threads du runtime.
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    thumbnail::tune_allocator();
+    run()
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let names: Vec<&str> = formats::ALL.iter().map(|f| f.id()).collect();

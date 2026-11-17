@@ -14,8 +14,8 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::UNIX_EPOCH;
 
-/// Nombre de comptages gardés. Au-delà, le cache est vidé : c'est un
-/// accélérateur, pas une base de données.
+/// Nombre de comptages gardés. Au-delà, une entrée est évincée à chaque ajout :
+/// vider tout le cache obligerait à rouvrir chaque livre au scan suivant.
 const CAPACITY: usize = 4096;
 
 /// Nombre de pages d'un livre, `None` s'il ne peut pas être ouvert.
@@ -42,8 +42,10 @@ pub fn count(path: &Path, format: Format) -> Option<usize> {
 
     let value = formats::module(format).pages(path).ok().flatten();
     if let Ok(mut cache) = cache().lock() {
-        if cache.len() >= CAPACITY {
-            cache.clear();
+        if cache.len() >= CAPACITY
+            && let Some(victim) = cache.keys().next().cloned()
+        {
+            cache.remove(&victim);
         }
         cache.insert(key, value);
     }
