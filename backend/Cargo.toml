@@ -44,6 +44,10 @@ flate2 = "1"
 unrar = "0.5"
 hayro = "0.9"
 
+# Rendre à l'OS la mémoire libérée après le décodage d'une image (`malloc_trim`).
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3"
 # Tests PDF : fabriquer un flux `LZWDecode` (même version que `lopdf`).

@@ -20,8 +20,8 @@ use image::{DynamicImage, ImageFormat};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex, OnceLock};
 
 /// Dossier du cache disque, relatif à la racine de la bibliothèque. Le point
 /// initial le cache : le scan l'ignore comme tout élément caché.
@@ -29,9 +29,13 @@ pub const DEFAULT_CACHE_DIR: &str = ".easybook/covers";
 
 /// Largeur maximale d'une vignette (la hauteur suit le ratio du livre).
 const WIDTH: u32 = 400;
-/// Nombre de vignettes gardées en mémoire. Au-delà, le cache est vidé : c'est un
-/// accélérateur, pas une base de données.
-const CAPACITY: usize = 400;
+/// Budget du cache mémoire, en octets de vignettes. Au-delà, les moins récemment
+/// utilisées sont évincées une à une : c'est un accélérateur, le disque reste la
+/// référence.
+const CACHE_BYTES: usize = 32 * 1024 * 1024;
+/// Nombre maximal de couvertures calculées en même temps (requêtes et
+/// préchauffage confondus) : chaque calcul décode une image entière en pixels.
+const MAX_BUILDS: usize = 4;
 /// Révision de l'extraction, inscrite dans le nom des fichiers du cache disque.
 ///
 /// À incrémenter quand la façon de produire une vignette change : les anciennes
@@ -42,6 +46,49 @@ const DISK_REVISION: u32 = 1;
 
 struct Cached {
     bytes: Vec<u8>,
+    /// Rang du dernier accès (voir `Cache::tick`).
+    used: u64,
+}
+
+#[derive(Default)]
+struct Cache {
+    map: HashMap<String, Cached>,
+    tick: u64,
+    bytes: usize,
+}
+
+/// Portail comptant les calculs en cours : au-delà de [`MAX_BUILDS`], on attend.
+struct Gate {
+    running: Mutex<usize>,
+    freed: Condvar,
+}
+
+struct Permit;
+
+fn gate() -> &'static Gate {
+    static GATE: OnceLock<Gate> = OnceLock::new();
+    GATE.get_or_init(|| Gate {
+        running: Mutex::new(0),
+        freed: Condvar::new(),
+    })
+}
+
+fn acquire() -> Permit {
+    let gate = gate();
+    let mut running = gate.running.lock().unwrap_or_else(|e| e.into_inner());
+    while *running >= MAX_BUILDS {
+        running = gate.freed.wait(running).unwrap_or_else(|e| e.into_inner());
+    }
+    *running += 1;
+    Permit
+}
+
+impl Drop for Permit {
+    fn drop(&mut self) {
+        let gate = gate();
+        *gate.running.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+        gate.freed.notify_one();
+    }
 }
 
 /// Couverture d'un livre, en JPEG, à la taille d'une vignette.
@@ -63,12 +110,14 @@ pub fn cover(path: &Path, rel: &str, version: &str, disk: Option<&Path>) -> Opti
     }
 
     let made = build(path, rel, entry.as_ref())?;
+    release_memory();
     store(key, made.clone());
     Some(made)
 }
 
 /// Extrait la couverture du livre, la réduit et, si possible, l'écrit sur disque.
 fn build(path: &Path, rel: &str, entry: Option<&DiskEntry>) -> Option<Vec<u8>> {
+    let _permit = acquire();
     let original = match Format::from_path(rel) {
         Some(format) => formats::module(format).cover(path),
         None => None,
@@ -106,11 +155,13 @@ pub struct Warmed {
 ///
 /// Pensé pour tourner en tâche de fond, au démarrage puis à chaque changement de
 /// la bibliothèque : l'interface trouve les couvertures déjà prêtes. Les livres
-/// sont traités un par un, pour borner la mémoire et le CPU. Le cache mémoire
-/// n'est pas rempli : seul le disque l'est.
+/// sont traités par [`MAX_BUILDS`] threads au plus (le portail de `build` borne
+/// aussi la mémoire en cas de requêtes simultanées). Le cache mémoire n'est pas
+/// rempli : seul le disque l'est.
 pub fn warm(root: &Path, dir: &Path) -> Warmed {
-    let mut report = Warmed::default();
     let mut live: Vec<String> = Vec::new();
+    let mut todo: Vec<(PathBuf, String, DiskEntry)> = Vec::new();
+    let mut kept = 0;
 
     for book in crate::library::scan(root).books {
         let path = root.join(&book.rel);
@@ -120,19 +171,44 @@ pub fn warm(root: &Path, dir: &Path) -> Warmed {
         live.push(entry.name.clone());
 
         if entry.read().is_some() {
-            report.kept += 1;
-        } else if build(&path, &book.rel, Some(&entry)).is_some() {
-            report.made += 1;
+            kept += 1;
         } else {
-            report.missing += 1;
+            todo.push((path, book.rel, entry));
         }
     }
+
+    let next = AtomicUsize::new(0);
+    let made = AtomicUsize::new(0);
+    let missing = AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..MAX_BUILDS.min(todo.len()) {
+            scope.spawn(|| {
+                while let Some((path, rel, entry)) = todo.get(next.fetch_add(1, Ordering::Relaxed))
+                {
+                    let counter = if build(path, rel, Some(entry)).is_some() {
+                        &made
+                    } else {
+                        &missing
+                    };
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
+            });
+        }
+    });
+
+    let mut report = Warmed {
+        made: made.into_inner(),
+        kept,
+        missing: missing.into_inner(),
+        removed: 0,
+    };
 
     // Une bibliothèque vide (dossier démonté, scan en échec) ne doit pas vider le
     // cache : il resservira au retour des livres.
     if !live.is_empty() {
         report.removed = prune(dir, &live);
     }
+    release_memory();
     report
 }
 
@@ -251,27 +327,54 @@ fn shrink(bytes: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn cache() -> &'static Mutex<HashMap<String, Cached>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Cached>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+fn cache() -> &'static Mutex<Cache> {
+    static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(Cache::default()))
 }
 
 fn lookup(key: &str) -> Option<Vec<u8>> {
-    cache()
-        .lock()
-        .ok()?
-        .get(key)
-        .map(|entry| entry.bytes.clone())
+    let mut cache = cache().lock().ok()?;
+    cache.tick += 1;
+    let tick = cache.tick;
+    let entry = cache.map.get_mut(key)?;
+    entry.used = tick;
+    Some(entry.bytes.clone())
 }
 
 fn store(key: String, bytes: Vec<u8>) {
     let Ok(mut cache) = cache().lock() else {
         return;
     };
-    if cache.len() >= CAPACITY {
-        cache.clear();
+    cache.tick += 1;
+    let used = cache.tick;
+    cache.bytes += bytes.len();
+    if let Some(old) = cache.map.insert(key, Cached { bytes, used }) {
+        cache.bytes -= old.bytes.len();
     }
-    cache.insert(key, Cached { bytes });
+    // Éviction des moins récemment utilisées jusqu'à rentrer dans le budget.
+    while cache.bytes > CACHE_BYTES && cache.map.len() > 1 {
+        let Some(oldest) = cache
+            .map
+            .iter()
+            .min_by_key(|(_, entry)| entry.used)
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        if let Some(old) = cache.map.remove(&oldest) {
+            cache.bytes -= old.bytes.len();
+        }
+    }
+}
+
+/// Rend à l'OS la mémoire libérée par un décodage d'image : sans cela, glibc la
+/// garde dans ses arènes et le RSS reste au niveau du pic.
+fn release_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: `malloc_trim` n'a aucune précondition ; il ne fait que rendre des pages libres.
+    unsafe {
+        libc::malloc_trim(0);
+    }
 }
 
 #[cfg(test)]

@@ -497,6 +497,7 @@ dependencies = [
  "hayro",
  "http-body-util",
  "image",
+ "libc",
  "lopdf",
  "notify",
  "notify-debouncer-full",
