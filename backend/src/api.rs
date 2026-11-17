@@ -473,13 +473,13 @@ struct RawQuery {
 
 /// `GET /api/raw?path=` — le fichier tel quel.
 ///
-/// Sert au lecteur PDF du navigateur : il lui faut le document, pas une version
+/// Sert au lecteur PDF de l'interface (pdf.js) : il lui faut le document, pas une version
 /// découpée. Le nom de fichier est proposé au téléchargement (`inline`, donc le
 /// lecteur s'ouvre).
 ///
 /// Le fichier est **servi en flux** (`ServeFile`) : la mémoire reste constante
-/// quelle que soit sa taille, et les requêtes `Range` sont gérées (le lecteur
-/// PDF du navigateur n'a pas à tout télécharger pour afficher une page).
+/// quelle que soit sa taille, et les requêtes `Range` sont gérées (pdf.js ne
+/// télécharge que les pages qu'il affiche).
 async fn get_raw(
     State(state): State<AppState>,
     Query(query): Query<RawQuery>,

@@ -1073,16 +1073,33 @@ code {
 	object-fit: contain;
 }
 
-/* PDF : le lecteur du navigateur a sa propre barre d'outils, en haut — on
-   le place sous l'en-tête plutôt que de la lui masquer. */
-.pdf {
-	position: absolute;
-	top: var(--head-h);
-	left: 0;
-	width: 100%;
-	height: calc(100% - var(--head-h));
-	border: 0;
-	background: #333;
+/* PDF : une page dessinée sur un canvas, à la taille de l'écran ; zoomée, elle défile. */
+.pdf-page {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: max-content;
+	min-width: 100%;
+	min-height: 100%;
+}
+
+.pdf-page canvas {
+	flex: none;
+	background: #fff;
+}
+
+/* Zoomée, la page doit pouvoir passer sous l'en-tête et le pager pour être lue entière. */
+.pdf-page.zoomed {
+	padding: var(--head-h) 0 var(--pager-h);
+}
+
+.pager .zoom-btn {
+	min-width: 40px;
+	justify-content: center;
+	padding-right: 0;
+	padding-left: 0;
+	font-size: 16px;
+	line-height: 1;
 }
 
 /* Barre de navigation flottante (chapitre ou planche) */
@@ -1362,6 +1379,11 @@ code {
 
 	/* Sur téléphone, les flèches suffisent : les libellés sont lus par les lecteurs d'écran. */
 	.pager button .label {
+		display: none;
+	}
+
+	/* Le zoom se fait au pincement ; les boutons n'ont plus la place. */
+	.pager .zoom-btn {
 		display: none;
 	}
 

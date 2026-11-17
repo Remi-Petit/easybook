@@ -119,7 +119,11 @@
 				onToggleChrome={() => (chrome = !chrome)}
 			/>
 		{:else if detail.format === 'pdf'}
-			<PdfReader {rel} />
+			<PdfReader
+				{rel}
+				{chrome}
+				onToggleChrome={() => (chrome = !chrome)}
+			/>
 		{:else}
 			<div class="state">
 				<div>

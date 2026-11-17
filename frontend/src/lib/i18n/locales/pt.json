@@ -89,6 +89,7 @@
 	"reader.loadingChapter": "A carregar o capítulo…",
 	"reader.previous": "Anterior",
 	"reader.next": "Seguinte",
-	"reader.pageAlt": "Página {index} de {total}",
-	"reader.pdfTitle": "Leitura do PDF"
+	"reader.zoomOut": "Reduzir",
+	"reader.zoomIn": "Ampliar",
+	"reader.pageAlt": "Página {index} de {total}"
 }
