@@ -41,7 +41,8 @@ easybook/
 │   ├── nginx.conf          # point d'entrée : /api et /ws vers l'API, le reste vers SvelteKit
 │   └── docker-compose.yml  # déploiement (image publiée sur GHCR)
 ├── Dockerfile          # **une** image : nginx + interface + API
-└── docker-compose.yml  # développement (construit l'image)
+├── docker-compose.release.yml  # image de production construite en local (release)
+└── docker-compose.yml  # développement (construit l'image, backend en profil dev)
 ```
 
 ## L'idée
@@ -195,7 +196,17 @@ relaie `/api` et `/ws` vers l'API Rust, et le reste vers le serveur SvelteKit.
 
 ```bash
 docker compose up --build
-# interface + API : http://localhost:5100
+# interface + API : http://localhost:5200
+```
+
+Ce compose est celui du **développement** : le backend est compilé en profil
+`dev` (premier passage ~4 min, puis quelques secondes après une modification de
+`backend/src/`). Pour tester l'image de **production** (compilation `release`,
+longue, comme la CI et la release) :
+
+```bash
+docker compose -f docker-compose.release.yml up --build
+# interface + API : http://localhost:5300
 ```
 
 Pour un déploiement, l'image publiée (rien à compiler) :
