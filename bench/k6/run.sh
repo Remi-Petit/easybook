@@ -48,8 +48,12 @@ trap 'kill -TERM "$monitor" 2>/dev/null || true; wait "$monitor" 2>/dev/null || 
 if command -v k6 > /dev/null; then
   k6=(k6)
 else
+  image=${K6_IMAGE:-grafana/k6:latest}
+  # Chromium n'est que dans l'image `with-browser`.
+  [[ "$scenario" == ui ]] && image=${K6_BROWSER_IMAGE:-grafana/k6:master-with-browser}
   k6=(docker run --rm -i --network host --user "$(id -u):$(id -g)" \
-    -v "$PWD:/bench" -w /bench "${K6_IMAGE:-grafana/k6:latest}")
+    -e HOME=/tmp -e K6_BROWSER_HEADLESS=true -e K6_BROWSER_ARGS=no-sandbox \
+    -v "$PWD:/bench" -w /bench "$image")
 fi
 
 # Le smoke vérifie les routes : pas de temps de réflexion (surchargeable par -e).

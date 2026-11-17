@@ -25,6 +25,7 @@ const P95_LIMIT = opt('p95', 1000);
 const ERR_LIMIT = opt('err', 1);
 
 const WANTED = new Set(['http_req_duration', 'http_req_failed', 'vus']);
+const isBrowserMetric = (name) => name.startsWith('ui_') || name.startsWith('browser_web_vital_');
 
 const percentile = (sorted, p) =>
   sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))] : 0;
@@ -42,7 +43,7 @@ async function readPoints(file) {
   for await (const line of lines) {
     // La clé `metric` vient en premier dans la sortie JSON de k6.
     const found = /^\{"metric":"([^"]+)","type":"Point"/.exec(line);
-    if (!found || !WANTED.has(found[1])) continue;
+    if (!found || !(WANTED.has(found[1]) || isBrowserMetric(found[1]))) continue;
     const metric = found[1];
     const { data } = JSON.parse(line);
     if (data.tags && data.tags.name === 'setup_books') continue;
@@ -95,9 +96,15 @@ const bucket = (i) => {
   return buckets.get(i);
 };
 const routes = new Map();
+const browserMetrics = new Map();
 
 for (const p of points) {
   if (p.time < start) continue;
+  if (isBrowserMetric(p.metric)) {
+    if (!browserMetrics.has(p.metric)) browserMetrics.set(p.metric, []);
+    browserMetrics.get(p.metric).push(p.value);
+    continue;
+  }
   const b = bucket(bucketOf(p.time));
   if (p.metric === 'http_req_duration') {
     b.durations.push(p.value);
@@ -167,6 +174,20 @@ for (const [name, r] of [...routes].sort()) {
 }
 log();
 
+if (browserMetrics.size) {
+  log('## Réactivité (navigateur)');
+  log();
+  log('Durées en ms (CLS sans unité). `ui_page_turn` : planche suivante déjà préchargée ; `_fast` : clics enchaînés.');
+  log();
+  log(row(['mesure', 'n', 'moy', 'p50', 'p95', 'max']));
+  log(row(['---', '---:', '---:', '---:', '---:', '---:']));
+  for (const [name, values] of [...browserMetrics].sort()) {
+    const sorted = values.sort((a, b) => a - b);
+    log(row([name, sorted.length, fixed(avg(sorted), 1), fixed(percentile(sorted, 50), 1), fixed(percentile(sorted, 95), 1), fixed(max(sorted), 1)]));
+  }
+  log();
+}
+
 log(`## Chronologie (tranches de ${BUCKET} s)`);
 log();
 log('CPU en % d\'un cœur (200 = 2 cœurs). `Users` = utilisateurs ayant émis une requête dans la tranche, `VUs k6` = tous les VUs (WebSocket compris). `conteneur` = vue cgroup, `API` = easybook (Rust), `UI` = node (SvelteKit).');
@@ -233,12 +254,14 @@ if (container.length) {
 }
 log();
 
-log('## Capacité');
-log();
-log(`Critères : erreurs ≤ ${ERR_LIMIT} %, p95 ≤ ${P95_LIMIT} ms.`);
-log(`- utilisateurs actifs max tenus dans les critères : **${maxStableUsers}**`);
-log(rupture ? `- premier dépassement : t = ${rupture.t} s, ${rupture.users} utilisateurs (p95 ${fixed(rupture.p95)} ms, erreurs ${fixed(rupture.errPct, 1)} %)` : '- aucun dépassement sur ce run');
-log('- Ce sont des utilisateurs actifs (avec temps de réflexion) ; un onglet ouvert mais inactif coûte bien moins.');
+if (total > 0) {
+  log('## Capacité');
+  log();
+  log(`Critères : erreurs ≤ ${ERR_LIMIT} %, p95 ≤ ${P95_LIMIT} ms.`);
+  log(`- utilisateurs actifs max tenus dans les critères : **${maxStableUsers}**`);
+  log(rupture ? `- premier dépassement : t = ${rupture.t} s, ${rupture.users} utilisateurs (p95 ${fixed(rupture.p95)} ms, erreurs ${fixed(rupture.errPct, 1)} %)` : '- aucun dépassement sur ce run');
+  log('- Ce sont des utilisateurs actifs (avec temps de réflexion) ; un onglet ouvert mais inactif coûte bien moins.');
+}
 
 const text = out.join('\n');
 fs.writeFileSync(path.join(dir, 'report.md'), `${text}\n`);

@@ -33,10 +33,29 @@ Chaque run crée `results/<date>-<scénario>/` : `report.md` (rapport), `process
 | `breakpoint` | Quel débit maximal (req/s) ? Arrêt à p95 > 2 s ou 5 % d'erreurs. | `MAX_RPS=500` `RAMP=10m` `MAX_VUS=2000` |
 | `endpoints` | Combien coûte chaque route, isolée ? | `ENDPOINT_RATE=30` `ENDPOINT_SECONDS=60` |
 | `websocket` | Coût mémoire d'un onglet ouvert (WebSocket) ? | `PEAK_SOCKETS=1000` `SOCKET_HOLD=60` |
+| `ui` | Quelle réactivité ressent le lecteur (voir plus bas) ? | `UI_VUS=1` `UI_DURATION=3m` `BG_VUS=0` `PAGE_TURNS=10` `CHAPTER_TURNS=5` |
 
 Communs : `THINK_MIN=2` `THINK_MAX=6` (pause entre actions, s), `SOCKETS=1` (WebSocket par utilisateur, `0` pour couper), `COVERS=24` (couvertures par page), `READ_PAGES=8`, `READ_CHAPTERS=3`. Les autres options de k6 passent telles quelles.
 
 Un « utilisateur » (`load`, `stress`, `spike`, `soak`) ouvre l'application (page, fichiers compilés, catalogue, couvertures), puis lit : BD 35 %, EPUB 15 %, PDF 10 %, rien 40 % (selon ce que contient la bibliothèque). Il garde un WebSocket ouvert.
+
+## Réactivité (`ui`)
+
+Les autres scénarios mesurent le serveur ; `ui` mesure ce que voit l'utilisateur, dans un vrai Chromium (module `k6/browser`, cache vide à chaque passage) :
+
+| Mesure | Ce qu'elle couvre |
+|---|---|
+| `ui_catalog_first_card` / `_covers_ready` | ouverture de l'application : première carte, puis couvertures visibles chargées |
+| `ui_reader_open_comic` / `_epub` | de la navigation à la première planche affichée / au premier texte |
+| `ui_page_turn` | planche suivante après une pause (préchargement terminé) |
+| `ui_page_turn_fast` | clics enchaînés, sans laisser le préchargement finir |
+| `ui_chapter_turn` | chapitre EPUB suivant |
+| `ui_chrome_toggle` | affichage / masquage de l'en-tête |
+| `browser_web_vital_*` | LCP, FCP, TTFB, CLS fournis par k6 |
+
+`BG_VUS=30` fait tourner en parallèle 30 utilisateurs HTTP : la réactivité mesurée est alors celle d'un lecteur sur un serveur chargé (`./run.sh ui -e BG_VUS=30`). Chaque mesure est dans le rapport, avec la CPU du serveur dans la chronologie.
+
+Le scénario utilise l'image `grafana/k6:master-with-browser` (`K6_BROWSER_IMAGE`) ; le navigateur partage la machine avec l'application, donc `UI_VUS` reste petit.
 
 ## Lire les résultats
 
