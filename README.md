@@ -116,7 +116,7 @@ portugais** ; la langue se choisit dans le pied de la barre latérale.
 | `.epub` | ✅ | celle déclarée par le livre (`properties="cover-image"` ou `<meta name="cover">`) | sommaire (`spine` + `toc.ncx` / navigation EPUB 3), chapitres affichés dans l'interface ; images, CSS et polices servis par l'API |
 | `.cbz` | ✅ | première page de l'archive | archive ZIP d'images, pages triées naturellement (`p2` avant `p10`) |
 | `.cbr` | ✅ | première page de l'archive | archive RAR, lue avec unrar (compilé avec le projet) |
-| `.pdf` | ✅ | première image **dessinée** sur la page 1 | lecteur intégré ([pdf.js](https://mozilla.github.io/pdf.js/)) : une page à la fois, zoom, lecture par plages |
+| `.pdf` | ✅ | première image **dessinée** sur la page 1 | lecteur intégré ([pdf.js](https://mozilla.github.io/pdf.js/)) : une page à la fois, texte sélectionnable, zoom, lecture par plages |
 
 Le **conteneur** d'une bande dessinée est détecté par les octets du fichier, pas
 par son extension : beaucoup de `.cbr` distribués en ligne sont des ZIP

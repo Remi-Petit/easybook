@@ -6,7 +6,9 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
+		"predev": "node scripts/copy-pdfjs-assets.mjs",
 		"build": "vite build",
+		"prebuild": "node scripts/copy-pdfjs-assets.mjs",
 		"preview": "vite preview",
 		"test": "svelte-kit sync && vitest run",
 		"test:watch": "svelte-kit sync && vitest",

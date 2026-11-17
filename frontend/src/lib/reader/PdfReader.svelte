@@ -20,6 +20,7 @@
 	const storageKey = $derived(`easybook:page:${rel}`);
 
 	let doc = $state.raw<PDFDocumentProxy | null>(null);
+	let pdfjs = $state.raw<typeof import('pdfjs-dist') | null>(null);
 	let pages = $state(0);
 	let index = $state(0);
 	let zoomStep = $state(0);
@@ -28,6 +29,10 @@
 	/** Zone de lecture : elle défile quand la page est zoomée. */
 	let stage = $state<HTMLElement | null>(null);
 	let canvas = $state<HTMLCanvasElement | null>(null);
+	/** La page (canvas + texte) : c'est elle qui prend la taille à l'écran. */
+	let sheet = $state<HTMLElement | null>(null);
+	/** Texte de la page, invisible, superposé au canvas : c'est lui qu'on sélectionne. */
+	let textHost = $state<HTMLElement | null>(null);
 	let viewWidth = $state(0);
 	let viewHeight = $state(0);
 
@@ -57,11 +62,18 @@
 		// pdf.js touche `window` dès son chargement : import dynamique, côté navigateur seulement.
 		void (async () => {
 			try {
-				const pdfjs = await import('pdfjs-dist');
-				pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+				const lib = await import('pdfjs-dist');
+				lib.GlobalWorkerOptions.workerSrc = workerUrl;
 				// Lecture par plages, à la demande : seules les pages affichées sont téléchargées.
-				task = pdfjs.getDocument({
+				// Les dossiers de ressources viennent de `static/pdfjs/` (voir scripts/copy-pdfjs-assets.mjs).
+				const assets = new URL('/pdfjs/', window.location.origin).href;
+				task = lib.getDocument({
 					url: rawUrl(rel),
+					wasmUrl: `${assets}wasm/`,
+					cMapUrl: `${assets}cmaps/`,
+					cMapPacked: true,
+					standardFontDataUrl: `${assets}standard_fonts/`,
+					iccUrl: `${assets}iccs/`,
 					rangeChunkSize: 262144,
 					disableStream: true,
 					disableAutoFetch: true
@@ -76,6 +88,7 @@
 					// Rien à restaurer.
 				}
 				pages = loaded.numPages;
+				pdfjs = lib;
 				doc = loaded;
 			} catch (cause) {
 				if (!cancelled) error = cause instanceof Error ? cause.message : String(cause);
@@ -119,16 +132,20 @@
 
 	// Dessin de la page courante. Un nouveau dessin annule le précédent.
 	$effect(() => {
+		const lib = pdfjs;
 		const source = doc;
 		const target = canvas;
+		const box = sheet;
+		const textLayerHost = textHost;
 		const pageNumber = index + 1;
 		const factor = zoom;
 		const width = viewWidth;
 		const height = viewHeight;
-		if (!source || !target || !width || !height) return;
+		if (!lib || !source || !target || !box || !textLayerHost || !width || !height) return;
 
 		let cancelled = false;
 		let render: RenderTask | undefined;
+		let text: InstanceType<typeof lib.TextLayer> | undefined;
 
 		void (async () => {
 			try {
@@ -152,11 +169,28 @@
 				await render.promise;
 				if (cancelled) return;
 
+				box.style.width = `${natural.width * css}px`;
+				box.style.height = `${natural.height * css}px`;
 				target.width = buffer.width;
 				target.height = buffer.height;
-				target.style.width = `${natural.width * css}px`;
-				target.style.height = `${natural.height * css}px`;
 				target.getContext('2d')?.drawImage(buffer, 0, 0);
+
+				// Texte : pdf.js le place avec ces variables CSS, pas avec des pixels.
+				textLayerHost.replaceChildren();
+				textLayerHost.style.setProperty('--total-scale-factor', String(css));
+				textLayerHost.style.setProperty('--scale-round-x', '1px');
+				textLayerHost.style.setProperty('--scale-round-y', '1px');
+				text = new lib.TextLayer({
+					textContentSource: page.streamTextContent(),
+					container: textLayerHost,
+					viewport: page.getViewport({ scale: css })
+				});
+				await text.render();
+				if (cancelled) return;
+				// Sans cette zone de fin, une sélection qui glisse sur du vide saute au bout de la page.
+				const end = document.createElement('div');
+				end.className = 'endOfContent';
+				textLayerHost.append(end);
 				page.cleanup();
 			} catch (cause) {
 				// Un dessin remplacé par un autre n'est pas une erreur.
@@ -170,6 +204,21 @@
 		return () => {
 			cancelled = true;
 			render?.cancel();
+			text?.cancel();
+		};
+	});
+
+	// Pendant qu'on glisse, la zone de fin couvre toute la page (comme dans le visualiseur de Mozilla).
+	$effect(() => {
+		const host = textHost;
+		if (!host) return;
+		const start = () => host.classList.add('selecting');
+		const stop = () => host.classList.remove('selecting');
+		host.addEventListener('pointerdown', start);
+		window.addEventListener('pointerup', stop);
+		return () => {
+			host.removeEventListener('pointerdown', start);
+			window.removeEventListener('pointerup', stop);
 		};
 	});
 </script>
@@ -192,13 +241,12 @@
 			{:else if !doc}
 				<div class="state">{t('reader.opening')}</div>
 			{:else}
-				<div
-					class="pdf-page"
-					class:zoomed={zoomStep > 0}
-					role="img"
-					aria-label={t('reader.pageAlt', { index: index + 1, total: pages })}
-				>
-					<canvas bind:this={canvas}></canvas>
+				<div class="pdf-page" class:zoomed={zoomStep > 0}>
+					<div class="pdf-sheet" bind:this={sheet}>
+						<!-- Le texte de la page est dans la couche superposée : le canvas n'est que l'image. -->
+						<canvas bind:this={canvas} aria-hidden="true"></canvas>
+						<div class="textLayer" bind:this={textHost}></div>
+					</div>
 				</div>
 			{/if}
 		</div>
