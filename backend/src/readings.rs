@@ -211,13 +211,8 @@ pub fn resident_bytes(path: &Path) -> Option<u64> {
         .max(1);
     let mut resident = vec![0u8; len.div_ceil(page)];
     // SAFETY: `resident` compte une case par page du mapping de `len` octets.
-    let status = unsafe {
-        libc::mincore(
-            map.as_ptr().cast_mut().cast(),
-            len,
-            resident.as_mut_ptr(),
-        )
-    };
+    let status =
+        unsafe { libc::mincore(map.as_ptr().cast_mut().cast(), len, resident.as_mut_ptr()) };
     (status == 0).then(|| {
         let pages = resident.iter().filter(|byte| **byte & 1 == 1).count();
         ((pages * page).min(len)) as u64
