@@ -43,6 +43,8 @@ flate2 = "1"
 # (voir backend/Dockerfile : `g++`/`make` requis à la construction).
 unrar = "0.5"
 hayro = "0.9"
+# PDF : compter les pages sans lire le fichier en entier (voir `formats::pdf`).
+memmap2 = "0.9"
 
 # Rendre à l'OS la mémoire libérée après le décodage d'une image (`malloc_trim`).
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]

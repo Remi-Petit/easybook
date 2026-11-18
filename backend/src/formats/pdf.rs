@@ -38,12 +38,8 @@ impl BookFormat for Pdf {
     }
 
     fn pages(&self, path: &Path) -> Result<Option<usize>, String> {
-        // `load_metadata` ne lit que l'arbre des pages : `Document::load` parse
-        // tous les objets du fichier (~800 Mo de RAM pour 45 PDF au scan).
-        if let Ok(metadata) = Document::load_metadata(path)
-            && metadata.page_count > 0
-        {
-            return Ok(Some(metadata.page_count as usize));
+        if let Some(pages) = mapped_page_count(path) {
+            return Ok(Some(pages));
         }
 
         // Repli : fichier que le chargeur léger ne sait pas lire (zéro page).
@@ -54,6 +50,22 @@ impl BookFormat for Pdf {
     fn cover(&self, path: &Path) -> Option<Vec<u8>> {
         render_first_page(path).or_else(|| embedded_image(path))
     }
+}
+
+/// Nombre de pages lu dans l'arbre des pages, sans charger le fichier.
+///
+/// `Document::load_metadata(path)` lit le fichier **entier** dans un `Vec` avant
+/// de n'en parser que l'arbre des pages. Mappé, le fichier n'est lu que là où
+/// lopdf regarde (fin du fichier, table xref, arbre des pages).
+fn mapped_page_count(path: &Path) -> Option<usize> {
+    let file = std::fs::File::open(path).ok()?;
+    // SAFETY: un fichier tronqué pendant la lecture provoquerait un SIGBUS ;
+    // les dépôts passent par un fichier temporaire puis un renommage atomique.
+    let map = unsafe { memmap2::Mmap::map(&file) }.ok()?;
+    #[cfg(unix)]
+    let _ = map.advise(memmap2::Advice::Random);
+    let metadata = Document::load_metadata_mem(&map).ok()?;
+    (metadata.page_count > 0).then_some(metadata.page_count as usize)
 }
 
 /// La première page, rendue en PNG.
