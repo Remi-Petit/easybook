@@ -92,6 +92,7 @@ pub fn scan(root: &Path) -> LibraryScan {
         folder.count = counts.get(&folder.rel).copied().unwrap_or(0);
     }
 
+    pages::save();
     LibraryScan {
         total: books.len(),
         books,
