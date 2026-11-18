@@ -152,12 +152,34 @@ export function coverUrl(rel: string, modified?: number | null): string {
 export const chapterUrl = (rel: string, index: number) =>
 	apiUrl('/api/chapter', { path: rel, index });
 /**
- * Page d'une bande dessinée. La date du fichier (`modified`) dans l'URL la rend
- * immuable : le navigateur et nginx la gardent sans jamais la revalider.
+ * Largeurs de planche proposées par le serveur (`resize.widths` de `config.yml`).
+ *
+ * Le serveur arrondit de toute façon une demande à l'une de ses largeurs ; la
+ * liste n'est recopiée ici que pour que tous les clients demandent les mêmes
+ * URL, et que le cache nginx les serve.
  */
-export function pageUrl(rel: string, index: number, modified?: number | null): string {
+const PAGE_WIDTHS = [800, 1200, 1600, 2400];
+
+/** Largeur de planche à demander pour un écran : la plus petite proposée qui le couvre. */
+export function pageWidth(cssWidth: number, pixelRatio = 1): number {
+	const wanted = Math.ceil(cssWidth * pixelRatio);
+	return PAGE_WIDTHS.find((width) => width >= wanted) ?? PAGE_WIDTHS[PAGE_WIDTHS.length - 1];
+}
+
+/**
+ * Page d'une bande dessinée. La date du fichier (`modified`) dans l'URL la rend
+ * immuable : le navigateur et nginx la gardent sans jamais la revalider. `width`
+ * demande la planche réduite à la largeur de l'écran (voir `pageWidth`).
+ */
+export function pageUrl(
+	rel: string,
+	index: number,
+	modified?: number | null,
+	width?: number
+): string {
 	const params: Record<string, string | number> = { path: rel, index };
 	if (modified) params.v = modified;
+	if (width) params.w = width;
 	return apiUrl('/api/page', params);
 }
 export const rawUrl = (rel: string) => apiUrl('/api/raw', { path: rel });

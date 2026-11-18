@@ -11,6 +11,7 @@ import {
 	formatBytes,
 	formatDate,
 	pageUrl,
+	pageWidth,
 	rawUrl,
 	readUrl,
 	uploadUrl,
@@ -54,7 +55,17 @@ describe('adresses de l’API', () => {
 		expect(pageUrl('a.cbz', 7)).toContain('/api/page?path=a.cbz&index=7');
 		expect(pageUrl('a.cbz', 7)).not.toContain('v=');
 		expect(pageUrl('a.cbz', 7, 1781354862)).toContain('index=7&v=1781354862');
+		expect(pageUrl('a.cbz', 7, 1781354862, 1200)).toContain('v=1781354862&w=1200');
+		expect(pageUrl('a.cbz', 7, null, 800)).not.toContain('v=');
 		expect(rawUrl('a.pdf')).toContain('/api/raw?path=a.pdf');
+	});
+
+	it('demande la plus petite largeur de planche qui couvre l’écran', () => {
+		expect(pageWidth(390, 3)).toBe(1200);
+		expect(pageWidth(390, 1)).toBe(800);
+		expect(pageWidth(1280, 1)).toBe(1600);
+		expect(pageWidth(2000, 2)).toBe(2400);
+		expect(pageWidth(800)).toBe(800);
 	});
 
 	it('garde chaque segment dans le lien de lecture', () => {

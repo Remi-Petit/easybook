@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { pageUrl } from '$lib/api';
+	import { browser } from '$app/environment';
+	import { pageUrl, pageWidth } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
 	import { readingZone } from './zones';
 
@@ -20,13 +21,16 @@
 
 	const storageKey = $derived(`easybook:page:${rel}`);
 
+	/** Largeur de planche adaptée à l'écran (le lecteur n'existe que dans le navigateur). */
+	const width = browser ? pageWidth(window.innerWidth, window.devicePixelRatio || 1) : undefined;
+
 	let index = $state(0);
 	/** Zone de lecture : c'est elle qui défile, pas la page. */
 	let stage = $state<HTMLElement | null>(null);
 
 	const atStart = $derived(index <= 0);
 	const atEnd = $derived(index >= pages - 1);
-	const source = $derived(pageUrl(rel, index, modified));
+	const source = $derived(pageUrl(rel, index, modified, width));
 
 	function go(target: number) {
 		if (target < 0 || target >= pages) return;
@@ -83,7 +87,7 @@
 		const next = index + 1;
 		if (next < pages) {
 			const image = new Image();
-			image.src = pageUrl(rel, next, modified);
+			image.src = pageUrl(rel, next, modified, width);
 		}
 	});
 </script>

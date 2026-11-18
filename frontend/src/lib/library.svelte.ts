@@ -2,8 +2,9 @@
 //
 // Deux sources, une seule vérité :
 //   1. un `GET /api/books` au démarrage (pour peindre tout de suite) ;
-//   2. le WebSocket `/ws`, qui pousse un catalogue complet à chaque changement
-//      détecté dans le dossier `books/`.
+//   2. le WebSocket `/ws`, qui annonce (`{"etag": …}`) chaque changement détecté
+//      dans le dossier `books/` : le catalogue est alors rechargé par HTTP, où il
+//      est compressé, et où un 304 évite tout transfert s'il n'a pas changé.
 //
 // Pas de sondage : la connexion reste ouverte, et se reconnecte avec un délai
 // croissant si l'API disparaît (redémarrage du backend, par exemple).
@@ -24,6 +25,10 @@ let socket: WebSocket | null = null;
 let retry: ReturnType<typeof setTimeout> | null = null;
 let attempt = 0;
 let started = false;
+/** ETag du catalogue affiché (sans guillemets ni préfixe faible : nginx le rend faible). */
+let known = '';
+
+const bare = (etag: string | null): string => (etag ?? '').replace(/^W\//, '').replace(/"/g, '');
 
 /** Démarre le chargement initial et la connexion temps réel (une seule fois). */
 export function start(): void {
@@ -39,6 +44,7 @@ async function refresh(): Promise<void> {
 		// Seul le code est retenu : le message se compose à l'affichage, donc dans
 		// la langue courante (elle peut changer sans recharger la page).
 		if (!response.ok) throw new Error(String(response.status));
+		known = bare(response.headers.get('etag'));
 		apply((await response.json()) as Library);
 	} catch (error) {
 		library.error = error instanceof Error ? error.message : String(error);
@@ -69,7 +75,9 @@ function connect(): void {
 
 	ws.onmessage = (event) => {
 		try {
-			apply(JSON.parse(event.data as string) as Library);
+			const notice = JSON.parse(event.data as string) as { etag?: string };
+			// Déjà à jour (le catalogue de départ vient d'être chargé) : rien à faire.
+			if (notice.etag && notice.etag !== known) void refresh();
 		} catch {
 			// Message illisible : on ignore, le prochain remettra tout d'aplomb.
 		}
