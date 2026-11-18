@@ -265,7 +265,10 @@ fn snapshot_response(snapshot: Snapshot, request: &HeaderMap) -> Response {
     if unchanged {
         return (
             StatusCode::NOT_MODIFIED,
-            [(header::ETAG, &*snapshot.etag), (header::CACHE_CONTROL, "no-cache")],
+            [
+                (header::ETAG, &*snapshot.etag),
+                (header::CACHE_CONTROL, "no-cache"),
+            ],
         )
             .into_response();
     }
@@ -620,9 +623,8 @@ async fn get_page(
     } else {
         "public, max-age=3600"
     };
-    let etag = stamp.map(|(size, secs)| {
-        format!("\"{size:x}-{secs:x}-{index:x}-{:x}\"", width.unwrap_or(0))
-    });
+    let etag = stamp
+        .map(|(size, secs)| format!("\"{size:x}-{secs:x}-{index:x}-{:x}\"", width.unwrap_or(0)));
     if let Some(etag) = &etag
         && headers
             .get(header::IF_NONE_MATCH)
@@ -631,7 +633,10 @@ async fn get_page(
     {
         return (
             StatusCode::NOT_MODIFIED,
-            [(header::ETAG, etag.as_str()), (header::CACHE_CONTROL, cache)],
+            [
+                (header::ETAG, etag.as_str()),
+                (header::CACHE_CONTROL, cache),
+            ],
         )
             .into_response();
     }

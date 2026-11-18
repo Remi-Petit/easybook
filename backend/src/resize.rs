@@ -37,7 +37,8 @@ pub fn decode_jpeg_scaled(bytes: &[u8], max_width: u32, max_height: u32) -> Opti
         return None;
     }
     // Taille voulue : l'image réduite pour tenir dans la boîte, ratio gardé.
-    let ratio = (f64::from(max_width) / f64::from(width)).min(f64::from(max_height) / f64::from(height));
+    let ratio =
+        (f64::from(max_width) / f64::from(width)).min(f64::from(max_height) / f64::from(height));
     if ratio > 0.5 {
         return None;
     }
@@ -91,8 +92,8 @@ fn image_size(bytes: &[u8]) -> Option<(u32, u32)> {
 /// `image` (sans SIMD) représentait la majorité du CPU d'une planche.
 fn scale(rgb: RgbImage, width: u32, height: u32) -> Option<RgbImage> {
     let (source_width, source_height) = rgb.dimensions();
-    let source = Image::from_vec_u8(source_width, source_height, rgb.into_raw(), PixelType::U8x3)
-        .ok()?;
+    let source =
+        Image::from_vec_u8(source_width, source_height, rgb.into_raw(), PixelType::U8x3).ok()?;
     let mut target = Image::new(width, height, PixelType::U8x3);
     Resizer::new()
         .resize(
@@ -145,7 +146,11 @@ mod tests {
     fn jpeg(width: u32, height: u32) -> Vec<u8> {
         let mut image = RgbImage::new(width, height);
         for (x, y, pixel) in image.enumerate_pixels_mut() {
-            *pixel = Rgb([(x * 7 % 256) as u8, (y * 5 % 256) as u8, ((x + y) % 256) as u8]);
+            *pixel = Rgb([
+                (x * 7 % 256) as u8,
+                (y * 5 % 256) as u8,
+                ((x + y) % 256) as u8,
+            ]);
         }
         let mut out = Vec::new();
         DynamicImage::ImageRgb8(image)

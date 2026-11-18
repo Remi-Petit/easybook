@@ -376,7 +376,11 @@ async fn a_page_is_immutable_with_the_file_date_and_revalidated_by_etag() {
 
     // Une date périmée n'est pas immuable.
     let (_, stale, _) = call(&app, "/api/page?path=mangas%2FT1.cbz&index=1&v=1").await;
-    assert!(header_is(&stale, header::CACHE_CONTROL, "public, max-age=3600"));
+    assert!(header_is(
+        &stale,
+        header::CACHE_CONTROL,
+        "public, max-age=3600"
+    ));
 
     // L'ETag rend un 304 sans corps, y compris sous sa forme faible (nginx).
     let etag = headers[header::ETAG].to_str().unwrap().to_string();

@@ -38,13 +38,21 @@ impl Deref for Borrowed {
     type Target = ZipArchive<File>;
 
     fn deref(&self) -> &Self::Target {
-        &self.slot.as_ref().expect("archive présente jusqu'au drop").zip
+        &self
+            .slot
+            .as_ref()
+            .expect("archive présente jusqu'au drop")
+            .zip
     }
 }
 
 impl DerefMut for Borrowed {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.slot.as_mut().expect("archive présente jusqu'au drop").zip
+        &mut self
+            .slot
+            .as_mut()
+            .expect("archive présente jusqu'au drop")
+            .zip
     }
 }
 
@@ -214,7 +222,10 @@ mod tests {
         std::fs::copy(&replacement, &path).unwrap();
 
         let mut zip = open(&path).unwrap();
-        assert_eq!(read_named(&mut zip, "a.jpg").unwrap(), b"nouveau, plus long");
+        assert_eq!(
+            read_named(&mut zip, "a.jpg").unwrap(),
+            b"nouveau, plus long"
+        );
         drop(zip);
         assert_eq!(pooled(&path), 1, "l'ancienne archive a été écartée");
     }
