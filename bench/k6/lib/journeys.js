@@ -82,10 +82,16 @@ const coverParams = (b) =>
     : { path: b.rel, r: COVER_REVISION };
 
 // Comme le lecteur : la date du fichier versionne l'URL de la page
-// (`PAGE_V=0` pour la retirer et mesurer l'URL non versionnée).
+// (`PAGE_V=0` pour la retirer et mesurer l'URL non versionnée, que nginx ne garde pas).
+// `PAGE_W=1200` demande la planche réduite à cette largeur.
 const PAGE_V = num('PAGE_V', 1) !== 0;
-const pageParams = (b, index) =>
-  b.modified && PAGE_V ? { path: b.rel, index, v: b.modified } : { path: b.rel, index };
+const PAGE_W = num('PAGE_W', 0);
+const pageParams = (b, index) => {
+  const params = { path: b.rel, index };
+  if (b.modified && PAGE_V) params.v = b.modified;
+  if (PAGE_W > 0) params.w = PAGE_W;
+  return params;
+};
 
 // 404 est normal : PDF, CBR et archives sans image n'ont pas de couverture.
 const coverSpec = (b) => ({
