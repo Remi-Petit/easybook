@@ -343,6 +343,112 @@ async fn comic_pages_are_served_in_order() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Appelle une route avec `If-None-Match`.
+async fn call_if_none_match(app: &Router, uri: &str, etag: &str) -> (StatusCode, HeaderMap) {
+    let request = Request::builder()
+        .uri(uri)
+        .header(header::IF_NONE_MATCH, etag)
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    (response.status(), response.headers().clone())
+}
+
+#[tokio::test]
+async fn a_page_is_immutable_with_the_file_date_and_revalidated_by_etag() {
+    let (dir, app) = library();
+    let modified = fs::metadata(dir.path().join("mangas/T1.cbz"))
+        .unwrap()
+        .modified()
+        .unwrap()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let versioned = format!("/api/page?path=mangas%2FT1.cbz&index=1&v={modified}");
+    let (status, headers, _) = call(&app, &versioned).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(header_is(
+        &headers,
+        header::CACHE_CONTROL,
+        "public, max-age=31536000, immutable"
+    ));
+
+    // Une date périmée n'est pas immuable.
+    let (_, stale, _) = call(&app, "/api/page?path=mangas%2FT1.cbz&index=1&v=1").await;
+    assert!(header_is(&stale, header::CACHE_CONTROL, "public, max-age=3600"));
+
+    // L'ETag rend un 304 sans corps, y compris sous sa forme faible (nginx).
+    let etag = headers[header::ETAG].to_str().unwrap().to_string();
+    for sent in [etag.clone(), format!("W/{etag}")] {
+        let (status, headers) = call_if_none_match(&app, &versioned, &sent).await;
+        assert_eq!(status, StatusCode::NOT_MODIFIED);
+        assert!(headers.contains_key(header::ETAG));
+    }
+
+    // Une autre page n'a pas le même ETag.
+    let (status, _) = call_if_none_match(
+        &app,
+        &format!("/api/page?path=mangas%2FT1.cbz&index=2&v={modified}"),
+        &etag,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_page_can_be_asked_at_the_screen_width() {
+    let dir = tempfile::tempdir().unwrap();
+    let wide = common::jpeg(1600, 2000);
+    let mut zip = zip::ZipWriter::new(fs::File::create(dir.path().join("large.cbz")).unwrap());
+    zip.start_file("p1.jpg", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    std::io::Write::write_all(&mut zip, &wide).unwrap();
+    zip.finish().unwrap();
+    let (tx, _) = tokio::sync::broadcast::channel(4);
+    let app = api::routes(AppState::new(dir.path(), tx));
+
+    // Sans `w` : l'image d'origine, octet pour octet.
+    let (_, _, original) = call(&app, "/api/page?path=large.cbz&index=0").await;
+    assert_eq!(original, wide);
+
+    // 700 est arrondi à la largeur proposée au-dessus (800) ; le ratio est gardé.
+    let (status, headers, small) = call(&app, "/api/page?path=large.cbz&index=0&w=700").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(header_is(&headers, header::CONTENT_TYPE, "image/jpeg"));
+    assert!(small.len() < original.len());
+    let decoded = image::load_from_memory(&small).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (800, 1000));
+
+    // Plus large que la planche : rien à réduire, c'est l'original.
+    let (_, _, same) = call(&app, "/api/page?path=large.cbz&index=0&w=2400").await;
+    assert_eq!(same, original);
+
+    // La taille fait partie de l'ETag : on ne confond pas deux variantes.
+    let (_, full, _) = call(&app, "/api/page?path=large.cbz&index=0").await;
+    assert_ne!(full[header::ETAG], headers[header::ETAG]);
+}
+
+#[tokio::test]
+async fn the_catalogue_is_revalidated_by_etag() {
+    let (dir, app) = library();
+
+    let (status, headers, body) = call(&app, "/api/books").await;
+    assert_eq!(status, StatusCode::OK);
+    let etag = headers[header::ETAG].to_str().unwrap().to_string();
+    assert!(!body.is_empty());
+
+    let (status, _) = call_if_none_match(&app, "/api/books", &etag).await;
+    assert_eq!(status, StatusCode::NOT_MODIFIED);
+
+    // Un livre ajouté change le catalogue, donc l'ETag (le cache du catalogue
+    // dure 2 s : on passe par l'API d'écriture, qui le rafraîchit tout de suite).
+    common::cbz(&dir.path().join("mangas"), "T2.cbz", 1);
+    let (_, _) = create_folder(&app, "", "Nouveau").await;
+    let (status, _) = call_if_none_match(&app, "/api/books", &etag).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
 #[tokio::test]
 async fn pdf_is_served_as_is() {
     let (_dir, app) = library();

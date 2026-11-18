@@ -19,11 +19,11 @@
 //! | `GET /api/raw?path=` | fichier tel quel (PDF, EPUB) |
 //! | `POST /api/folder` | crée une catégorie (ou une série dans un dossier) |
 //! | `PUT /api/book?folder=&name=` | dépose un livre (corps = le fichier) |
-//! | `GET /ws` | catalogue poussé à chaque changement du dossier |
+//! | `GET /ws` | avis `{"etag"}` à chaque changement du dossier (recharger `/api/books`) |
 
 use crate::formats::{self, Format};
-use crate::{config, library, readings, rewrite, thumbnail, write};
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use crate::{config, library, readings, resize, rewrite, thumbnail, write};
+use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -48,6 +48,34 @@ use tower_http::services::ServeFile;
 /// ne tourne en tâche de fond.
 const SNAPSHOT_TTL: Duration = Duration::from_secs(2);
 
+/// Catalogue sérialisé, partagé sans copie entre les requêtes HTTP.
+///
+/// Les WebSocket ne reçoivent **pas** le catalogue : seulement un avis très court
+/// (`notice`) portant son `ETag`. Pousser le catalogue à chaque onglet coûtait
+/// plus de 1,8 Mo de RSS par socket pour 6000 livres (tampon d'envoi de chaque
+/// connexion) ; le client le recharge par HTTP, où nginx le compresse et où un
+/// 304 lui évite tout transfert.
+#[derive(Clone)]
+struct Snapshot {
+    text: Utf8Bytes,
+    etag: Arc<str>,
+    notice: Utf8Bytes,
+}
+
+impl Snapshot {
+    fn new(json: String) -> Self {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        json.hash(&mut hasher);
+        let tag = format!("{:016x}-{:x}", hasher.finish(), json.len());
+        Self {
+            text: Utf8Bytes::from(json),
+            notice: Utf8Bytes::from(format!(r#"{{"etag":"{tag}"}}"#)),
+            etag: format!("\"{tag}\"").into(),
+        }
+    }
+}
+
 /// État partagé par les handlers.
 #[derive(Clone)]
 pub struct AppState {
@@ -56,28 +84,54 @@ pub struct AppState {
     /// Dossier du cache disque des couvertures (caché, sous la racine par défaut).
     cache_dir: Arc<PathBuf>,
     /// Diffusion du catalogue aux WebSocket ouverts.
-    ws: broadcast::Sender<String>,
+    ws: broadcast::Sender<Utf8Bytes>,
     /// Dernier catalogue sérialisé, et son instant de production.
-    snapshot: Arc<RwLock<String>>,
+    snapshot: Arc<RwLock<Option<Snapshot>>>,
     snapshot_at: Arc<std::sync::Mutex<Option<Instant>>>,
     /// Un seul scan à la fois, même si plusieurs requêtes arrivent à froid.
     refresh: Arc<tokio::sync::Mutex<()>>,
     /// Lectures de livre en cours (`limits.max_concurrent_reads`).
     reads: Arc<Semaphore>,
+    /// Réductions de planches en cours (`resize.max_concurrent`).
+    resizes: Arc<Semaphore>,
 }
 
 impl AppState {
-    pub fn new(root: impl Into<PathBuf>, ws: broadcast::Sender<String>) -> Self {
+    pub fn new(root: impl Into<PathBuf>, ws: broadcast::Sender<Utf8Bytes>) -> Self {
         let root = root.into();
         Self {
             cache_dir: Arc::new(root.join(thumbnail::DEFAULT_CACHE_DIR)),
             root: Arc::new(root),
             ws,
-            snapshot: Arc::new(RwLock::new(String::new())),
+            snapshot: Arc::new(RwLock::new(None)),
             snapshot_at: Arc::new(std::sync::Mutex::new(None)),
             refresh: Arc::new(tokio::sync::Mutex::new(())),
             reads: Arc::new(Semaphore::new(config::limits().max_concurrent_reads)),
+            resizes: Arc::new(Semaphore::new(config::resize().max_concurrent)),
         }
+    }
+
+    /// Réduit une planche à `width` pixels, dans la limite de
+    /// `resize.max_concurrent` : chaque réduction décode l'image entière.
+    /// Rend le type de contenu et les octets à servir (l'original si la réduction
+    /// n'a pas lieu d'être).
+    async fn shrink(
+        &self,
+        name: String,
+        bytes: Vec<u8>,
+        width: u32,
+        settings: config::Resize,
+    ) -> Result<(&'static str, Vec<u8>), tokio::task::JoinError> {
+        let original = formats::content_type(&name);
+        let permit = Arc::clone(&self.resizes).acquire_owned().await.ok();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            match resize::shrink_page(&bytes, width, &settings) {
+                Some(small) => ("image/jpeg", small),
+                None => (original, bytes),
+            }
+        })
+        .await
     }
 
     /// Exécute une lecture de livre sur le pool bloquant, dans la limite de
@@ -116,7 +170,7 @@ impl AppState {
     }
 
     /// Catalogue encore frais, s'il y en a un.
-    fn cached(&self) -> Option<String> {
+    fn cached(&self) -> Option<Snapshot> {
         let fresh = self
             .snapshot_at
             .lock()
@@ -126,8 +180,7 @@ impl AppState {
         if !fresh {
             return None;
         }
-        let json = self.snapshot.read().ok()?.clone();
-        (!json.is_empty()).then_some(json)
+        self.snapshot.read().ok()?.clone()
     }
 }
 
@@ -183,48 +236,69 @@ async fn get_performance() -> Response {
 }
 
 /// `GET /api/books` — catalogue complet.
-async fn list_books(State(state): State<AppState>) -> Response {
-    if let Some(json) = state.cached() {
-        return json_response(json);
+///
+/// `ETag` : un client dont le catalogue est à jour reçoit un 304, sans corps.
+async fn list_books(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(snapshot) = state.cached() {
+        return snapshot_response(snapshot, &headers);
     }
 
     // Le scan est bloquant (un `stat` par fichier) : il part sur le pool prévu
     // pour ça, sans immobiliser un worker de Tokio.
     let _guard = state.refresh.lock().await;
-    if let Some(json) = state.cached() {
-        return json_response(json);
+    if let Some(snapshot) = state.cached() {
+        return snapshot_response(snapshot, &headers);
     }
 
     let scanning = state.clone();
     match tokio::task::spawn_blocking(move || store_snapshot(&scanning)).await {
-        Ok(json) => json_response(json),
+        Ok(snapshot) => snapshot_response(snapshot, &headers),
         Err(e) => internal_error(e).into_response(),
     }
 }
 
-fn json_response(json: String) -> Response {
-    ([(header::CONTENT_TYPE, "application/json")], json).into_response()
+fn snapshot_response(snapshot: Snapshot, request: &HeaderMap) -> Response {
+    let unchanged = request
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| etag_matches(value, &snapshot.etag));
+    if unchanged {
+        return (
+            StatusCode::NOT_MODIFIED,
+            [(header::ETAG, &*snapshot.etag), (header::CACHE_CONTROL, "no-cache")],
+        )
+            .into_response();
+    }
+    (
+        [
+            (header::CONTENT_TYPE, "application/json"),
+            (header::ETAG, &*snapshot.etag),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        axum::body::Bytes::from(snapshot.text),
+    )
+        .into_response()
 }
 
 /// Scanne la bibliothèque, mémorise le résultat et le rend.
-fn store_snapshot(state: &AppState) -> String {
+fn store_snapshot(state: &AppState) -> Snapshot {
     let scan = library::scan(&state.root());
-    let json = serde_json::to_string(&scan).unwrap_or_else(|_| "{}".to_string());
+    let snapshot = Snapshot::new(serde_json::to_string(&scan).unwrap_or_else(|_| "{}".to_string()));
     if let Ok(mut slot) = state.snapshot.write() {
-        *slot = json.clone();
+        *slot = Some(snapshot.clone());
     }
     if let Ok(mut at) = state.snapshot_at.lock() {
         *at = Some(Instant::now());
     }
-    json
+    snapshot
 }
 
-/// Scanne et diffuse aux clients WebSocket (appelé par le watcher).
+/// Scanne et prévient les clients WebSocket (appelé par le watcher).
 pub fn broadcast_snapshot(state: &AppState) {
-    let json = store_snapshot(state);
+    let snapshot = store_snapshot(state);
     // Aucun client à l'écoute n'est pas une erreur : le catalogue reste en
     // cache pour la prochaine requête HTTP.
-    let _ = state.ws.send(json);
+    let _ = state.ws.send(snapshot.notice);
 }
 
 /// Fiche d'un livre : de quoi construire le lecteur.
@@ -491,6 +565,10 @@ struct PageQuery {
     /// Date de modification annoncée par le catalogue (voir `CoverQuery::v`).
     #[serde(default)]
     v: Option<String>,
+    /// Largeur voulue, en pixels (voir [`crate::resize`]) : la planche est servie
+    /// réduite à la plus petite largeur proposée qui la couvre.
+    #[serde(default)]
+    w: Option<u32>,
 }
 
 /// Taille et date de modification (secondes Unix) d'un fichier.
@@ -513,11 +591,14 @@ fn etag_matches(header: &str, etag: &str) -> bool {
     })
 }
 
-/// `GET /api/page?path=&index=&v=` — page d'une bande dessinée.
+/// `GET /api/page?path=&index=&v=&w=` — page d'une bande dessinée.
 ///
 /// Avec la date du fichier dans l'URL (`v`), la page ne changera plus à cette
 /// adresse : elle est servie `immutable`. Sans elle, ou si la date est périmée,
 /// le navigateur la revalide par `ETag` sans que l'archive soit rouverte.
+///
+/// `w` demande une planche réduite (voir [`crate::resize`]) : sans lui, ou si la
+/// planche est déjà assez étroite, c'est l'image d'origine, octet pour octet.
 async fn get_page(
     State(state): State<AppState>,
     Query(query): Query<PageQuery>,
@@ -527,6 +608,10 @@ async fn get_page(
         return StatusCode::NOT_FOUND.into_response();
     };
     let index = query.index;
+    let settings = config::resize();
+    let width = query
+        .w
+        .and_then(|wanted| resize::snap(wanted, &settings.widths));
 
     let stamp = file_stamp(&path);
     let announced = stamp.map(|(_, secs)| secs.to_string());
@@ -535,7 +620,9 @@ async fn get_page(
     } else {
         "public, max-age=3600"
     };
-    let etag = stamp.map(|(size, secs)| format!("\"{size:x}-{secs:x}-{index:x}\""));
+    let etag = stamp.map(|(size, secs)| {
+        format!("\"{size:x}-{secs:x}-{index:x}-{:x}\"", width.unwrap_or(0))
+    });
     if let Some(etag) = &etag
         && headers
             .get(header::IF_NONE_MATCH)
@@ -560,10 +647,17 @@ async fn get_page(
         .await
     {
         Ok(Ok((name, bytes))) => {
+            let (content_type, bytes) = match width {
+                Some(width) => match state.shrink(name, bytes, width, settings).await {
+                    Ok(shrunk) => shrunk,
+                    Err(e) => return internal_error(e).into_response(),
+                },
+                None => (formats::content_type(&name), bytes),
+            };
             readings::touch(&book, &query.path, bytes.len() as u64);
             let mut response = (
                 [
-                    (header::CONTENT_TYPE, formats::content_type(&name)),
+                    (header::CONTENT_TYPE, content_type),
                     (header::CACHE_CONTROL, cache),
                 ],
                 bytes,
@@ -636,7 +730,8 @@ async fn get_raw(
     response
 }
 
-/// WebSocket : catalogue initial, puis une poussée à chaque changement.
+/// WebSocket : un avis (`{"etag":"…"}`) à la connexion, puis à chaque changement.
+/// Le client recharge `/api/books` quand l'ETag annoncé n'est plus le sien.
 async fn ws_library(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
     ws.on_upgrade(move |socket| handle_ws(socket, state))
 }
@@ -648,16 +743,17 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
     // scan initial ne doit pas être perdu.
     let mut rx = state.ws.subscribe();
 
-    let initial_state = state.clone();
-    let initial = tokio::task::spawn_blocking(move || {
-        initial_state
-            .cached()
-            .unwrap_or_else(|| store_snapshot(&initial_state))
-    })
-    .await
-    .unwrap_or_else(|_| "{}".to_string());
+    // Un seul scan à la fois, comme pour `GET /api/books` : des centaines d'onglets
+    // qui se connectent ensemble ne doivent pas lancer autant de scans.
+    let initial = {
+        let _guard = state.refresh.lock().await;
+        match state.cached() {
+            Some(snapshot) => snapshot,
+            None => snapshot_now(&state).await,
+        }
+    };
 
-    if sink.send(Message::text(initial)).await.is_err() {
+    if sink.send(Message::Text(initial.notice)).await.is_err() {
         return;
     }
 
@@ -672,15 +768,15 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
             // Changement du dossier, poussé par le watcher.
             envelope = rx.recv() => match envelope {
                 Ok(json) => {
-                    if sink.send(Message::text(json)).await.is_err() {
+                    if sink.send(Message::Text(json)).await.is_err() {
                         break;
                     }
                 }
-                // En retard sur le canal : on renvoie un catalogue complet
-                // plutôt que de laisser le client croire à un état périmé.
+                // En retard sur le canal : un avis frais plutôt que de laisser le
+                // client croire à un état périmé.
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     let fresh = snapshot_now(&state).await;
-                    if sink.send(Message::text(fresh)).await.is_err() {
+                    if sink.send(Message::Text(fresh.notice)).await.is_err() {
                         break;
                     }
                 }
@@ -690,11 +786,11 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
     }
 }
 
-async fn snapshot_now(state: &AppState) -> String {
+async fn snapshot_now(state: &AppState) -> Snapshot {
     let scanning = state.clone();
     tokio::task::spawn_blocking(move || store_snapshot(&scanning))
         .await
-        .unwrap_or_else(|_| "{}".to_string())
+        .unwrap_or_else(|_| Snapshot::new("{}".to_string()))
 }
 
 /// Un fichier de la bibliothèque existant, ou `None`.

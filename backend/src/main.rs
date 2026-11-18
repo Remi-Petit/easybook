@@ -56,7 +56,7 @@ async fn run(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
     println!("Bibliothèque : {}", root.display());
 
     // Canal broadcast : le catalogue sérialisé (JSON) part à tous les clients WS.
-    let (ws_tx, _) = broadcast::channel::<String>(16);
+    let (ws_tx, _) = broadcast::channel::<axum::extract::ws::Utf8Bytes>(16);
     let state = api::AppState::new(root.clone(), ws_tx);
     // `EASYBOOK_CACHE_DIR` : cache des couvertures hors de `books/` (sinon
     // `books/.easybook/covers`).
