@@ -115,6 +115,7 @@
 			<ComicReader
 				{rel}
 				pages={detail.pages}
+				modified={detail.modified}
 				{chrome}
 				onToggleChrome={() => (chrome = !chrome)}
 			/>

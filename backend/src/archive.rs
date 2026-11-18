@@ -1,19 +1,104 @@
 //! Ouverture des archives ZIP (EPUB et CBZ).
 //!
 //! Les deux formats sont des archives ZIP : un EPUB range des documents XHTML,
-//! un CBZ des images. L'archive est ouverte **par requête** — le système de
-//! fichiers est chaud, et un cache de descripteurs compliquerait la gestion des
-//! fichiers remplacés pendant la lecture.
+//! un CBZ des images. Ouvrir une archive relit son annuaire (une entrée par
+//! fichier), ce qui pèse sur un CBZ de plusieurs centaines de planches : les
+//! archives sont donc gardées ouvertes dans un petit réservoir
+//! (`limits.open_archives`), et une lecture en **emprunte** une.
+//!
+//! Une archive empruntée n'est à personne d'autre : deux lectures simultanées du
+//! même livre en ouvrent chacune une. Un livre remplacé (taille ou date
+//! différente) n'est jamais servi depuis une ancienne archive.
 
+use crate::config;
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use std::ops::{Deref, DerefMut};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::UNIX_EPOCH;
 use zip::ZipArchive;
 
-/// Ouvre une archive en lecture.
-pub fn open(path: &Path) -> Result<ZipArchive<File>, String> {
+struct Slot {
+    path: PathBuf,
+    size: u64,
+    stamp: u64,
+    zip: ZipArchive<File>,
+}
+
+/// Archives libres, de la moins récemment rendue à la plus récente.
+static POOL: Mutex<Vec<Slot>> = Mutex::new(Vec::new());
+
+/// Archive empruntée au réservoir ; rendue en fin de lecture.
+pub struct Borrowed {
+    slot: Option<Slot>,
+}
+
+impl Deref for Borrowed {
+    type Target = ZipArchive<File>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.slot.as_ref().expect("archive présente jusqu'au drop").zip
+    }
+}
+
+impl DerefMut for Borrowed {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.slot.as_mut().expect("archive présente jusqu'au drop").zip
+    }
+}
+
+impl Drop for Borrowed {
+    fn drop(&mut self) {
+        let Some(slot) = self.slot.take() else {
+            return;
+        };
+        let capacity = config::limits().open_archives;
+        if capacity == 0 {
+            return;
+        }
+        let mut pool = POOL.lock().unwrap_or_else(|e| e.into_inner());
+        pool.push(slot);
+        let excess = pool.len().saturating_sub(capacity);
+        pool.drain(..excess);
+    }
+}
+
+/// Ouvre une archive en lecture (ou en emprunte une déjà ouverte).
+pub fn open(path: &Path) -> Result<Borrowed, String> {
+    let meta = std::fs::metadata(path).map_err(|e| format!("{} : {e}", path.display()))?;
+    let size = meta.len();
+    let stamp = meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |elapsed| elapsed.as_nanos() as u64);
+
+    {
+        let mut pool = POOL.lock().unwrap_or_else(|e| e.into_inner());
+        // Une version périmée de ce livre ne servira plus : on libère son
+        // descripteur (le fichier supprimé garderait sinon son espace disque).
+        pool.retain(|slot| slot.path != path || (slot.size, slot.stamp) == (size, stamp));
+        if let Some(at) = pool
+            .iter()
+            .rposition(|slot| slot.path == path && (slot.size, slot.stamp) == (size, stamp))
+        {
+            return Ok(Borrowed {
+                slot: Some(pool.remove(at)),
+            });
+        }
+    }
+
     let file = File::open(path).map_err(|e| format!("{} : {e}", path.display()))?;
-    ZipArchive::new(file).map_err(|e| format!("archive illisible : {e}"))
+    let zip = ZipArchive::new(file).map_err(|e| format!("archive illisible : {e}"))?;
+    Ok(Borrowed {
+        slot: Some(Slot {
+            path: path.to_path_buf(),
+            size,
+            stamp,
+            zip,
+        }),
+    })
 }
 
 /// Lit une entrée par son nom exact.
@@ -99,5 +184,38 @@ mod tests {
         let (_dir, path) = fixture(&[("a.jpg", b"x")]);
         let mut zip = open(&path).unwrap();
         assert!(read_named(&mut zip, "b.jpg").is_none());
+    }
+
+    fn pooled(path: &Path) -> usize {
+        POOL.lock()
+            .unwrap()
+            .iter()
+            .filter(|slot| slot.path == path)
+            .count()
+    }
+
+    #[test]
+    fn a_returned_archive_is_kept_and_borrowed_again() {
+        let (_dir, path) = fixture(&[("a.jpg", b"x")]);
+        drop(open(&path).unwrap());
+        assert_eq!(pooled(&path), 1);
+
+        let mut again = open(&path).unwrap();
+        assert_eq!(pooled(&path), 0, "empruntée : plus dans le réservoir");
+        assert_eq!(read_named(&mut again, "a.jpg").unwrap(), b"x");
+    }
+
+    #[test]
+    fn a_replaced_book_is_not_served_from_the_old_archive() {
+        let (_dir, path) = fixture(&[("a.jpg", b"ancien")]);
+        drop(open(&path).unwrap());
+
+        let (_other, replacement) = fixture(&[("a.jpg", b"nouveau, plus long")]);
+        std::fs::copy(&replacement, &path).unwrap();
+
+        let mut zip = open(&path).unwrap();
+        assert_eq!(read_named(&mut zip, "a.jpg").unwrap(), b"nouveau, plus long");
+        drop(zip);
+        assert_eq!(pooled(&path), 1, "l'ancienne archive a été écartée");
     }
 }

@@ -11,6 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// Contenu de `config.yml`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -19,14 +20,60 @@ pub struct Config {
     /// Dossier des livres. Relatif au dossier de `config.yml` s'il ne commence
     /// pas par `/`.
     pub books_root: String,
+    /// Plafonds de ressources (voir [`Limits`]).
+    pub limits: Limits,
+}
+
+/// Plafonds de ressources : sans eux, une rafale de requêtes ouvre autant de
+/// lectures d'archive que de connexions, chacune avec sa page en mémoire.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Limits {
+    /// Lectures de livre simultanées (page, ressource, chapitre, fiche). Les
+    /// suivantes attendent leur tour.
+    pub max_concurrent_reads: usize,
+    /// Threads bloquants du runtime Tokio (Tokio en autorise 512 par défaut).
+    pub max_blocking_threads: usize,
+    /// Archives ZIP gardées ouvertes entre deux requêtes (`0` : aucune).
+    pub open_archives: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            max_concurrent_reads: 64,
+            max_blocking_threads: 128,
+            open_archives: 16,
+        }
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             books_root: "../books".to_string(),
+            limits: Limits::default(),
         }
     }
+}
+
+static INSTALLED: OnceLock<Config> = OnceLock::new();
+
+/// Fixe la configuration du process (à appeler une fois, au démarrage).
+pub fn install(config: Config) {
+    let _ = INSTALLED.set(config);
+}
+
+/// Plafonds en vigueur : ceux de `config.yml`, ou les valeurs par défaut si
+/// [`install`] n'a pas été appelée (tests).
+pub fn limits() -> Limits {
+    let mut limits = INSTALLED
+        .get()
+        .map_or_else(Limits::default, |config| config.limits.clone());
+    // Un plafond à zéro bloquerait toute lecture.
+    limits.max_concurrent_reads = limits.max_concurrent_reads.max(1);
+    limits.max_blocking_threads = limits.max_blocking_threads.max(1);
+    limits
 }
 
 impl Config {
@@ -118,6 +165,7 @@ mod tests {
     fn a_relative_root_hangs_from_the_config_file_directory() {
         let config = Config {
             books_root: "../books".to_string(),
+            ..Config::default()
         };
         assert_eq!(
             config.resolve_with(None, Path::new("/srv/easybook/backend/config.yml")),
@@ -129,6 +177,7 @@ mod tests {
     fn an_absolute_root_is_kept_as_is() {
         let config = Config {
             books_root: "/livres".to_string(),
+            ..Config::default()
         };
         assert_eq!(
             config.resolve_with(None, Path::new("/srv/backend/config.yml")),
@@ -140,6 +189,7 @@ mod tests {
     fn the_environment_wins_over_the_file() {
         let config = Config {
             books_root: "/livres".to_string(),
+            ..Config::default()
         };
         // Ce que pose le conteneur : `BOOKS_ROOT=/books`.
         assert_eq!(
@@ -168,9 +218,22 @@ mod tests {
         assert_eq!(
             Config::load_from(&path),
             Config {
-                books_root: "/livres".to_string()
+                books_root: "/livres".to_string(),
+                ..Config::default()
             }
         );
+    }
+
+    #[test]
+    fn limits_are_read_and_default_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(&path, "limits:\n  max_concurrent_reads: 4\n").unwrap();
+
+        let limits = Config::load_from(&path).limits;
+        assert_eq!(limits.max_concurrent_reads, 4);
+        // Une clé absente garde sa valeur par défaut.
+        assert_eq!(limits.open_archives, Limits::default().open_archives);
     }
 
     #[test]

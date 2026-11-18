@@ -52,6 +52,8 @@ describe('adresses de l’API', () => {
 		expect(bookUrl('a.cbz')).toContain('/api/book?path=a.cbz');
 		expect(chapterUrl('a.epub', 3)).toContain('/api/chapter?path=a.epub&index=3');
 		expect(pageUrl('a.cbz', 7)).toContain('/api/page?path=a.cbz&index=7');
+		expect(pageUrl('a.cbz', 7)).not.toContain('v=');
+		expect(pageUrl('a.cbz', 7, 1781354862)).toContain('index=7&v=1781354862');
 		expect(rawUrl('a.pdf')).toContain('/api/raw?path=a.pdf');
 	});
 

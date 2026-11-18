@@ -336,7 +336,16 @@ Périmètre : les lignes que les tests **unitaires** peuvent atteindre.
 
 ```yaml
 books_root: ../books
+
+limits:
+  max_concurrent_reads: 64   # lectures de livre simultanées (les autres attendent)
+  max_blocking_threads: 128  # threads bloquants du runtime Tokio
+  open_archives: 16          # archives ZIP gardées ouvertes (0 : aucune)
 ```
+
+L'image Docker embarque ce fichier (`/app/config.yml`) ; pour changer un plafond,
+monter le vôtre dessus (`-v ./config.yml:/app/config.yml:ro`). Les planches et
+couvertures sont aussi gardées par nginx (`docker/nginx.conf`, 64 Mo de cache).
 
 Variables d'environnement :
 

@@ -22,7 +22,7 @@
 //! | `GET /ws` | catalogue poussé à chaque changement du dossier |
 
 use crate::formats::{self, Format};
-use crate::{library, readings, rewrite, thumbnail, write};
+use crate::{config, library, readings, rewrite, thumbnail, write};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -35,7 +35,7 @@ use std::net::SocketAddr;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-use tokio::sync::broadcast;
+use tokio::sync::{Semaphore, broadcast};
 use tower::ServiceExt;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeFile;
@@ -62,6 +62,8 @@ pub struct AppState {
     snapshot_at: Arc<std::sync::Mutex<Option<Instant>>>,
     /// Un seul scan à la fois, même si plusieurs requêtes arrivent à froid.
     refresh: Arc<tokio::sync::Mutex<()>>,
+    /// Lectures de livre en cours (`limits.max_concurrent_reads`).
+    reads: Arc<Semaphore>,
 }
 
 impl AppState {
@@ -74,7 +76,26 @@ impl AppState {
             snapshot: Arc::new(RwLock::new(String::new())),
             snapshot_at: Arc::new(std::sync::Mutex::new(None)),
             refresh: Arc::new(tokio::sync::Mutex::new(())),
+            reads: Arc::new(Semaphore::new(config::limits().max_concurrent_reads)),
         }
+    }
+
+    /// Exécute une lecture de livre sur le pool bloquant, dans la limite de
+    /// `limits.max_concurrent_reads` : au-delà, l'appel attend son tour.
+    ///
+    /// Le permis suit le travail, pas la requête : un client qui se déconnecte
+    /// n'arrête pas la lecture déjà partie, elle compte donc jusqu'à sa fin.
+    async fn read<T: Send + 'static>(
+        &self,
+        work: impl FnOnce() -> T + Send + 'static,
+    ) -> Result<T, tokio::task::JoinError> {
+        // Le sémaphore n'est jamais fermé : l'erreur ne peut pas arriver.
+        let permit = Arc::clone(&self.reads).acquire_owned().await.ok();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            work()
+        })
+        .await
     }
 
     /// Racine courante de la bibliothèque.
@@ -221,6 +242,10 @@ struct BookDetail {
     chapters: Option<Vec<formats::Chapter>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pages: Option<usize>,
+    /// Date de modification du fichier (secondes Unix) : version des pages dans
+    /// leur URL, qui peuvent alors être gardées indéfiniment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    modified: Option<u64>,
     /// Explication, quand le livre ne peut pas être ouvert.
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<String>,
@@ -238,7 +263,7 @@ async fn get_book(State(state): State<AppState>, Query(query): Query<BookQuery>)
     };
 
     let rel = query.path.clone();
-    match tokio::task::spawn_blocking(move || detail(&path, &rel)).await {
+    match state.read(move || detail(&path, &rel)).await {
         Ok(Ok(detail)) => Json(detail).into_response(),
         Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, e).into_response(),
         Err(e) => internal_error(e).into_response(),
@@ -269,6 +294,7 @@ fn detail(path: &Path, rel: &str) -> Result<BookDetail, String> {
         chapters: outline
             .and_then(|outline| (!outline.chapters.is_empty()).then_some(outline.chapters)),
         pages,
+        modified: file_stamp(path).map(|(_, secs)| secs),
         note: module.note().map(str::to_string),
     })
 }
@@ -368,11 +394,12 @@ async fn get_chapter(
     let format = Format::from_path(&query.path);
     let book = path.clone();
 
-    match tokio::task::spawn_blocking(move || match format {
-        Some(format) => formats::module(format).chapter(&path, index, &rel, &origin),
-        None => Err("format non reconnu".to_string()),
-    })
-    .await
+    match state
+        .read(move || match format {
+            Some(format) => formats::module(format).chapter(&path, index, &rel, &origin),
+            None => Err("format non reconnu".to_string()),
+        })
+        .await
     {
         Ok(Ok(html)) => {
             readings::touch(&book, &query.path, html.len() as u64);
@@ -420,10 +447,9 @@ async fn get_asset(
     let format = Format::from_path(&query.path);
     let book = path.clone();
 
-    let bytes = tokio::task::spawn_blocking(move || {
-        format.and_then(|format| formats::module(format).asset(&path, &entry))
-    })
-    .await;
+    let bytes = state
+        .read(move || format.and_then(|format| formats::module(format).asset(&path, &entry)))
+        .await;
 
     match bytes {
         Ok(Some(bytes)) => {
@@ -462,33 +488,91 @@ async fn get_asset(
 struct PageQuery {
     path: String,
     index: usize,
+    /// Date de modification annoncée par le catalogue (voir `CoverQuery::v`).
+    #[serde(default)]
+    v: Option<String>,
 }
 
-/// `GET /api/page?path=&index=` — page d'une bande dessinée.
-async fn get_page(State(state): State<AppState>, Query(query): Query<PageQuery>) -> Response {
+/// Taille et date de modification (secondes Unix) d'un fichier.
+fn file_stamp(path: &Path) -> Option<(u64, u64)> {
+    let meta = std::fs::metadata(path).ok()?;
+    let secs = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some((meta.len(), secs))
+}
+
+/// `true` si l'en-tête `If-None-Match` désigne cet `ETag` (liste, `*`, préfixe faible).
+fn etag_matches(header: &str, etag: &str) -> bool {
+    header.split(',').any(|candidate| {
+        let candidate = candidate.trim();
+        candidate == "*" || candidate.strip_prefix("W/").unwrap_or(candidate) == etag
+    })
+}
+
+/// `GET /api/page?path=&index=&v=` — page d'une bande dessinée.
+///
+/// Avec la date du fichier dans l'URL (`v`), la page ne changera plus à cette
+/// adresse : elle est servie `immutable`. Sans elle, ou si la date est périmée,
+/// le navigateur la revalide par `ETag` sans que l'archive soit rouverte.
+async fn get_page(
+    State(state): State<AppState>,
+    Query(query): Query<PageQuery>,
+    headers: HeaderMap,
+) -> Response {
     let Some(path) = file_in(&state.root(), &query.path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let index = query.index;
+
+    let stamp = file_stamp(&path);
+    let announced = stamp.map(|(_, secs)| secs.to_string());
+    let cache = if announced.is_some() && query.v == announced {
+        "public, max-age=31536000, immutable"
+    } else {
+        "public, max-age=3600"
+    };
+    let etag = stamp.map(|(size, secs)| format!("\"{size:x}-{secs:x}-{index:x}\""));
+    if let Some(etag) = &etag
+        && headers
+            .get(header::IF_NONE_MATCH)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| etag_matches(value, etag))
+    {
+        return (
+            StatusCode::NOT_MODIFIED,
+            [(header::ETAG, etag.as_str()), (header::CACHE_CONTROL, cache)],
+        )
+            .into_response();
+    }
+
     let format = Format::from_path(&query.path);
     let book = path.clone();
 
-    match tokio::task::spawn_blocking(move || match format {
-        Some(format) => formats::module(format).page(&path, index),
-        None => Err("format non reconnu".to_string()),
-    })
-    .await
+    match state
+        .read(move || match format {
+            Some(format) => formats::module(format).page(&path, index),
+            None => Err("format non reconnu".to_string()),
+        })
+        .await
     {
         Ok(Ok((name, bytes))) => {
             readings::touch(&book, &query.path, bytes.len() as u64);
-            (
+            let mut response = (
                 [
                     (header::CONTENT_TYPE, formats::content_type(&name)),
-                    (header::CACHE_CONTROL, "public, max-age=3600"),
+                    (header::CACHE_CONTROL, cache),
                 ],
                 bytes,
             )
-                .into_response()
+                .into_response();
+            if let Some(etag) = etag.and_then(|etag| etag.parse().ok()) {
+                response.headers_mut().insert(header::ETAG, etag);
+            }
+            response
         }
         Ok(Err(e)) => (StatusCode::NOT_FOUND, e).into_response(),
         Err(e) => internal_error(e).into_response(),

@@ -44,6 +44,7 @@ export type BookDetail = {
 	author?: string;
 	chapters?: Chapter[];
 	pages?: number;
+	modified?: number;
 	note?: string;
 };
 
@@ -150,7 +151,15 @@ export function coverUrl(rel: string, modified?: number | null): string {
 
 export const chapterUrl = (rel: string, index: number) =>
 	apiUrl('/api/chapter', { path: rel, index });
-export const pageUrl = (rel: string, index: number) => apiUrl('/api/page', { path: rel, index });
+/**
+ * Page d'une bande dessinée. La date du fichier (`modified`) dans l'URL la rend
+ * immuable : le navigateur et nginx la gardent sans jamais la revalider.
+ */
+export function pageUrl(rel: string, index: number, modified?: number | null): string {
+	const params: Record<string, string | number> = { path: rel, index };
+	if (modified) params.v = modified;
+	return apiUrl('/api/page', params);
+}
 export const rawUrl = (rel: string) => apiUrl('/api/raw', { path: rel });
 
 /** Taille lisible (`12,4 Mo` en français, `12.4 MB` en anglais). */

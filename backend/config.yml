@@ -5,3 +5,16 @@
 
 # Dossier des livres. Relatif au dossier de CE fichier (`backend/`).
 books_root: ../books
+
+# Plafonds de ressources. Une clé absente garde sa valeur par défaut.
+limits:
+  # Lectures de livre simultanées (page, ressource, chapitre, fiche). Au-delà,
+  # les requêtes attendent leur tour. Mesuré : 16 est trop bas (latence p95 de
+  # 16 à 172 ms sous 400 req/s de pages, contre 12 à 26 ms à 64 ou sans plafond).
+  max_concurrent_reads: 64
+  # Threads bloquants du runtime (Tokio en autorise 512 par défaut) : au moins
+  # `max_concurrent_reads`, pour laisser de la place aux couvertures et au scan.
+  max_blocking_threads: 128
+  # Archives ZIP (CBZ, EPUB) gardées ouvertes entre deux requêtes : évite de
+  # relire l'annuaire de l'archive à chaque page. 0 pour désactiver.
+  open_archives: 16

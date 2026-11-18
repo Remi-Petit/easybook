@@ -89,6 +89,7 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY --from=backend /out/easybook /usr/local/bin/easybook
+COPY backend/config.yml /app/config.yml
 COPY --from=frontend --chown=node:node /build/build /app/build
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
@@ -107,6 +108,7 @@ ENV API_PORT=8091 \
     UI_HOST=127.0.0.1 \
     NODE_ENV=production \
     BOOKS_ROOT=/books \
+    EASYBOOK_CONFIG=/app/config.yml \
     EASYBOOK_HOST=127.0.0.1
 
 # `PUBLIC_EASYBOOK_API=/` : l'API est sur la **même origine** que l'interface

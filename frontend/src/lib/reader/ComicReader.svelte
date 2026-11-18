@@ -7,9 +7,16 @@
 	let {
 		rel,
 		pages,
+		modified,
 		chrome = true,
 		onToggleChrome = () => {}
-	}: { rel: string; pages: number; chrome?: boolean; onToggleChrome?: () => void } = $props();
+	}: {
+		rel: string;
+		pages: number;
+		modified?: number;
+		chrome?: boolean;
+		onToggleChrome?: () => void;
+	} = $props();
 
 	const storageKey = $derived(`easybook:page:${rel}`);
 
@@ -19,7 +26,7 @@
 
 	const atStart = $derived(index <= 0);
 	const atEnd = $derived(index >= pages - 1);
-	const source = $derived(pageUrl(rel, index));
+	const source = $derived(pageUrl(rel, index, modified));
 
 	function go(target: number) {
 		if (target < 0 || target >= pages) return;
@@ -76,7 +83,7 @@
 		const next = index + 1;
 		if (next < pages) {
 			const image = new Image();
-			image.src = pageUrl(rel, next);
+			image.src = pageUrl(rel, next, modified);
 		}
 	});
 </script>

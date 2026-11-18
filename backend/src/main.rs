@@ -13,22 +13,29 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 use tokio::sync::broadcast;
 
-// Réglage de l'allocateur avant la création des threads du runtime.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    thumbnail::tune_allocator();
-    run()
-}
-
-#[tokio::main]
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
+    // Réglage de l'allocateur avant la création des threads du runtime.
+    thumbnail::tune_allocator();
+
+    // La configuration détermine la taille du runtime : elle est lue avant lui.
+    let config = config::Config::load();
+    config::install(config.clone());
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .max_blocking_threads(config::limits().max_blocking_threads)
+        .build()?
+        .block_on(run(config))
+}
+
+async fn run(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
     let names: Vec<&str> = formats::ALL.iter().map(|f| f.id()).collect();
     println!("Formats reconnus : {}", names.join(", "));
 
     // Racine de la bibliothèque : `BOOKS_ROOT`, sinon `books_root` de
     // `config.yml` (relatif au dossier `backend/`).
-    let config = config::Config::load();
     let resolved = config.resolve_books_root();
     // Canonicalisée quand possible : évite les `..` dans les journaux et fiabilise
     // les tests de préfixe du watcher.
