@@ -31,6 +31,11 @@ tower = { version = "0.5", features = ["util"] }
 # JPEG. On ne garde que les formats qu'on trouve réellement dans une bande
 # dessinée (une planche scannée est presque toujours en JPEG).
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+# Encodage JPEG des vignettes : l'encodeur de `image` dominait le CPU du
+# préchauffage des couvertures.
+jpeg-encoder = { version = "0.7", features = ["simd"] }
+# Réduction des planches (SIMD) : `imageops::resize` de `image` dominait le CPU.
+fast_image_resize = "6"
 # PDF : extraction de l'image de la première page (couverture). `lopdf` est du
 # Rust pur : la mise en page n'est pas rendue, mais un scan ou une planche est
 # une image embarquée, et c'est de celle-là qu'on tire la vignette.
@@ -45,6 +50,7 @@ unrar = "0.5"
 hayro = "0.9"
 # PDF : compter les pages sans lire le fichier en entier (voir `formats::pdf`).
 memmap2 = "0.9"
+jpeg-decoder = { version = "0.3", default-features = false }
 
 # Rendre à l'OS la mémoire libérée après le décodage d'une image (`malloc_trim`).
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
@@ -66,3 +72,13 @@ debug = false
 # couverture de CBZ passe de 3,5 s à 80 ms). Seules les dépendances sont
 # optimisées, le code d'easybook reste rapide à recompiler.
 opt-level = 3
+# Sans assertions de debug ni contrôles de dépassement : ils ralentissaient encore
+# le décodage, l'encodage et la réduction des images de plusieurs fois (mesuré).
+debug-assertions = false
+overflow-checks = false
+
+# Les API génériques des dépendances (`fast_image_resize`, `image`) sont compilées
+# dans CE crate : à opt-level 0, réduire une planche de 1200x1884 prend ~340 ms
+# (8 ms à 2). La recompilation d'easybook reste de l'ordre de 5 s (mesuré).
+[profile.dev.package.easybook]
+opt-level = 2

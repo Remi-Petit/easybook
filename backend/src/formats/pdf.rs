@@ -73,9 +73,16 @@ fn mapped_page_count(path: &Path) -> Option<usize> {
 /// `hayro` est un moteur jeune : un PDF qui le fait paniquer ne doit pas faire
 /// tomber le serveur, d'où `catch_unwind`.
 fn render_first_page(path: &Path) -> Option<Vec<u8>> {
-    let data = std::fs::read(path).ok()?;
+    // Mappé, le fichier n'est lu que là où hayro regarde (xref, arbre des pages,
+    // ressources de la première page) : un PDF de 100 Mo n'est plus copié en RAM.
+    let file = std::fs::File::open(path).ok()?;
+    // SAFETY: un fichier tronqué pendant la lecture provoquerait un SIGBUS ;
+    // les dépôts passent par un fichier temporaire puis un renommage atomique.
+    let map = unsafe { memmap2::Mmap::map(&file) }.ok()?;
+    #[cfg(unix)]
+    let _ = map.advise(memmap2::Advice::Random);
     catch_unwind(AssertUnwindSafe(|| {
-        let pdf = HayroPdf::new(data).ok()?;
+        let pdf = HayroPdf::new(std::sync::Arc::new(map)).ok()?;
         let page = pdf.pages().iter().next()?;
 
         let (width, height) = page.render_dimensions();

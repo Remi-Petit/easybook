@@ -16,9 +16,8 @@
 //! - **PDF** : la première page, rendue en image (voir [`crate::formats::pdf`]).
 
 use crate::formats::{self, Format};
-use image::{DynamicImage, ImageFormat};
-use std::collections::HashMap;
-use std::io::Cursor;
+use image::DynamicImage;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
@@ -29,6 +28,8 @@ pub const DEFAULT_CACHE_DIR: &str = ".easybook/covers";
 
 /// Largeur maximale d'une vignette (la hauteur suit le ratio du livre).
 const WIDTH: u32 = 400;
+/// Qualité JPEG des vignettes (la valeur par défaut de `image`, qu'elles avaient).
+const JPEG_QUALITY: u8 = 75;
 /// Budget du cache mémoire, en octets de vignettes. Au-delà, les moins récemment
 /// utilisées sont évincées une à une : c'est un accélérateur, le disque reste la
 /// référence.
@@ -162,7 +163,7 @@ pub struct Warmed {
 /// aussi la mémoire en cas de requêtes simultanées). Le cache mémoire n'est pas
 /// rempli : seul le disque l'est.
 pub fn warm(root: &Path, dir: &Path) -> Warmed {
-    let mut live: Vec<String> = Vec::new();
+    let mut live: HashSet<String> = HashSet::new();
     let mut todo: Vec<(PathBuf, String, DiskEntry)> = Vec::new();
     let mut kept = 0;
 
@@ -171,9 +172,13 @@ pub fn warm(root: &Path, dir: &Path) -> Warmed {
         let Some(entry) = DiskEntry::new(dir, &path, &book.rel) else {
             continue;
         };
-        live.push(entry.name.clone());
+        // `prune` supprime les anciennes versions à la fin : inutile de relire le
+        // dossier à chaque écriture (6000 livres, c'était un parcours de 6000
+        // entrées par vignette).
+        let entry = entry.without_sweep();
+        live.insert(entry.name.clone());
 
-        if entry.read().is_some() {
+        if entry.exists() {
             kept += 1;
         } else {
             todo.push((path, book.rel, entry));
@@ -217,7 +222,7 @@ pub fn warm(root: &Path, dir: &Path) -> Warmed {
 
 /// Supprime les vignettes (`<16 hex>-….jpg`) qui ne correspondent à aucun livre.
 /// Les autres fichiers du dossier ne sont jamais touchés.
-fn prune(dir: &Path, live: &[String]) -> usize {
+fn prune(dir: &Path, live: &HashSet<String>) -> usize {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
     };
@@ -250,6 +255,8 @@ struct DiskEntry {
     dir: PathBuf,
     prefix: String,
     name: String,
+    /// Supprimer les anciennes versions après l'écriture (voir [`DiskEntry::write`]).
+    sweep: bool,
 }
 
 impl DiskEntry {
@@ -266,7 +273,21 @@ impl DiskEntry {
             dir: dir.to_path_buf(),
             prefix,
             name,
+            sweep: true,
         })
+    }
+
+    /// Laisse le nettoyage des anciennes versions à l'appelant ([`prune`]).
+    fn without_sweep(mut self) -> Self {
+        self.sweep = false;
+        self
+    }
+
+    /// La vignette est-elle sur disque ? Sans la lire : l'écriture passe par un
+    /// fichier temporaire renommé, un fichier tronqué n'a donc pas lieu d'être (le
+    /// contrôle de l'en-tête reste fait par [`DiskEntry::read`], à la lecture).
+    fn exists(&self) -> bool {
+        std::fs::metadata(self.dir.join(&self.name)).is_ok_and(|meta| meta.len() > 2)
     }
 
     fn read(&self) -> Option<Vec<u8>> {
@@ -297,6 +318,9 @@ impl DiskEntry {
             let _ = std::fs::remove_file(&tmp);
             return;
         }
+        if !self.sweep {
+            return;
+        }
 
         let Ok(entries) = std::fs::read_dir(&self.dir) else {
             return;
@@ -319,13 +343,23 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 }
 
 /// Réduit une image à [`WIDTH`] de large, en JPEG.
+///
+/// L'encodeur de `image` dominait le préchauffage (la grande majorité du CPU) :
+/// `jpeg-encoder` produit le même format, nettement plus vite.
 fn shrink(bytes: &[u8]) -> Option<Vec<u8>> {
-    let image = image::load_from_memory(bytes).ok()?;
+    // Un JPEG est décodé à l'échelle utile (voir `resize::decode_jpeg_scaled`).
+    let image = crate::resize::decode_jpeg_scaled(bytes, WIDTH, WIDTH * 3 / 2)
+        .or_else(|| image::load_from_memory(bytes).ok())?;
     let thumb: DynamicImage = image.thumbnail(WIDTH, WIDTH * 3 / 2);
+    let rgb = thumb.to_rgb8();
     let mut out = Vec::new();
-    thumb
-        .to_rgb8()
-        .write_to(&mut Cursor::new(&mut out), ImageFormat::Jpeg)
+    jpeg_encoder::Encoder::new(&mut out, JPEG_QUALITY)
+        .encode(
+            rgb.as_raw(),
+            u16::try_from(rgb.width()).ok()?,
+            u16::try_from(rgb.height()).ok()?,
+            jpeg_encoder::ColorType::Rgb,
+        )
         .ok()?;
     Some(out)
 }
@@ -400,7 +434,8 @@ pub fn tune_allocator() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{Rgba, RgbaImage};
+    use image::{ImageFormat, Rgba, RgbaImage};
+    use std::io::Cursor;
 
     #[test]
     fn thumbnails_are_smaller_and_keep_the_ratio() {

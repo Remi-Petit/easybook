@@ -22,6 +22,31 @@ pub struct Config {
     pub books_root: String,
     /// Plafonds de ressources (voir [`Limits`]).
     pub limits: Limits,
+    /// Réduction des planches à la taille de l'écran (voir [`Resize`]).
+    pub resize: Resize,
+}
+
+/// Réduction des planches de bande dessinée (`GET /api/page?w=`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Resize {
+    /// Largeurs proposées, en pixels : une demande est arrondie à la plus petite
+    /// qui la couvre. Liste vide : aucune réduction.
+    pub widths: Vec<u32>,
+    /// Qualité JPEG des planches réduites (1 à 100).
+    pub quality: u8,
+    /// Réductions simultanées : chacune décode la planche entière en pixels.
+    pub max_concurrent: usize,
+}
+
+impl Default for Resize {
+    fn default() -> Self {
+        Self {
+            widths: vec![800, 1200, 1600, 2400],
+            quality: 80,
+            max_concurrent: 4,
+        }
+    }
 }
 
 /// Plafonds de ressources : sans eux, une rafale de requêtes ouvre autant de
@@ -36,6 +61,9 @@ pub struct Limits {
     pub max_blocking_threads: usize,
     /// Archives ZIP gardées ouvertes entre deux requêtes (`0` : aucune).
     pub open_archives: usize,
+    /// Comptages de pages gardés en mémoire : au moins le nombre de livres de la
+    /// bibliothèque, sinon chaque scan rouvre les livres en trop.
+    pub page_counts: usize,
 }
 
 impl Default for Limits {
@@ -44,6 +72,7 @@ impl Default for Limits {
             max_concurrent_reads: 64,
             max_blocking_threads: 128,
             open_archives: 16,
+            page_counts: 50_000,
         }
     }
 }
@@ -53,6 +82,7 @@ impl Default for Config {
         Self {
             books_root: "../books".to_string(),
             limits: Limits::default(),
+            resize: Resize::default(),
         }
     }
 }
@@ -74,6 +104,16 @@ pub fn limits() -> Limits {
     limits.max_concurrent_reads = limits.max_concurrent_reads.max(1);
     limits.max_blocking_threads = limits.max_blocking_threads.max(1);
     limits
+}
+
+/// Réglages de réduction des planches en vigueur.
+pub fn resize() -> Resize {
+    let mut resize = INSTALLED
+        .get()
+        .map_or_else(Resize::default, |config| config.resize.clone());
+    resize.quality = resize.quality.clamp(1, 100);
+    resize.max_concurrent = resize.max_concurrent.max(1);
+    resize
 }
 
 impl Config {

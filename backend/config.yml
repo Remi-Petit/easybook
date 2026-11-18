@@ -18,3 +18,6 @@ limits:
   # Archives ZIP (CBZ, EPUB) gardées ouvertes entre deux requêtes : évite de
   # relire l'annuaire de l'archive à chaque page. 0 pour désactiver.
   open_archives: 16
+  # Comptages de pages gardés en mémoire (et sur disque). À garder au moins égal
+  # au nombre de livres : au-delà, chaque scan rouvre les livres en trop.
+  page_counts: 50000

@@ -7,6 +7,7 @@
 //! - [`rewrite`] : réécriture des URL d'un document (HTML, CSS).
 //! - [`write`] : création d'une catégorie, dépôt d'un livre (validation, renommage).
 //! - [`thumbnail`] : couvertures (extraction, vignette, cache).
+//! - [`resize`] : planches réduites à la largeur de l'écran.
 //! - [`pages`] : nombre de pages d'un livre (comptage, cache).
 //! - [`watcher`] : interprétation des événements du système de fichiers.
 //! - [`config`] : configuration (`config.yml`).
@@ -19,6 +20,7 @@ pub mod library;
 pub mod pages;
 pub mod perf;
 pub mod readings;
+pub mod resize;
 pub mod rewrite;
 pub mod thumbnail;
 pub mod watcher;
