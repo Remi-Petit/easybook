@@ -234,6 +234,7 @@ sources C++ avec le projet.
 | `GET /api/books` | catalogue complet (JSON) |
 | `GET /api/book?path=` | fiche d'un livre (titre, chapitres ou nombre de pages) |
 | `GET /api/cover?path=&v=` | couverture, en vignette JPEG (`v` = date de modification, pour le cache) |
+| `GET /api/admin/performance` | mémoire et CPU du conteneur, process par process (page *Administration → Performances*) |
 | `GET /api/chapter?path=&index=` | document d'un chapitre (HTML, URL réécrites) |
 | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 | `GET /api/page?path=&index=` | page d'une bande dessinée |

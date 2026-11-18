@@ -117,6 +117,24 @@ async fn health_answers() {
 }
 
 #[tokio::test]
+async fn performance_describes_this_process() {
+    let (_dir, app) = library();
+    let (status, body) = json(&app, "/api/admin/performance").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["cpus"].as_u64().unwrap() >= 1);
+    assert!(body["atMs"].as_u64().unwrap() > 0);
+    if body["supported"] == true {
+        let me = u64::from(std::process::id());
+        let processes = body["processes"].as_array().unwrap();
+        let mine = processes
+            .iter()
+            .find(|p| p["pid"] == me)
+            .expect("process courant");
+        assert!(mine["rss"].as_u64().unwrap() > 0);
+    }
+}
+
+#[tokio::test]
 async fn catalogue_lists_books_and_folders() {
     let (_dir, app) = library();
     let (status, body) = json(&app, "/api/books").await;

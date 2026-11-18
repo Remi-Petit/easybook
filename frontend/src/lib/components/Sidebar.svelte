@@ -72,6 +72,15 @@
 			{:else if library.status !== 'connecting'}
 				<p class="nav-empty">{t('nav.empty')}</p>
 			{/if}
+
+			<p class="nav-section">{t('nav.admin')}</p>
+			<a
+				class="nav-item"
+				href="/admin/performance"
+				aria-current={active('/admin/performance') ? 'page' : undefined}
+			>
+				<span class="name">{t('nav.performance')}</span>
+			</a>
 		</nav>
 
 		<div class="sidebar-lang">

@@ -12,6 +12,7 @@
 //! | `GET /api/books` | catalogue complet (JSON) |
 //! | `GET /api/book?path=` | sommaire d'un livre |
 //! | `GET /api/cover?path=&v=` | couverture (vignette JPEG) |
+//! | `GET /api/admin/performance` | mémoire et CPU du conteneur, par process |
 //! | `GET /api/chapter?path=&index=` | document d'un chapitre (HTML réécrit) |
 //! | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 //! | `GET /api/page?path=&index=` | page d'une bande dessinée (image) |
@@ -130,6 +131,7 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/books", get(list_books))
         .route("/api/book", get(get_book))
         .route("/api/cover", get(get_cover))
+        .route("/api/admin/performance", get(get_performance))
         .route("/api/chapter", get(get_chapter))
         .route("/api/asset", get(get_asset))
         .route("/api/page", get(get_page))
@@ -146,6 +148,17 @@ pub fn routes(state: AppState) -> Router {
 
 async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok" }))
+}
+
+/// `GET /api/admin/performance` — mesure instantanée de la mémoire et du CPU.
+///
+/// L'interface l'interroge à intervalle régulier et calcule les taux CPU à
+/// partir de deux mesures successives (les compteurs sont cumulés).
+async fn get_performance() -> Response {
+    match tokio::task::spawn_blocking(crate::perf::snapshot).await {
+        Ok(snapshot) => ([(header::CACHE_CONTROL, "no-store")], Json(snapshot)).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
 }
 
 /// `GET /api/books` — catalogue complet.

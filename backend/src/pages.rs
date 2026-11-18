@@ -52,6 +52,11 @@ pub fn count(path: &Path, format: Format) -> Option<usize> {
     value
 }
 
+/// Nombre de comptages en cache.
+pub fn cache_entries() -> usize {
+    cache().lock().map_or(0, |cache| cache.len())
+}
+
 fn cache() -> &'static Mutex<HashMap<String, Option<usize>>> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<usize>>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))

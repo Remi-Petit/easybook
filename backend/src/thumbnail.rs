@@ -32,7 +32,7 @@ const WIDTH: u32 = 400;
 /// Budget du cache mémoire, en octets de vignettes. Au-delà, les moins récemment
 /// utilisées sont évincées une à une : c'est un accélérateur, le disque reste la
 /// référence.
-const CACHE_BYTES: usize = 32 * 1024 * 1024;
+pub const CACHE_BYTES: usize = 32 * 1024 * 1024;
 /// Nombre maximal de couvertures calculées en même temps (requêtes et
 /// préchauffage confondus) : chaque calcul décode une image entière en pixels.
 const MAX_BUILDS: usize = 2;
@@ -365,6 +365,13 @@ fn store(key: String, bytes: Vec<u8>) {
             cache.bytes -= old.bytes.len();
         }
     }
+}
+
+/// (entrées, octets) du cache mémoire des vignettes.
+pub fn cache_stats() -> (usize, usize) {
+    cache()
+        .lock()
+        .map_or((0, 0), |cache| (cache.map.len(), cache.bytes))
 }
 
 /// Rend à l'OS la mémoire libérée par un décodage d'image : sans cela, glibc la

@@ -1492,3 +1492,267 @@ code {
 		height: 40px;
 	}
 }
+
+/* ── Administration : performances ───────────────────────────────────────── */
+
+.tabs {
+	display: flex;
+	gap: 4px;
+	margin-bottom: 18px;
+	border-bottom: 1px solid var(--line);
+}
+
+.tabs button {
+	margin-bottom: -1px;
+	padding: 9px 16px;
+	border-bottom: 2px solid transparent;
+	color: var(--muted);
+	font-size: 13.5px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+}
+
+.tabs button:hover {
+	color: var(--text);
+}
+
+.tabs button[aria-selected='true'] {
+	border-bottom-color: var(--accent);
+	color: var(--accent);
+}
+
+.tabs button:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+	border-radius: 6px;
+}
+
+.perf-panel {
+	display: grid;
+	gap: 18px;
+}
+
+.perf-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	gap: 18px;
+}
+
+.perf-card {
+	min-width: 0;
+	padding: 18px 20px 20px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+}
+
+.perf-card h2 {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 0 0 14px;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.perf-count {
+	padding: 1px 8px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	font-size: 11px;
+	letter-spacing: 0;
+	text-transform: none;
+}
+
+.perf-stat .stat-value {
+	margin: 0;
+	font-size: clamp(34px, 4vw, 46px);
+	font-weight: 640;
+	letter-spacing: -0.03em;
+	font-variant-numeric: tabular-nums;
+}
+
+.stat-sub {
+	margin: 2px 0 0;
+	color: var(--muted);
+}
+
+.stat-hint {
+	margin: 14px 0 0;
+	color: var(--muted);
+	font-size: 12.5px;
+}
+
+.stat-line {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	margin: 16px 0 0;
+	padding-top: 12px;
+	border-top: 1px solid var(--line);
+	color: var(--muted);
+	font-size: 13px;
+}
+
+.chart svg {
+	display: block;
+	width: 100%;
+	touch-action: pan-y;
+}
+
+.chart .gridline {
+	stroke: var(--line);
+	stroke-width: 1;
+}
+
+.chart .tick {
+	fill: var(--muted);
+	font-size: 10.5px;
+	font-variant-numeric: tabular-nums;
+}
+
+.chart .cursor {
+	stroke: var(--muted);
+	stroke-dasharray: 3 3;
+}
+
+.legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 22px;
+	margin: 12px 0 0;
+	padding: 0;
+	list-style: none;
+	font-size: 13px;
+}
+
+.legend li {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.legend-name {
+	color: var(--muted);
+}
+
+.legend-value,
+.bar-value {
+	font-variant-numeric: tabular-nums;
+}
+
+.legend-share {
+	margin-left: 4px;
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.legend-total {
+	margin-left: auto;
+}
+
+.swatch {
+	display: inline-block;
+	width: 9px;
+	height: 9px;
+	flex: none;
+	border-radius: 3px;
+}
+
+.segment-bar,
+.bar-track {
+	display: flex;
+	height: 14px;
+	overflow: hidden;
+	border-radius: 7px;
+	background: var(--panel-2);
+}
+
+.segment-bar span {
+	height: 100%;
+}
+
+.segment-bar span + span {
+	border-left: 2px solid var(--panel);
+}
+
+.bars {
+	display: grid;
+	gap: 14px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.bar-head {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 5px;
+	font-size: 13px;
+}
+
+.bar-track {
+	height: 8px;
+	border-radius: 4px;
+}
+
+.bar-track span {
+	height: 100%;
+	border-radius: 4px;
+	transition: width 400ms ease;
+}
+
+.table-wrap {
+	overflow-x: auto;
+}
+
+.perf-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+	font-variant-numeric: tabular-nums;
+}
+
+.perf-table th,
+.perf-table td {
+	padding: 8px 10px;
+	text-align: right;
+	white-space: nowrap;
+}
+
+.perf-table th:first-child,
+.perf-table td:first-child {
+	text-align: left;
+}
+
+.perf-table th {
+	color: var(--muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	border-bottom: 1px solid var(--line);
+}
+
+.perf-table td {
+	border-bottom: 1px solid rgba(43, 43, 54, 0.5);
+}
+
+.perf-table tr:last-child td {
+	border-bottom: 0;
+}
+
+.pid {
+	color: var(--muted);
+	font-size: 11.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.bar-track span {
+		transition: none;
+	}
+}
