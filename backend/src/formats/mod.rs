@@ -15,6 +15,7 @@ mod cbr;
 mod cbz;
 mod comic;
 mod epub;
+mod filecache;
 mod pdf;
 
 use serde::Serialize;

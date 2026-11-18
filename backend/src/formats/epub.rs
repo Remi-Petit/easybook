@@ -11,8 +11,10 @@ use roxmltree::{Document, Node};
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
+use std::sync::Arc;
 use zip::ZipArchive;
 
+use super::filecache::FileCache;
 use super::{BookFormat, Chapter, Outline};
 
 /// Format EPUB, tel que l'enregistre [`super::module`].
@@ -27,7 +29,7 @@ impl BookFormat for Epub {
     }
 
     fn outline(&self, path: &Path) -> Result<Option<Outline>, String> {
-        Ok(Some(outline(path)?))
+        Ok(Some((*outline(path)?).clone()))
     }
 
     /// Nombre de **chapitres** : le texte d'un EPUB se recompose à l'écran, il
@@ -55,10 +57,16 @@ impl BookFormat for Epub {
     }
 }
 
+/// Sommaires gardés : le lire (container, OPF, table des matières) coûte plus
+/// que le chapitre demandé, et serait refait à chaque chapitre tourné.
+static OUTLINES: FileCache<Outline> = FileCache::new(32);
+
 /// Sommaire d'un EPUB.
-fn outline(path: &Path) -> Result<Outline, String> {
-    let mut zip = archive::open(path)?;
-    outline_from(&mut zip)
+fn outline(path: &Path) -> Result<Arc<Outline>, String> {
+    OUTLINES.get_or_load(path, || {
+        let mut zip = archive::open(path)?;
+        outline_from(&mut zip)
+    })
 }
 
 /// Contenu brut d'une ressource de l'archive.
@@ -167,7 +175,7 @@ fn manifest(opf: &Document<'_>, opf_dir: &str) -> HashMap<String, Item> {
 /// le document peut donc être injecté tel quel dans la page du lecteur.
 fn chapter(path: &Path, index: usize, book_rel: &str, asset_base: &str) -> Result<String, String> {
     let mut zip = archive::open(path)?;
-    let outline = outline_from(&mut zip)?;
+    let outline = outline(path)?;
     let chapter = outline.chapters.get(index).ok_or_else(|| {
         format!(
             "chapitre {index} hors limites ({} chapitres)",

@@ -252,7 +252,13 @@ fn detail(path: &Path, rel: &str) -> Result<BookDetail, String> {
     let module = formats::module(format);
 
     let outline = module.outline(path)?;
-    let pages = module.pages(path)?;
+    // Le comptage est gardé par fichier (`pages`) : rouvrir une grosse archive
+    // pour la trier à chaque fiche coûterait des millisecondes de CPU. Sans
+    // comptage, on retente en direct pour obtenir l'erreur.
+    let pages = match crate::pages::count(path, format) {
+        Some(pages) => Some(pages),
+        None => module.pages(path)?,
+    };
 
     Ok(BookDetail {
         rel: rel.to_string(),
@@ -639,8 +645,8 @@ struct NewFolder {
 /// `POST /api/folder` — crée une catégorie (`parent: ""`) ou une série.
 ///
 /// Le dossier créé apparaît tout de suite : le catalogue est rediffusé sans
-/// attendre l'événement du watcher (il arrive, mais avec quelques dizaines de
-/// millisecondes de debounce).
+/// attendre l'événement du watcher (il arrive, mais après une demi-seconde de
+/// debounce).
 async fn create_folder(State(state): State<AppState>, Json(body): Json<NewFolder>) -> Response {
     let root = state.root();
     if folder_in(&root, &body.parent).is_none() {

@@ -10,9 +10,11 @@
 
 use std::io::Read;
 use std::path::Path;
+use std::sync::Arc;
 use unrar::{Archive, CursorBeforeHeader, OpenArchive, Process};
 
 use crate::archive;
+use crate::formats::filecache::FileCache;
 use crate::formats::{is_image, is_noise, natural_cmp, normalize_entry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,7 +36,7 @@ pub fn pages(path: &Path) -> Result<Vec<String>, String> {
 
 /// Une planche : son nom d'entrée et son contenu.
 pub fn page(path: &Path, index: usize) -> Result<(String, Vec<u8>), String> {
-    let names = pages(path)?;
+    let names = cached_pages(path)?;
     let target = names
         .get(index)
         .ok_or_else(|| format!("page {index} hors limites ({} pages)", names.len()))?
@@ -44,6 +46,15 @@ pub fn page(path: &Path, index: usize) -> Result<(String, Vec<u8>), String> {
         Container::Zip => zip_page(path, &target),
         Container::Rar => rar_page(path, &target),
     }
+}
+
+/// Listes de planches gardées : lister et trier les milliers d'entrées d'un gros
+/// CBZ coûte plus que l'envoi d'une planche, et serait refait à chaque page
+/// tournée.
+static PAGE_LISTS: FileCache<Vec<String>> = FileCache::new(32);
+
+fn cached_pages(path: &Path) -> Result<Arc<Vec<String>>, String> {
+    PAGE_LISTS.get_or_load(path, || pages(path))
 }
 
 /// Type d'archive, d'après les premiers octets.
@@ -161,6 +172,26 @@ mod tests {
         );
         assert_eq!(pages(&path).unwrap(), vec!["p2.jpg", "p10.jpg"]);
         assert_eq!(page(&path, 1).unwrap().1, b"10");
+    }
+
+    #[test]
+    fn the_page_list_is_kept_but_follows_a_replaced_file() {
+        let (_dir, path) = zip_with(&[("p1.jpg", b"a"), ("p2.jpg", b"b")], "serie.cbz");
+        assert_eq!(page(&path, 1).unwrap().1, b"b");
+        assert_eq!(
+            page(&path, 1).unwrap().1,
+            b"b",
+            "deuxième appel : liste gardée"
+        );
+
+        // Même chemin, autre contenu : une autre taille, donc une autre liste.
+        let (_other, replacement) = zip_with(
+            &[("p1.jpg", b"x"), ("p2.jpg", b"y"), ("p3.jpg", b"zzz")],
+            "serie.cbz",
+        );
+        std::fs::copy(&replacement, &path).unwrap();
+        assert_eq!(page(&path, 2).unwrap().1, b"zzz");
+        assert!(page(&path, 3).is_err());
     }
 
     /// Cas réel : un `.cbr` qui est en fait un ZIP.

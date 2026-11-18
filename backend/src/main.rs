@@ -151,9 +151,11 @@ fn watch(
 
     // Le debouncer regroupe la rafale d'événements d'une même action (copier un
     // dossier produit des dizaines de créations) et n'émet qu'un lot stable.
+    // Son thread se réveille à chaque `tick` : à `None` (timeout / 4), c'est 80
+    // réveils par seconde, même sans aucun changement.
     let mut debouncer = new_debouncer(
-        Duration::from_millis(50),
-        None,
+        Duration::from_millis(500),
+        Some(Duration::from_millis(250)),
         move |result: DebounceEventResult| {
             let _ = tx.send(result);
         },
