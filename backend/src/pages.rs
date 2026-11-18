@@ -22,9 +22,12 @@ use std::time::UNIX_EPOCH;
 /// Nom du fichier de persistance, dans le dossier du cache disque.
 const FILE: &str = "pages.json";
 
-/// Nombre de comptages gardés. Au-delà, une entrée est évincée à chaque ajout :
-/// vider tout le cache obligerait à rouvrir chaque livre au scan suivant.
-const CAPACITY: usize = 4096;
+/// Nombre de comptages gardés (`limits.page_counts`). Au-delà, une entrée est
+/// évincée à chaque ajout : une bibliothèque plus grande que ce nombre rouvre
+/// les livres excédentaires à **chaque** scan.
+fn capacity() -> usize {
+    crate::config::limits().page_counts
+}
 
 /// Nombre de pages d'un livre, `None` s'il ne peut pas être ouvert.
 ///
@@ -38,8 +41,13 @@ pub fn count(path: &Path, format: Format) -> Option<usize> {
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map_or(0, |elapsed| elapsed.as_secs());
+    count_stat(path, format, meta.len(), stamp)
+}
+
+/// Comme [`count`], pour un appelant qui a déjà lu la taille et la date du
+/// fichier (le scan : un `stat` de moins par livre).
+pub fn count_stat(path: &Path, format: Format, size: u64, stamp: u64) -> Option<usize> {
     let key = path.display().to_string();
-    let size = meta.len();
 
     if let Some(cached) = cache()
         .lock()
@@ -116,7 +124,7 @@ impl Cache {
     }
 
     fn put(&mut self, path: String, entry: Entry) {
-        if self.entries.len() >= CAPACITY
+        if self.entries.len() >= capacity()
             && !self.entries.contains_key(&path)
             && let Some(victim) = self.entries.keys().next().cloned()
         {
@@ -132,7 +140,7 @@ impl Cache {
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
-        for line in stored.into_iter().take(CAPACITY) {
+        for line in stored.into_iter().take(capacity()) {
             // Les livres disparus ne sont pas gardés : le fichier ne grossit pas.
             if Path::new(&line.path).is_file() {
                 self.entries.entry(line.path).or_insert(Entry {

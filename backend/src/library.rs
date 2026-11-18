@@ -142,6 +142,13 @@ fn walk(root: &Path, dir: &Path, books: &mut Vec<BookInfo>, folders: &mut Vec<Fo
         let Ok(meta) = entry.metadata() else {
             continue;
         };
+        // Une seule lecture des métadonnées par livre : taille et date servent
+        // au catalogue et à la clé du cache des pages.
+        let stamp = meta
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|elapsed| elapsed.as_secs());
 
         let folder = match rel.split_once('/') {
             Some((first, _)) => first.to_string(),
@@ -151,12 +158,12 @@ fn walk(root: &Path, dir: &Path, books: &mut Vec<BookInfo>, folders: &mut Vec<Fo
         books.push(BookInfo {
             folder,
             title: title_of(&name),
-            pages: pages::count(&path, format),
+            pages: pages::count_stat(&path, format, meta.len(), stamp.unwrap_or(0)),
             name,
             format: format.id(),
             readable: format.readable(),
             size: meta.len(),
-            modified: modified(&path),
+            modified: stamp,
             rel,
         });
     }
