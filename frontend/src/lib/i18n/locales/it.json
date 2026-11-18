@@ -94,6 +94,7 @@
 	"reader.pageAlt": "Pagina {index} di {total}",
 	"nav.admin": "Amministrazione",
 	"nav.performance": "Prestazioni",
+	"nav.repository": "Repository GitHub",
 	"perf.title": "Prestazioni",
 	"perf.subtitle": "Memoria e CPU dell’applicazione, misurate in diretta (ogni {seconds} s).",
 	"perf.tabs": "Risorse",

@@ -94,6 +94,7 @@
 	"reader.pageAlt": "Seite {index} von {total}",
 	"nav.admin": "Verwaltung",
 	"nav.performance": "Leistung",
+	"nav.repository": "GitHub-Repository",
 	"perf.title": "Leistung",
 	"perf.subtitle": "Speicher und CPU der Anwendung, live gemessen (alle {seconds} s).",
 	"perf.tabs": "Ressourcen",

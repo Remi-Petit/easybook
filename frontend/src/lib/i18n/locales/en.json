@@ -94,6 +94,7 @@
 	"reader.pageAlt": "Page {index} of {total}",
 	"nav.admin": "Administration",
 	"nav.performance": "Performance",
+	"nav.repository": "GitHub repository",
 	"perf.title": "Performance",
 	"perf.subtitle": "Memory and CPU of the application, measured live (every {seconds} s).",
 	"perf.tabs": "Resources",
