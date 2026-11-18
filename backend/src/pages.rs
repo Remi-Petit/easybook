@@ -50,6 +50,7 @@ pub fn count(path: &Path, format: Format) -> Option<usize> {
     }
 
     let value = formats::module(format).pages(path).ok().flatten();
+    crate::readings::release_if_idle(path);
     if let Ok(mut cache) = cache().lock() {
         cache.put(
             key,

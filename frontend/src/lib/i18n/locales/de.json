@@ -124,6 +124,19 @@
 		"one": "{count} Eintrag",
 		"other": "{count} Einträge"
 	},
+	"perf.requests": {
+		"one": "{count} Anfrage",
+		"other": "{count} Anfragen"
+	},
+	"perf.reading.title": "Laufende Lesevorgänge",
+	"perf.reading.none": "Es wird gerade kein Buch gelesen.",
+	"perf.reading.note": "von {size} · {requests} · vor {idle} s",
+	"perf.reading.released": "Seit dem Start an das System zurückgegeben",
+	"perf.reading.hint": "Speicher = Teil des Buchs im Dateicache. Nach {seconds} s ohne Anfrage gilt das Lesen als beendet und dieser Cache wird sofort an das System zurückgegeben, ohne zu warten, bis der Platz knapp wird.",
+	"perf.books": {
+		"one": "{count} Buch",
+		"other": "{count} Bücher"
+	},
 	"perf.col.process": "Prozess",
 	"perf.col.memory": "Speicher",
 	"perf.col.private": "Privat",

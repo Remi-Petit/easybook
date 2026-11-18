@@ -5,7 +5,7 @@
 	import SegmentBar from '$lib/components/SegmentBar.svelte';
 	import StackedArea from '$lib/components/StackedArea.svelte';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
-	import { colorFor, formatDuration, formatPercent, processLabel } from '$lib/perf';
+	import { bookName, colorFor, formatDuration, formatPercent, processLabel } from '$lib/perf';
 	import { INTERVAL_MS, WINDOW_MS, perf, watchPerformance } from '$lib/perf.svelte';
 
 	type Tab = 'ram' | 'cpu';
@@ -79,6 +79,21 @@
 				color: colorFor(group.name)
 			}))
 			.sort((a, b) => b.value - a.value)
+	);
+
+	const readings = $derived(snapshot?.readings ?? null);
+	const readingBars = $derived(
+		(readings?.active ?? []).map((reading) => ({
+			key: reading.rel,
+			label: bookName(reading.rel),
+			value: reading.cachedBytes ?? 0,
+			color: colorFor('easybook'),
+			note: t('perf.reading.note', {
+				size: formatBytes(reading.size),
+				requests: t('perf.requests', { count: reading.requests }),
+				idle: formatNumber(reading.idleSecs)
+			})
+		}))
 	);
 
 	const cpuCapacity = $derived(snapshot ? (snapshot.cpuLimit ?? snapshot.cpus) : 1);
@@ -184,7 +199,34 @@
 						</p>
 					</section>
 				</div>
-
+					{#if readings}
+						<section class="perf-card">
+							<h2>
+								{t('perf.reading.title')}
+								<span class="perf-count">{formatNumber(readings.active.length)}</span>
+							</h2>
+							{#if readingBars.length > 0}
+								<BarList
+									bars={readingBars}
+									format={formatBytes}
+									max={Math.max(1, ...readings.active.map((reading) => reading.size))}
+								/>
+							{:else}
+								<p class="stat-hint">{t('perf.reading.none')}</p>
+							{/if}
+							<p class="stat-line">
+								<span>{t('perf.reading.released')}</span>
+								<span>
+									{formatBytes(readings.releasedBytes)} · {t('perf.books', {
+										count: readings.releasedBooks
+									})}
+								</span>
+							</p>
+							<p class="stat-hint">
+								{t('perf.reading.hint', { seconds: formatNumber(readings.idleLimitSecs) })}
+							</p>
+						</section>
+					{/if}
 				<section class="perf-card">
 					<div class="table-wrap">
 						<table class="perf-table">

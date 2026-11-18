@@ -18,6 +18,7 @@ pub mod formats;
 pub mod library;
 pub mod pages;
 pub mod perf;
+pub mod readings;
 pub mod rewrite;
 pub mod thumbnail;
 pub mod watcher;

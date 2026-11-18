@@ -22,7 +22,7 @@
 //! | `GET /ws` | catalogue poussé à chaque changement du dossier |
 
 use crate::formats::{self, Format};
-use crate::{library, rewrite, thumbnail, write};
+use crate::{library, readings, rewrite, thumbnail, write};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -360,6 +360,7 @@ async fn get_chapter(
     let rel = query.path.clone();
     let index = query.index;
     let format = Format::from_path(&query.path);
+    let book = path.clone();
 
     match tokio::task::spawn_blocking(move || match format {
         Some(format) => formats::module(format).chapter(&path, index, &rel, &origin),
@@ -367,7 +368,10 @@ async fn get_chapter(
     })
     .await
     {
-        Ok(Ok(html)) => html_response(html),
+        Ok(Ok(html)) => {
+            readings::touch(&book, &query.path, html.len() as u64);
+            html_response(html)
+        }
         Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, e).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
@@ -408,6 +412,7 @@ async fn get_asset(
     let origin = origin(&headers);
     let entry = inner.clone();
     let format = Format::from_path(&query.path);
+    let book = path.clone();
 
     let bytes = tokio::task::spawn_blocking(move || {
         format.and_then(|format| formats::module(format).asset(&path, &entry))
@@ -416,6 +421,7 @@ async fn get_asset(
 
     match bytes {
         Ok(Some(bytes)) => {
+            readings::touch(&book, &query.path, bytes.len() as u64);
             let body = if is_css {
                 // Les `url(...)` d'une feuille de style sont relatives au
                 // fichier CSS, pas au document : on les réécrit ici.
@@ -459,6 +465,7 @@ async fn get_page(State(state): State<AppState>, Query(query): Query<PageQuery>)
     };
     let index = query.index;
     let format = Format::from_path(&query.path);
+    let book = path.clone();
 
     match tokio::task::spawn_blocking(move || match format {
         Some(format) => formats::module(format).page(&path, index),
@@ -466,14 +473,17 @@ async fn get_page(State(state): State<AppState>, Query(query): Query<PageQuery>)
     })
     .await
     {
-        Ok(Ok((name, bytes))) => (
-            [
-                (header::CONTENT_TYPE, formats::content_type(&name)),
-                (header::CACHE_CONTROL, "public, max-age=3600"),
-            ],
-            bytes,
-        )
-            .into_response(),
+        Ok(Ok((name, bytes))) => {
+            readings::touch(&book, &query.path, bytes.len() as u64);
+            (
+                [
+                    (header::CONTENT_TYPE, formats::content_type(&name)),
+                    (header::CACHE_CONTROL, "public, max-age=3600"),
+                ],
+                bytes,
+            )
+                .into_response()
+        }
         Ok(Err(e)) => (StatusCode::NOT_FOUND, e).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
@@ -507,6 +517,13 @@ async fn get_raw(
     if !response.status().is_success() {
         return response;
     }
+    let served = response
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    readings::touch(&path, &query.path, served);
 
     let content_type = Format::from_path(&query.path)
         .map(Format::content_type)

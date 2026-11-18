@@ -38,7 +38,33 @@ export type PerfSnapshot = {
 		coverCacheEntries: number;
 		pageCacheEntries: number;
 	};
+	readings: {
+		active: PerfReading[];
+		/** Silence après lequel une lecture est terminée et son cache rendu. */
+		idleLimitSecs: number;
+		releasedBytes: number;
+		releasedBooks: number;
+	};
 };
+
+/** Un livre lu en ce moment. */
+export type PerfReading = {
+	rel: string;
+	size: number;
+	/** Part du livre dans le cache de fichiers ; `null` si le système ne la donne pas. */
+	cachedBytes: number | null;
+	requests: number;
+	servedBytes: number;
+	idleSecs: number;
+	startedSecs: number;
+};
+
+/** Titre d'un livre : son nom de fichier sans l'extension. */
+export function bookName(rel: string): string {
+	const name = rel.slice(rel.lastIndexOf('/') + 1);
+	const dot = name.lastIndexOf('.');
+	return dot > 0 ? name.slice(0, dot) : name;
+}
 
 /** Un process, avec son taux CPU (100 = un cœur plein ; `null` sans mesure précédente). */
 export type Row = PerfProcess & { cpuPct: number | null };

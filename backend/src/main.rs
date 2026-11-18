@@ -5,7 +5,7 @@
 //! ajouté, renommé ou supprimé est poussé aux navigateurs par WebSocket, sans
 //! rechargement de page et sans sondage.
 
-use easybook::{api, config, formats, pages, thumbnail, watcher};
+use easybook::{api, config, formats, pages, readings, thumbnail, watcher};
 use notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, new_debouncer};
 use std::path::PathBuf;
@@ -61,6 +61,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Les comptages de pages survivent au redémarrage (sinon chaque PDF est
     // relu en entier au premier scan).
     pages::persist_in(&state.cache_dir());
+    // Une lecture terminée rend son cache de fichiers sans attendre qu'il manque
+    // de place.
+    readings::spawn_sweeper();
 
     // API + WebSocket sur le pool Tokio.
     let server = tokio::spawn({

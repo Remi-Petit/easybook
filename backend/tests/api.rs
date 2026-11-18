@@ -135,6 +135,25 @@ async fn performance_describes_this_process() {
 }
 
 #[tokio::test]
+async fn performance_lists_the_books_being_read() {
+    let (_dir, app) = library();
+    let (status, _, _) = call(&app, "/api/page?path=mangas%2FT1.cbz&index=0").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (_, body) = json(&app, "/api/admin/performance").await;
+    let readings = &body["readings"];
+    assert_eq!(readings["idleLimitSecs"], 60);
+    assert!(
+        readings["active"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["rel"] == "mangas/T1.cbz" && r["requests"].as_u64().unwrap() >= 1),
+        "la lecture en cours doit être listée : {readings}"
+    );
+}
+
+#[tokio::test]
 async fn catalogue_lists_books_and_folders() {
     let (_dir, app) = library();
     let (status, body) = json(&app, "/api/books").await;

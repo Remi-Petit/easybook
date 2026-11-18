@@ -75,6 +75,7 @@ pub struct Snapshot {
     pub cpu_usage_usec: Option<u64>,
     pub processes: Vec<Process>,
     pub app: App,
+    pub readings: crate::readings::Overview,
 }
 
 pub fn snapshot() -> Snapshot {
@@ -105,6 +106,7 @@ pub fn snapshot() -> Snapshot {
             cover_cache_budget: crate::thumbnail::CACHE_BYTES as u64,
             page_cache_entries: crate::pages::cache_entries() as u64,
         },
+        readings: crate::readings::overview(),
     }
 }
 

@@ -121,7 +121,10 @@ fn build(path: &Path, rel: &str, entry: Option<&DiskEntry>) -> Option<Vec<u8>> {
     let original = match Format::from_path(rel) {
         Some(format) => formats::module(format).cover(path),
         None => None,
-    }?;
+    };
+    // Le livre n'est lu qu'une fois ici : son cache n'a plus d'utilité.
+    crate::readings::release_if_idle(path);
+    let original = original?;
 
     // Une image illisible (format exotique) reste mieux qu'une absence : on la
     // sert telle quelle, le navigateur saura peut-être l'afficher. Elle n'est pas

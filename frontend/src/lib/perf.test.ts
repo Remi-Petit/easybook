@@ -1,5 +1,5 @@
 import { describe as suite, expect, it } from 'vitest';
-import { describe, niceCeil, colorFor, toSample, type PerfSnapshot } from './perf';
+import { describe, niceCeil, colorFor, toSample, bookName, type PerfSnapshot } from './perf';
 
 function snapshot(atMs: number, processes: PerfSnapshot['processes'], usec: number | null = null) {
 	return {
@@ -11,7 +11,8 @@ function snapshot(atMs: number, processes: PerfSnapshot['processes'], usec: numb
 		memory: { current: 1000, limit: null, anon: 600, file: 300, kernel: 50, shmem: 0 },
 		cpuUsageUsec: usec,
 		processes,
-		app: { coverCacheBytes: 0, coverCacheBudget: 1, coverCacheEntries: 0, pageCacheEntries: 0 }
+		app: { coverCacheBytes: 0, coverCacheBudget: 1, coverCacheEntries: 0, pageCacheEntries: 0 },
+		readings: { active: [], idleLimitSecs: 60, releasedBytes: 0, releasedBooks: 0 }
 	} satisfies PerfSnapshot;
 }
 
@@ -23,6 +24,14 @@ const proc = (pid: number, name: string, rss: number, cpuTicks: number) => ({
 	file: rss / 2,
 	threads: 1,
 	cpuTicks
+});
+
+suite('bookName', () => {
+	it('garde le nom du fichier sans dossier ni extension', () => {
+		expect(bookName('mangas/Serie/T1.cbz')).toBe('T1');
+		expect(bookName('livre.v2.epub')).toBe('livre.v2');
+		expect(bookName('.cache')).toBe('.cache');
+	});
 });
 
 suite('describe', () => {

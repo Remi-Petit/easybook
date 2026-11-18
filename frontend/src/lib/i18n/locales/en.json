@@ -124,6 +124,19 @@
 		"one": "{count} entry",
 		"other": "{count} entries"
 	},
+	"perf.requests": {
+		"one": "{count} request",
+		"other": "{count} requests"
+	},
+	"perf.reading.title": "Reads in progress",
+	"perf.reading.none": "No book is being read.",
+	"perf.reading.note": "of {size} · {requests} · {idle} s ago",
+	"perf.reading.released": "Returned to the system since startup",
+	"perf.reading.hint": "Memory = the part of the book held in the file cache. After {seconds} s without a request the reading is over and this cache is returned to the system right away, without waiting for space to run short.",
+	"perf.books": {
+		"one": "{count} book",
+		"other": "{count} books"
+	},
 	"perf.col.process": "Process",
 	"perf.col.memory": "Memory",
 	"perf.col.private": "Private",
