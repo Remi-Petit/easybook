@@ -2,14 +2,17 @@
 // l'autre. Dans le rapport, la CPU de chaque tranche se lit directement.
 //
 //   ENDPOINT_RATE=30 (req/s)  ENDPOINT_SECONDS=60
+//   ENDPOINT_ROUTES=page,cover (défaut : toutes)
 
-import { num } from '../lib/config.js';
+import { num, str } from '../lib/config.js';
 import { baseOptions } from '../lib/profiles.js';
 import { thresholds } from '../lib/thresholds.js';
 import { discover } from '../lib/library.js';
 import { single } from '../lib/journeys.js';
 
-const ROUTES = ['health', 'ui_home', 'books', 'book', 'cover', 'page', 'chapter', 'raw'];
+const ALL_ROUTES = ['health', 'ui_home', 'books', 'book', 'cover', 'page', 'chapter', 'raw'];
+const wanted = str('ENDPOINT_ROUTES', '').split(',').filter(Boolean);
+const ROUTES = wanted.length ? ALL_ROUTES.filter((r) => wanted.includes(r)) : ALL_ROUTES;
 const seconds = num('ENDPOINT_SECONDS', 60);
 const gap = 15; // repos entre deux routes : la CPU retombe avant la suivante
 

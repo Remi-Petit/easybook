@@ -81,6 +81,12 @@ const coverParams = (b) =>
     ? { path: b.rel, r: COVER_REVISION, v: b.modified }
     : { path: b.rel, r: COVER_REVISION };
 
+// Comme le lecteur : la date du fichier versionne l'URL de la page
+// (`PAGE_V=0` pour la retirer et mesurer l'URL non versionnée).
+const PAGE_V = num('PAGE_V', 1) !== 0;
+const pageParams = (b, index) =>
+  b.modified && PAGE_V ? { path: b.rel, index, v: b.modified } : { path: b.rel, index };
+
 // 404 est normal : PDF, CBR et archives sans image n'ont pas de couverture.
 const coverSpec = (b) => ({
   path: '/api/cover',
@@ -131,7 +137,7 @@ export function readComic(data) {
 
   const first = Math.floor(Math.random() * book.pages);
   for (let i = 0; i < Math.min(READ_PAGES, book.pages); i++) {
-    request('/api/page', { path: book.rel, index: (first + i) % book.pages }, 'api_page');
+    request('/api/page', pageParams(book, (first + i) % book.pages), 'api_page');
     think();
   }
 }
@@ -233,7 +239,7 @@ export const single = {
     if (!data.comic.length) return false;
     const book = pick(data.comic);
     const index = Math.floor(Math.random() * book.pages);
-    request('/api/page', { path: book.rel, index }, 'api_page');
+    request('/api/page', pageParams(book, index), 'api_page');
     return true;
   },
   chapter: (data) => {

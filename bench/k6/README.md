@@ -31,11 +31,12 @@ Chaque run crée `results/<date>-<scénario>/` : `report.md` (rapport), `process
 | `spike` | Comment réagit-il à un pic brutal, et récupère-t-il la mémoire ? | `BASE_VUS=5` `SPIKE_VUS=200` |
 | `soak` | Fuite mémoire, threads ou descripteurs qui croissent ? | `SOAK_VUS=20` `SOAK_DURATION=30m` |
 | `breakpoint` | Quel débit maximal (req/s) ? Arrêt à p95 > 2 s ou 5 % d'erreurs. | `MAX_RPS=500` `RAMP=10m` `MAX_VUS=2000` |
-| `endpoints` | Combien coûte chaque route, isolée ? | `ENDPOINT_RATE=30` `ENDPOINT_SECONDS=60` |
+| `endpoints` | Combien coûte chaque route, isolée ? | `ENDPOINT_RATE=30` `ENDPOINT_SECONDS=60` `ENDPOINT_ROUTES=page,cover` (défaut : toutes) |
+| `mix` | Deux versions, à charge identique : même mélange de routes, débit constant | `MIX_RATE=150` `MIX_SECONDS=60` |
 | `websocket` | Coût mémoire d'un onglet ouvert (WebSocket) ? | `PEAK_SOCKETS=1000` `SOCKET_HOLD=60` |
 | `ui` | Quelle réactivité ressent le lecteur (voir plus bas) ? | `UI_VUS=1` `UI_DURATION=3m` `BG_VUS=0` `PAGE_TURNS=10` `CHAPTER_TURNS=5` |
 
-Communs : `THINK_MIN=2` `THINK_MAX=6` (pause entre actions, s), `SOCKETS=1` (WebSocket par utilisateur, `0` pour couper), `COVERS=24` (couvertures par page), `READ_PAGES=8`, `READ_CHAPTERS=3`. Les autres options de k6 passent telles quelles.
+Communs : `THINK_MIN=2` `THINK_MAX=6` (pause entre actions, s), `SOCKETS=1` (WebSocket par utilisateur, `0` pour couper), `COVERS=24` (couvertures par page), `READ_PAGES=8`, `READ_CHAPTERS=3`, `PAGE_V=1` (`0` : URL de page sans date de fichier, donc jamais mise en cache par nginx). Les autres options de k6 passent telles quelles.
 
 Un « utilisateur » (`load`, `stress`, `spike`, `soak`) ouvre l'application (page, fichiers compilés, catalogue, couvertures), puis lit : BD 35 %, EPUB 15 %, PDF 10 %, rien 40 % (selon ce que contient la bibliothèque). Il garde un WebSocket ouvert.
 
