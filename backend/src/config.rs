@@ -24,6 +24,125 @@ pub struct Config {
     pub limits: Limits,
     /// Réduction des planches à la taille de l'écran (voir [`Resize`]).
     pub resize: Resize,
+    /// Comptes et connexion (voir [`Auth`]).
+    pub auth: Auth,
+}
+
+/// Comptes et connexion.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Auth {
+    /// `false` : aucune connexion demandée, l'API reste ouverte (ancien
+    /// comportement).
+    pub enabled: bool,
+    /// Durée d'une session, en jours.
+    pub session_days: u32,
+    /// Connexion par un fournisseur OpenID Connect.
+    pub oidc: Oidc,
+}
+
+impl Default for Auth {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            session_days: 30,
+            oidc: Oidc::default(),
+        }
+    }
+}
+
+/// Fournisseur OpenID Connect (Keycloak, Authentik, Google…).
+///
+/// Actif dès que `issuer` et `client_id` sont renseignés. Chaque clé se pose
+/// aussi par variable d'environnement (`EASYBOOK_OIDC_ISSUER`, `…_CLIENT_ID`,
+/// `…_CLIENT_SECRET`, `…_DISCOVERY_URL`, `…_REDIRECT_URL`, `…_LABEL`,
+/// `…_AUTO_CREATE`, `…_LINK_BY_EMAIL`, `…_SELF_LINK`) : elle gagne sur le fichier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Oidc {
+    /// URL de l'émetteur, telle qu'elle figure dans le champ `iss` des jetons.
+    pub issuer: String,
+    /// Où lire `/.well-known/openid-configuration` quand le serveur ne joint pas
+    /// l'émetteur à l'adresse publique (conteneurs) ; vide : l'émetteur.
+    pub discovery_url: String,
+    pub client_id: String,
+    /// Vide pour un client public (PKCE seul).
+    pub client_secret: String,
+    /// Adresse de retour complète, à déclarer chez le fournisseur ; vide : déduite
+    /// de l'adresse par laquelle le navigateur est arrivé.
+    pub redirect_url: String,
+    pub scopes: Vec<String>,
+    /// Texte du bouton de connexion.
+    pub label: String,
+    /// Un compte OIDC inconnu crée un compte local (rôle `user`). Sinon il est
+    /// refusé tant qu'un administrateur ne l'a pas lié à un compte.
+    pub auto_create: bool,
+    /// Un compte OIDC inconnu est lié au compte local de même e-mail, si le
+    /// fournisseur certifie l'adresse (`email_verified`).
+    pub link_by_email: bool,
+    /// Chacun peut lier son propre compte à une identité OIDC depuis sa page
+    /// « Mon compte ». Sinon, seul un administrateur lie.
+    pub self_link: bool,
+}
+
+impl Default for Oidc {
+    fn default() -> Self {
+        Self {
+            issuer: String::new(),
+            discovery_url: String::new(),
+            client_id: String::new(),
+            client_secret: String::new(),
+            redirect_url: String::new(),
+            scopes: vec!["openid".into(), "profile".into(), "email".into()],
+            label: "Single sign-on".into(),
+            auto_create: false,
+            link_by_email: false,
+            self_link: false,
+        }
+    }
+}
+
+impl Oidc {
+    pub fn is_enabled(&self) -> bool {
+        !self.issuer.trim().is_empty() && !self.client_id.trim().is_empty()
+    }
+
+    /// Reprend les variables d'environnement ; `get` les lit (paramètre : testable).
+    #[must_use]
+    pub fn with_env(mut self, get: impl Fn(&str) -> Option<String>) -> Self {
+        let text = |name: &str| get(name).filter(|value| !value.trim().is_empty());
+        let flag = |name: &str| {
+            text(name).map(|value| matches!(value.trim(), "1" | "true" | "yes" | "on"))
+        };
+        if let Some(value) = text("EASYBOOK_OIDC_ISSUER") {
+            self.issuer = value;
+        }
+        if let Some(value) = text("EASYBOOK_OIDC_DISCOVERY_URL") {
+            self.discovery_url = value;
+        }
+        if let Some(value) = text("EASYBOOK_OIDC_CLIENT_ID") {
+            self.client_id = value;
+        }
+        if let Some(value) = text("EASYBOOK_OIDC_CLIENT_SECRET") {
+            self.client_secret = value;
+        }
+        if let Some(value) = text("EASYBOOK_OIDC_REDIRECT_URL") {
+            self.redirect_url = value;
+        }
+        if let Some(value) = text("EASYBOOK_OIDC_LABEL") {
+            self.label = value;
+        }
+        if let Some(value) = flag("EASYBOOK_OIDC_AUTO_CREATE") {
+            self.auto_create = value;
+        }
+        if let Some(value) = flag("EASYBOOK_OIDC_LINK_BY_EMAIL") {
+            self.link_by_email = value;
+        }
+        if let Some(value) = flag("EASYBOOK_OIDC_SELF_LINK") {
+            self.self_link = value;
+        }
+        self
+    }
 }
 
 /// Réduction des planches de bande dessinée (`GET /api/page?w=`).
@@ -83,6 +202,7 @@ impl Default for Config {
             books_root: "../books".to_string(),
             limits: Limits::default(),
             resize: Resize::default(),
+            auth: Auth::default(),
         }
     }
 }
@@ -104,6 +224,16 @@ pub fn limits() -> Limits {
     limits.max_concurrent_reads = limits.max_concurrent_reads.max(1);
     limits.max_blocking_threads = limits.max_blocking_threads.max(1);
     limits
+}
+
+/// Comptes et connexion en vigueur (l'environnement gagne sur le fichier).
+pub fn auth() -> Auth {
+    let mut auth = INSTALLED
+        .get()
+        .map_or_else(Auth::default, |config| config.auth.clone());
+    auth.oidc = auth.oidc.with_env(|name| std::env::var(name).ok());
+    auth.session_days = auth.session_days.max(1);
+    auth
 }
 
 /// Réglages de réduction des planches en vigueur.
@@ -274,6 +404,54 @@ mod tests {
         assert_eq!(limits.max_concurrent_reads, 4);
         // Une clé absente garde sa valeur par défaut.
         assert_eq!(limits.open_archives, Limits::default().open_archives);
+    }
+
+    #[test]
+    fn auth_is_on_by_default_and_oidc_off() {
+        let auth = Config::default().auth;
+        assert!(auth.enabled);
+        assert!(!auth.oidc.is_enabled());
+        assert!(!auth.oidc.auto_create && !auth.oidc.link_by_email && !auth.oidc.self_link);
+    }
+
+    #[test]
+    fn auth_is_read_from_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(
+            &path,
+            "auth:\n  session_days: 7\n  oidc:\n    issuer: https://idp\n    client_id: eb\n    auto_create: true\n",
+        )
+        .unwrap();
+
+        let auth = Config::load_from(&path).auth;
+        assert_eq!(auth.session_days, 7);
+        assert!(auth.enabled);
+        assert!(auth.oidc.is_enabled() && auth.oidc.auto_create);
+        assert_eq!(auth.oidc.scopes, Oidc::default().scopes);
+    }
+
+    #[test]
+    fn oidc_environment_wins_over_the_file() {
+        let oidc = Oidc {
+            issuer: "https://file".into(),
+            client_id: "file".into(),
+            auto_create: true,
+            ..Oidc::default()
+        }
+        .with_env(|name| match name {
+            "EASYBOOK_OIDC_ISSUER" => Some("https://env".into()),
+            "EASYBOOK_OIDC_CLIENT_SECRET" => Some("s3cret".into()),
+            "EASYBOOK_OIDC_AUTO_CREATE" => Some("false".into()),
+            "EASYBOOK_OIDC_LABEL" => Some("  ".into()),
+            _ => None,
+        });
+        assert_eq!(oidc.issuer, "https://env");
+        assert_eq!(oidc.client_id, "file");
+        assert_eq!(oidc.client_secret, "s3cret");
+        assert!(!oidc.auto_create);
+        // Une variable blanche ne compte pas.
+        assert_eq!(oidc.label, Oidc::default().label);
     }
 
     #[test]

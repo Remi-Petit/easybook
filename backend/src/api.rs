@@ -1,14 +1,16 @@
 //! Serveur HTTP et temps réel.
 //!
-//! L'API n'a **aucune authentification** : elle écoute sur la boucle locale par
-//! défaut (`EASYBOOK_HOST=0.0.0.0` dans le conteneur). Publier un port, c'est
-//! décider d'exposer la bibliothèque — c'est un choix explicite.
+//! Tout `/api` et `/ws` exige une session (voir [`crate::auth`]), sauf si
+//! `auth.enabled` est à `false` dans `config.yml` : l'API est alors ouverte et
+//! n'écoute que sur la boucle locale par défaut (`EASYBOOK_HOST=0.0.0.0` dans le
+//! conteneur).
 //!
 //! Les routes :
 //!
 //! | Route | Rôle |
 //! |---|---|
 //! | `GET /api/health` | état du serveur |
+//! | `/api/auth/…`, `/api/admin/users…` | comptes et connexion (voir [`crate::auth`]) |
 //! | `GET /api/books` | catalogue complet (JSON) |
 //! | `GET /api/book?path=` | sommaire d'un livre |
 //! | `GET /api/cover?path=&v=` | couverture (vignette JPEG) |
@@ -21,6 +23,7 @@
 //! | `PUT /api/book?folder=&name=` | dépose un livre (corps = le fichier) |
 //! | `GET /ws` | avis `{"etag"}` à chaque changement du dossier (recharger `/api/books`) |
 
+use crate::auth::{self, AuthState};
 use crate::formats::{self, Format};
 use crate::{config, library, readings, resize, rewrite, thumbnail, write};
 use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
@@ -94,6 +97,8 @@ pub struct AppState {
     reads: Arc<Semaphore>,
     /// Réductions de planches en cours (`resize.max_concurrent`).
     resizes: Arc<Semaphore>,
+    /// Comptes et sessions ; `None` : l'API reste ouverte (voir [`crate::auth`]).
+    auth: Option<Arc<AuthState>>,
 }
 
 impl AppState {
@@ -108,7 +113,19 @@ impl AppState {
             refresh: Arc::new(tokio::sync::Mutex::new(())),
             reads: Arc::new(Semaphore::new(config::limits().max_concurrent_reads)),
             resizes: Arc::new(Semaphore::new(config::resize().max_concurrent)),
+            auth: None,
         }
+    }
+
+    /// Exige une session pour tout `/api` et `/ws`.
+    #[must_use]
+    pub fn with_auth(mut self, auth: AuthState) -> Self {
+        self.auth = Some(Arc::new(auth));
+        self
+    }
+
+    pub fn auth(&self) -> Option<&Arc<AuthState>> {
+        self.auth.as_ref()
     }
 
     /// Réduit une planche à `width` pixels, dans la limite de
@@ -214,6 +231,13 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/folder", post(create_folder))
         .route("/api/book", put(upload_book))
         .route("/ws", get(ws_library))
+        .merge(auth::routes())
+        // Sous le CORS : le préambule d'une requête inter-origines ne porte pas de
+        // cookie et ne doit pas être refusé.
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::guard,
+        ))
         // L'interface est servie par un autre process : elle appelle l'API en
         // direct, sans relais (les images et les polices d'un EPUB comprises).
         .layer(CorsLayer::permissive())

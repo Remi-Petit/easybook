@@ -1,6 +1,9 @@
 //! Bibliothèque `easybook` : catalogue d'un dossier de livres et lecture.
 //!
 //! - [`api`] : serveur HTTP (axum) + WebSocket temps réel.
+//! - [`accounts`] : comptes, identités OIDC et sessions (SQLite).
+//! - [`auth`] : connexion, garde des routes, administration des comptes.
+//! - [`oidc`] : client OpenID Connect (code + PKCE).
 //! - [`library`] : scan récursif du dossier `books/`.
 //! - [`formats`] : formats reconnus — **un module par format**.
 //! - [`archive`] : ouverture des archives ZIP (helpers partagés EPUB/CBZ).
@@ -12,11 +15,14 @@
 //! - [`watcher`] : interprétation des événements du système de fichiers.
 //! - [`config`] : configuration (`config.yml`).
 
+pub mod accounts;
 pub mod api;
 pub mod archive;
+pub mod auth;
 pub mod config;
 pub mod formats;
 pub mod library;
+pub mod oidc;
 pub mod pages;
 pub mod perf;
 pub mod readings;

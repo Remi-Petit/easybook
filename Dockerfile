@@ -101,7 +101,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 #
 # Tout écoute sur la boucle locale du conteneur, sauf nginx : publier un port
 # (`-p 5100:8080`) ne relaie pas vers `127.0.0.1`, et seul nginx doit être
-# joignable depuis l'extérieur (l'API n'a pas d'authentification).
+# joignable depuis l'extérieur.
 ENV API_PORT=8091 \
     API_HOST=127.0.0.1 \
     UI_PORT=3100 \
@@ -109,7 +109,8 @@ ENV API_PORT=8091 \
     NODE_ENV=production \
     BOOKS_ROOT=/books \
     EASYBOOK_CONFIG=/app/config.yml \
-    EASYBOOK_HOST=127.0.0.1
+    EASYBOOK_HOST=127.0.0.1 \
+    EASYBOOK_DATA_DIR=/data
 
 # `PUBLIC_EASYBOOK_API=/` : l'API est sur la **même origine** que l'interface
 # (nginx). Lue au démarrage par le serveur SvelteKit (`$env/dynamic/public`),
@@ -119,7 +120,11 @@ ENV PUBLIC_EASYBOOK_API=/
 # L'API écrit dans la bibliothèque (création de catégories, dépôt de livres) :
 # le dossier doit exister et appartenir à l'utilisateur du conteneur, sinon un
 # volume nommé serait créé avec les droits de root.
-RUN mkdir -p /books && chown node:node /books
+#
+# `/data` : la base des comptes (SQLite). À monter en volume, sinon les comptes
+# disparaissent avec le conteneur.
+RUN mkdir -p /books /data && chown node:node /books /data
+VOLUME /data
 
 USER node
 EXPOSE 8080
