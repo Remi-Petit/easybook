@@ -37,10 +37,12 @@ export type Session = {
 	user: User | null;
 	/** `direct` : mode développement, le formulaire accepte les comptes du fournisseur. */
 	oidc: { label: string; self_link: boolean; direct: boolean } | null;
+	/** E-mails des boutons de connexion rapide (développement) ; vide en production. */
+	dev_logins: string[];
 };
 
 /** Session « personne » : API injoignable ou réponse illisible. */
-export const NO_SESSION: Session = { enabled: true, user: null, oidc: null };
+export const NO_SESSION: Session = { enabled: true, user: null, oidc: null, dev_logins: [] };
 
 /** Ce que l'interface affiche pour désigner un compte. */
 export const displayName = (user: Pick<User, 'username' | 'display_name'>): string =>

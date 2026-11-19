@@ -19,6 +19,20 @@
 		return code ? t(errorKey(code)) : null;
 	});
 
+	/** Connexion à un clic (développement) : le mot de passe reste côté serveur. */
+	async function quick(address: string) {
+		if (busy) return;
+		busy = true;
+		failure = null;
+		const result = await call('POST', '/api/auth/dev-login', { email: address });
+		if (result.ok) {
+			location.assign(next);
+			return;
+		}
+		failure = result.code;
+		busy = false;
+	}
+
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		if (busy) return;
@@ -86,6 +100,17 @@
 			<a class="btn-plain auth-sso" href={oidcLoginUrl(next)}>
 				{t('auth.sso', { provider: data.session.oidc.label })}
 			</a>
+		{/if}
+
+		{#if data.session.dev_logins.length > 0}
+			<div class="auth-quick">
+				<p class="auth-or"><span>{t('auth.quick')}</span></p>
+				{#each data.session.dev_logins as address (address)}
+					<button type="button" class="btn-plain" disabled={busy} onclick={() => quick(address)}>
+						{address}
+					</button>
+				{/each}
+			</div>
 		{/if}
 
 		<div class="auth-lang">

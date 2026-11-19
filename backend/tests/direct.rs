@@ -6,7 +6,7 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::http::{PASSWORD, Reply, Site, site_direct, site_with};
+use common::http::{PASSWORD, Reply, Site, site_dev, site_direct, site_with};
 use common::idp::{IDP_PASSWORD, Idp, Person, Quirks};
 use easybook::config;
 use serde_json::json;
@@ -262,4 +262,103 @@ async fn a_local_password_is_checked_before_the_provider() {
         site.login_reply("root", "faux").await.status,
         StatusCode::UNAUTHORIZED
     );
+}
+
+fn dev_site(idp: &Idp) -> Site {
+    let mut oidc = idp.settings();
+    oidc.auto_create = true;
+    site_dev(
+        config::Auth {
+            oidc,
+            ..config::Auth::default()
+        },
+        &format!("alice@example.org:{IDP_PASSWORD},root@local.test:{PASSWORD}"),
+    )
+}
+
+#[tokio::test]
+async fn the_quick_buttons_list_emails_only() {
+    let idp = Idp::start().await;
+    let site = dev_site(&idp);
+    let session = site.get("/api/auth/session", None).await;
+    assert_eq!(
+        session.json()["dev_logins"],
+        json!(["alice@example.org", "root@local.test"])
+    );
+    // Jamais un mot de passe dans ce que voit le navigateur.
+    assert!(
+        !session
+            .body
+            .windows(IDP_PASSWORD.len())
+            .any(|w| w == IDP_PASSWORD.as_bytes())
+    );
+    assert!(!String::from_utf8_lossy(&session.body).contains(PASSWORD));
+}
+
+#[tokio::test]
+async fn one_click_logs_in_a_local_account_and_a_provider_account() {
+    let idp = Idp::start().await;
+    idp.person("sub-alice", alice());
+    let site = dev_site(&idp);
+    let click = |email: &str| site.post("/api/auth/dev-login", None, json!({ "email": email }));
+
+    let root = click("root@local.test").await;
+    assert_eq!(root.status, StatusCode::OK);
+    assert_eq!(root.json()["role"], "admin");
+    let cookie = root.cookie("easybook_session").unwrap();
+    assert_eq!(
+        site.get("/api/admin/users", Some(&cookie)).await.status,
+        StatusCode::OK
+    );
+
+    let alice = click("ALICE@example.org").await;
+    assert_eq!(alice.status, StatusCode::OK);
+    assert_eq!(alice.json()["email"], "alice@example.org");
+    assert!(alice.cookie("easybook_session").is_some());
+}
+
+#[tokio::test]
+async fn one_click_only_works_for_listed_emails() {
+    let idp = Idp::start().await;
+    idp.person("sub-bob", Person::new("bob", "bob@example.org"));
+    let site = dev_site(&idp);
+
+    // Même avec le bon mot de passe côté fournisseur : pas dans la liste, pas de bouton.
+    let reply = site
+        .post(
+            "/api/auth/dev-login",
+            None,
+            json!({ "email": "bob@example.org" }),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    assert!(reply.cookie("easybook_session").is_none());
+    assert_eq!(site.accounts.count_users().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn there_is_no_quick_login_outside_dev_mode() {
+    let idp = Idp::start().await;
+    idp.person("sub-alice", alice());
+    // Même provider, même compte : sans `with_dev_logins`, rien n'existe.
+    let site = site(&idp, true, |oidc| oidc.auto_create = true);
+
+    let session = site.get("/api/auth/session", None).await;
+    assert_eq!(session.json()["dev_logins"], json!([]));
+    let reply = site
+        .post(
+            "/api/auth/dev-login",
+            None,
+            json!({ "email": "alice@example.org" }),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    let reply = site
+        .post(
+            "/api/auth/dev-login",
+            None,
+            json!({ "email": "root@local.test" }),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
 }

@@ -31,6 +31,7 @@ const session = (over: Partial<Session> = {}): Session => ({
 	enabled: true,
 	user: null,
 	oidc: null,
+	dev_logins: [],
 	...over
 });
 

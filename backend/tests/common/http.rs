@@ -69,15 +69,20 @@ pub fn site() -> Site {
 }
 
 pub fn site_with(settings: config::Auth) -> Site {
-    build(settings, false)
+    build(settings, false, None)
 }
 
 /// Comme [`site_with`], avec la connexion directe au fournisseur (mode dev).
 pub fn site_direct(settings: config::Auth) -> Site {
-    build(settings, true)
+    build(settings, true, None)
 }
 
-fn build(settings: config::Auth, direct: bool) -> Site {
+/// Mode dev complet : connexion directe et boutons de connexion rapide.
+pub fn site_dev(settings: config::Auth, logins: &str) -> Site {
+    build(settings, true, Some(logins))
+}
+
+fn build(settings: config::Auth, direct: bool, logins: Option<&str>) -> Site {
     let dir = tempfile::tempdir().unwrap();
     let accounts = Arc::new(Accounts::open_in_memory().unwrap());
     accounts
@@ -94,6 +99,9 @@ fn build(settings: config::Auth, direct: bool) -> Site {
     let mut auth = AuthState::new(Arc::clone(&accounts), settings);
     if direct {
         auth = auth.with_direct_login();
+    }
+    if let Some(logins) = logins {
+        auth = auth.with_dev_logins(logins);
     }
     let state = AppState::new(dir.path(), tx).with_auth(auth);
     Site {

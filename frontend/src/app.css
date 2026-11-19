@@ -1820,6 +1820,17 @@ code {
 	font-size: 12.5px;
 }
 
+.auth-quick {
+	display: grid;
+	gap: 6px;
+}
+
+.auth-quick .btn-plain {
+	border: 1px dashed var(--accent);
+	color: var(--accent);
+	text-align: center;
+}
+
 .auth-sub {
 	margin: -8px 0 4px;
 	color: var(--muted);

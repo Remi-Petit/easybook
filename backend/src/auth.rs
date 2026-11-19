@@ -62,6 +62,9 @@ pub struct AuthState {
     session_ttl: i64,
     /// Connexion directe au fournisseur depuis le formulaire (développement).
     direct: bool,
+    /// Comptes à un clic de la page de connexion : (e-mail, mot de passe). Le mot
+    /// de passe ne quitte jamais le serveur. Développement seulement.
+    dev_logins: Vec<(String, String)>,
 }
 
 impl AuthState {
@@ -77,7 +80,16 @@ impl AuthState {
             throttle: Throttle::default(),
             session_ttl: i64::from(settings.session_days) * 86_400,
             direct: false,
+            dev_logins: Vec::new(),
         }
+    }
+
+    /// Boutons de connexion rapide : `email:mot_de_passe,email:mot_de_passe`.
+    /// **Développement seulement** (voir `config::dev_mode`).
+    #[must_use]
+    pub fn with_dev_logins(mut self, raw: &str) -> Self {
+        self.dev_logins = parse_dev_logins(raw);
+        self
     }
 
     /// Accepte, au formulaire de connexion, l'e-mail et le mot de passe d'un
@@ -96,6 +108,19 @@ impl AuthState {
     pub fn oidc(&self) -> Option<&Provider> {
         self.provider.as_ref()
     }
+}
+
+/// `a@x.org:mdp1,b@x.org:mdp2` → `[(a@x.org, mdp1), (b@x.org, mdp2)]`. Une entrée
+/// sans `:` ou à e-mail vide est ignorée ; le mot de passe peut contenir `:`.
+pub fn parse_dev_logins(raw: &str) -> Vec<(String, String)> {
+    raw.split(',')
+        .filter_map(|entry| {
+            let (email, password) = entry.trim().split_once(':')?;
+            let email = email.trim();
+            (!email.is_empty() && !password.is_empty())
+                .then(|| (email.to_string(), password.to_string()))
+        })
+        .collect()
 }
 
 /// L'utilisateur de la requête (posé par [`guard`]).
@@ -139,6 +164,7 @@ fn is_public(path: &str) -> bool {
         "/api/health"
             | "/api/auth/session"
             | "/api/auth/login"
+            | "/api/auth/dev-login"
             | "/api/auth/logout"
             | "/api/auth/oidc/login"
             | "/api/auth/oidc/callback"
@@ -360,6 +386,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/auth/session", get(session))
         .route("/api/auth/check", get(check))
         .route("/api/auth/login", post(login))
+        .route("/api/auth/dev-login", post(dev_login))
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/password", post(change_password))
         .route("/api/auth/oidc/login", get(oidc_login))
@@ -417,9 +444,10 @@ async fn session(State(state): State<AppState>, MaybeUser(user): MaybeUser) -> R
             "direct": auth.direct,
         })
     });
+    let dev_emails: Vec<&str> = auth.dev_logins.iter().map(|(e, _)| e.as_str()).collect();
     (
         [(header::CACHE_CONTROL, "no-store")],
-        Json(serde_json::json!({ "enabled": true, "user": user, "oidc": oidc })),
+        Json(serde_json::json!({ "enabled": true, "user": user, "oidc": oidc, "dev_logins": dev_emails })),
     )
         .into_response()
 }
@@ -446,11 +474,38 @@ async fn login(
     Json(body): Json<LoginBody>,
 ) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
-    let key = format!(
-        "{}|{}",
-        body.email.trim().to_lowercase(),
-        client_key(&headers)
-    );
+    sign_in(&auth, &headers, body.email, body.password).await
+}
+
+#[derive(Deserialize)]
+struct DevLoginBody {
+    email: String,
+}
+
+/// `POST /api/auth/dev-login` — connexion à un clic pour un compte de la liste de
+/// développement (`EASYBOOK_DEV_LOGINS`). Inexistante en production.
+async fn dev_login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DevLoginBody>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let password = auth
+        .dev_logins
+        .iter()
+        .find(|(email, _)| email.eq_ignore_ascii_case(body.email.trim()))
+        .map(|(_, password)| password.clone())
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, "not_found"))?;
+    sign_in(&auth, &headers, body.email, password).await
+}
+
+async fn sign_in(
+    auth: &Arc<AuthState>,
+    headers: &HeaderMap,
+    email: String,
+    password: String,
+) -> Result<Response, Response> {
+    let key = format!("{}|{}", email.trim().to_lowercase(), client_key(headers));
     if let Some(wait) = auth.throttle.blocked(&key) {
         let mut response = error(StatusCode::TOO_MANY_REQUESTS, "too_many_attempts");
         if let Ok(value) = HeaderValue::from_str(&wait.to_string()) {
@@ -460,10 +515,9 @@ async fn login(
     }
 
     let ttl = auth.session_ttl;
-    let (email, password) = (body.email, body.password);
     let (local_email, local_password) = (email.clone(), password.clone());
     let mut outcome = db(
-        &auth,
+        auth,
         move |accounts| -> Result<Option<(User, String)>, AccountError> {
             let Some(user) = accounts.authenticate(&local_email, &local_password)? else {
                 return Ok(None);
@@ -478,7 +532,7 @@ async fn login(
 
     // Un compte local d'abord ; sinon, en développement, le fournisseur lui-même.
     if outcome.is_none() {
-        outcome = direct_login(&auth, &email, &password).await?;
+        outcome = direct_login(auth, &email, &password).await?;
     }
 
     let Some((user, token)) = outcome else {
@@ -487,8 +541,8 @@ async fn login(
     };
     auth.throttle.success(&key);
 
-    let cookie = session_cookies(&headers, &token, ttl);
-    let user = db(&auth, move |accounts| view(accounts, user))
+    let cookie = session_cookies(headers, &token, ttl);
+    let user = db(auth, move |accounts| view(accounts, user))
         .await?
         .map_err(account_error)?;
     Ok(([(header::SET_COOKIE, cookie)], Json(user)).into_response())
@@ -1168,6 +1222,18 @@ mod tests {
             &Method::GET,
             &headers(&[own, ("origin", "https://pirate.example")])
         ));
+    }
+
+    #[test]
+    fn dev_logins_are_parsed_leniently() {
+        assert_eq!(
+            parse_dev_logins(" a@x.org:mdp1 , b@x.org:a:b,sans-deux-points,:vide,c@x.org: "),
+            [
+                ("a@x.org".to_string(), "mdp1".to_string()),
+                ("b@x.org".to_string(), "a:b".to_string()),
+            ]
+        );
+        assert!(parse_dev_logins("").is_empty());
     }
 
     #[test]

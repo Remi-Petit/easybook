@@ -256,5 +256,6 @@
 	"auth.email": "E-Mail-Adresse",
 	"auth.error.email_taken": "Diese E-Mail-Adresse wird bereits von einem anderen Konto verwendet.",
 	"auth.error.email_required": "Der Anbieter muss eine verifizierte E-Mail-Adresse liefern, um ein Konto zu erstellen.",
-	"auth.devNotice": "Entwicklungsmodus: {provider}-Konten melden sich hier direkt mit E-Mail und Passwort an."
+	"auth.devNotice": "Entwicklungsmodus: {provider}-Konten melden sich hier direkt mit E-Mail und Passwort an.",
+	"auth.quick": "Schnellanmeldung (Entwicklung)"
 }

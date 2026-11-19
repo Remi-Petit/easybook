@@ -56,6 +56,8 @@ services:
       # `dev` active la connexion directe à Keycloak depuis le formulaire (le mot
       # de passe passe alors par easybook : jamais en production).
       EASYBOOK_MODE: ${EASYBOOK_MODE:-prod}
+      # Boutons de connexion rapide (`email:mdp,…`) : ignorés hors du mode `dev`.
+      EASYBOOK_DEV_LOGINS: ${EASYBOOK_DEV_LOGINS:-}
       # Administrateur créé au premier démarrage (base vide). Sans mot de passe,
       # il est tiré au hasard et affiché une fois dans `docker logs easybook`.
       EASYBOOK_ADMIN_EMAIL: ${EASYBOOK_ADMIN_EMAIL:-admin@easybook.local}

@@ -464,6 +464,11 @@ docker compose --env-file .env.dev up -d --build     # développement
 passe = prénom en minuscules. L'administrateur est `admin@easybook.local` /
 `admin-dev-1234`.
 
+**Connexion rapide** : en développement, la page de connexion affiche un bouton
+par compte de `EASYBOOK_DEV_LOGINS` (`admin@easybook.local`, `alice@…`, `bob@…`,
+`carol@…`) — un clic suffit. Les mots de passe restent dans le serveur ; sans
+`EASYBOOK_MODE=dev`, la liste est ignorée et la route n'existe pas.
+
 **Connexion « directe »** (`EASYBOOK_MODE=dev` seulement) : le formulaire de
 connexion accepte aussi l'e-mail et le mot de passe d'un compte Keycloak, sans
 redirection (*direct access grant* : easybook les transmet à Keycloak et vérifie

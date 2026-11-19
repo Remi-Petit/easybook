@@ -256,5 +256,6 @@
 	"auth.email": "Endereço de e-mail",
 	"auth.error.email_taken": "Este endereço de e-mail já é usado por outra conta.",
 	"auth.error.email_required": "O fornecedor tem de indicar um endereço de e-mail verificado para criar uma conta.",
-	"auth.devNotice": "Modo de desenvolvimento: as contas {provider} entram diretamente aqui, com o e-mail e a palavra-passe."
+	"auth.devNotice": "Modo de desenvolvimento: as contas {provider} entram diretamente aqui, com o e-mail e a palavra-passe.",
+	"auth.quick": "Início de sessão rápido (desenvolvimento)"
 }

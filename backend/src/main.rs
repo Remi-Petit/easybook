@@ -177,6 +177,10 @@ fn enable_accounts(
     if config::dev_mode() {
         println!("⚠️  EASYBOOK_MODE=dev : outils de développement actifs.");
         auth = auth.with_direct_login();
+        if let Ok(logins) = std::env::var("EASYBOOK_DEV_LOGINS") {
+            auth = auth.with_dev_logins(&logins);
+            println!("  - connexion rapide : boutons de la page de connexion");
+        }
         if auth.direct_login() {
             println!(
                 "  - connexion directe à OIDC depuis le formulaire (mot de passe vu par easybook)"
