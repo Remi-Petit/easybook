@@ -306,7 +306,7 @@ async fn link_by_email_attaches_the_identity_to_the_local_account() {
     assert_eq!(session["user"]["identities"].as_array().unwrap().len(), 1);
     // Le compte local garde son mot de passe : les deux façons de se connecter coexistent.
     assert_eq!(
-        site.login_reply("alice-locale", PASSWORD).await.status,
+        site.login_reply("alice@example.org", PASSWORD).await.status,
         StatusCode::OK
     );
 }
@@ -937,4 +937,46 @@ async fn the_requested_scopes_come_from_the_configuration() {
     });
     sign_in(&site, &idp, "sub-alice").await;
     assert_eq!(idp.last_scopes(), ["openid", "email"]);
+}
+
+#[tokio::test]
+async fn auto_create_refuses_an_address_the_provider_does_not_certify() {
+    let idp = Idp::start().await;
+    idp.person(
+        "sub-alice",
+        Person {
+            email_verified: false,
+            ..alice()
+        },
+    );
+    let site = oidc_site(&idp, |oidc| oidc.auto_create = true);
+
+    let reply = sign_in(&site, &idp, "sub-alice").await;
+    assert_eq!(
+        reply.location().as_deref(),
+        Some("/login?error=email_required")
+    );
+    assert_eq!(site.accounts.count_users().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn auto_create_does_not_take_over_a_local_address() {
+    let idp = Idp::start().await;
+    idp.person("sub-alice", alice());
+    let site = oidc_site(&idp, |oidc| oidc.auto_create = true);
+    site.accounts
+        .create_user(easybook::accounts::NewUser {
+            email: Some("alice@example.org".into()),
+            password: Some(PASSWORD.into()),
+            ..Default::default()
+        })
+        .unwrap();
+
+    let reply = sign_in(&site, &idp, "sub-alice").await;
+    assert_eq!(
+        reply.location().as_deref(),
+        Some("/login?error=email_taken")
+    );
+    assert!(reply.cookie("easybook_session").is_none());
+    assert_eq!(site.accounts.count_users().unwrap(), 2);
 }

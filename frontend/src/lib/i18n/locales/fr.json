@@ -165,7 +165,6 @@
 	"nav.logout": "Se déconnecter",
 	"auth.title": "Connexion",
 	"auth.subtitle": "Connectez-vous pour accéder à votre bibliothèque.",
-	"auth.username": "Identifiant",
 	"auth.password": "Mot de passe",
 	"auth.submit": "Se connecter",
 	"auth.submitting": "Connexion…",
@@ -218,7 +217,6 @@
 	"users.title": "Comptes",
 	"users.subtitle": "Utilisateurs de la bibliothèque et liaison à un fournisseur OIDC.",
 	"users.new": "Nouveau compte",
-	"users.username": "Identifiant",
 	"users.displayName": "Nom affiché",
 	"users.email": "E-mail",
 	"users.passwordOptional": "Mot de passe (vide : connexion par OIDC seulement)",
@@ -254,5 +252,8 @@
 	"users.link.add": "Lier",
 	"users.link.added": "Compte lié",
 	"users.link.removed": "Compte délié",
-	"users.link.noOidc": "OIDC n’est pas configuré sur ce serveur."
+	"users.link.noOidc": "OIDC n’est pas configuré sur ce serveur.",
+	"auth.email": "Adresse e-mail",
+	"auth.error.email_taken": "Cette adresse e-mail est déjà utilisée par un autre compte.",
+	"auth.error.email_required": "Le fournisseur doit transmettre une adresse e-mail vérifiée pour créer un compte."
 }

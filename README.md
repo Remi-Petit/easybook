@@ -381,17 +381,18 @@ Variables d'environnement :
 | `PORT` | `8091` | port de l'API |
 | `PUBLIC_EASYBOOK_API` (frontend) | `http://<hôte>:8091` | adresse de l'API vue par le navigateur — `/` quand c'est le **même serveur** qui sert les deux (cas de l'image Docker) |
 | `EASYBOOK_DATA_DIR` | `<books>/.easybook` | dossier de la base des comptes (`accounts.db`) — **à monter en volume** (`/data` dans l'image) |
-| `EASYBOOK_ADMIN_USER`, `EASYBOOK_ADMIN_PASSWORD` | `admin`, aléatoire | administrateur créé au premier démarrage |
+| `EASYBOOK_ADMIN_EMAIL`, `EASYBOOK_ADMIN_PASSWORD` | `admin@easybook.local`, aléatoire | administrateur créé au premier démarrage |
 
 ## Comptes et connexion
 
 Toute l'application exige une connexion. Les comptes vivent dans une base
 **SQLite** (`accounts.db`, dans `EASYBOOK_DATA_DIR`) : identifiants en **UUID**,
+connexion par **adresse e-mail** (unique) et mot de passe — jamais par nom —,
 mots de passe en Argon2id, sessions par cookie `HttpOnly` / `SameSite=Lax` (dont
 seule l'empreinte est stockée).
 
 **Premier démarrage** : sans aucun compte, un administrateur est créé
-(`EASYBOOK_ADMIN_USER`, `admin` par défaut). Sans `EASYBOOK_ADMIN_PASSWORD`, son
+(`EASYBOOK_ADMIN_EMAIL`, `admin@easybook.local` par défaut). Sans `EASYBOOK_ADMIN_PASSWORD`, son
 mot de passe est tiré au hasard et affiché **une seule fois** dans les journaux
 (`docker logs easybook`).
 
@@ -449,7 +450,7 @@ tests** (realm `easybook`, utilisateurs `alice`, `bob`, `carol` — mot de passe
 nom ; console sur <http://localhost:8180>, `admin` / `admin`) :
 
 ```bash
-docker compose up -d --build     # http://localhost:5200 — admin / admin-dev-1234
+docker compose up -d --build     # http://localhost:5200 — admin@easybook.local / admin-dev-1234
 cd backend && cargo test --test keycloak -- --ignored   # contre le vrai Keycloak
 ```
 

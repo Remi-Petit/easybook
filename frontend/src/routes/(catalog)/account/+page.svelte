@@ -65,7 +65,7 @@
 		<h1>{t('account.title')}</h1>
 		{#if user}
 			<p>
-				{displayName(user)} · <code>{user.username}</code> · {t(`account.role.${user.role}`)}
+				{displayName(user)} · <code>{user.email}</code> · {t(`account.role.${user.role}`)}
 			</p>
 		{/if}
 	</section>
@@ -79,7 +79,7 @@
 				{/if}
 				<form class="stack-form" onsubmit={changePassword}>
 					<!-- Champ caché : les gestionnaires de mots de passe retrouvent l'identifiant. -->
-					<input type="text" name="username" value={user.username} autocomplete="username" hidden />
+					<input type="text" name="email" value={user.email ?? ''} autocomplete="username" hidden />
 					{#if user.has_password}
 						<label class="field">
 							<span>{t('account.password.current')}</span>

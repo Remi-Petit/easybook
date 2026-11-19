@@ -74,6 +74,7 @@ pub fn site_with(settings: config::Auth) -> Site {
     accounts
         .create_user(NewUser {
             username: "root".into(),
+            email: Some("root@local.test".into()),
             password: Some(PASSWORD.into()),
             role: Some(Role::Admin),
             ..NewUser::default()
@@ -135,11 +136,13 @@ impl Site {
         self.request("POST", uri, cookie, Some(body), &[]).await
     }
 
-    pub async fn login_reply(&self, username: &str, password: &str) -> Reply {
+    /// Connexion. `who` est une adresse, ou un nom de compte de test (`alice` →
+    /// `alice@local.test`).
+    pub async fn login_reply(&self, who: &str, password: &str) -> Reply {
         self.post(
             "/api/auth/login",
             None,
-            serde_json::json!({ "username": username, "password": password }),
+            serde_json::json!({ "email": email_of(who), "password": password }),
         )
         .await
     }
@@ -160,6 +163,7 @@ impl Site {
         self.accounts
             .create_user(NewUser {
                 username: name.into(),
+                email: Some(email_of(name)),
                 password: password.map(str::to_string),
                 role: Some(role),
                 ..NewUser::default()
@@ -171,5 +175,14 @@ impl Site {
     pub fn session_for(&self, user: &User) -> String {
         let token = self.accounts.create_session(&user.id, 3600).unwrap();
         format!("easybook_session={token}")
+    }
+}
+
+/// Adresse d'un compte de test : `alice` → `alice@local.test`.
+pub fn email_of(who: &str) -> String {
+    if who.contains('@') {
+        who.to_string()
+    } else {
+        format!("{who}@local.test")
     }
 }

@@ -168,6 +168,8 @@ export const ERROR_CODES = [
 	'invalid_username',
 	'invalid_email',
 	'username_taken',
+	'email_taken',
+	'email_required',
 	'identity_taken',
 	'last_admin',
 	'last_credential',

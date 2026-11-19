@@ -234,6 +234,7 @@ fn account_error(e: AccountError) -> Response {
             StatusCode::BAD_REQUEST
         }
         AccountError::UsernameTaken
+        | AccountError::EmailTaken
         | AccountError::IdentityTaken
         | AccountError::LastAdmin
         | AccountError::LastCredential => StatusCode::CONFLICT,
@@ -414,7 +415,7 @@ async fn check() -> StatusCode {
 
 #[derive(Deserialize)]
 struct LoginBody {
-    username: String,
+    email: String,
     password: String,
 }
 
@@ -430,7 +431,7 @@ async fn login(
     let auth = auth_of(&state)?;
     let key = format!(
         "{}|{}",
-        body.username.trim().to_lowercase(),
+        body.email.trim().to_lowercase(),
         client_key(&headers)
     );
     if let Some(wait) = auth.throttle.blocked(&key) {
@@ -442,11 +443,11 @@ async fn login(
     }
 
     let ttl = auth.session_ttl;
-    let (username, password) = (body.username, body.password);
+    let (email, password) = (body.email, body.password);
     let outcome = db(
         &auth,
         move |accounts| -> Result<Option<(User, String)>, AccountError> {
-            let Some(user) = accounts.authenticate(&username, &password)? else {
+            let Some(user) = accounts.authenticate(&email, &password)? else {
                 return Ok(None);
             };
             let token = accounts.create_session(&user.id, ttl)?;
@@ -824,12 +825,19 @@ fn resolve(
             if settings.link_by_email
                 && claims.email_verified
                 && let Some(email) = &claims.email
-                && let Some(user) = accounts.user_by_unique_email(email).map_err(internal)?
+                && let Some(user) = accounts.user_by_email(email).map_err(internal)?
             {
                 link(&user.id)?;
                 return open(&user);
             }
             if settings.auto_create {
+                // Le compte créé porte l'adresse du fournisseur : elle doit être
+                // certifiée, sinon n'importe qui pourrait s'en prévaloir.
+                let email = claims
+                    .email
+                    .as_ref()
+                    .filter(|_| claims.email_verified)
+                    .ok_or("email_required")?;
                 let base = claims
                     .username
                     .as_deref()
@@ -840,11 +848,14 @@ fn resolve(
                     .create_user(NewUser {
                         username,
                         display_name: claims.name.clone(),
-                        email: claims.email.clone(),
+                        email: Some(email.clone()),
                         password: None,
                         role: Some(Role::User),
                     })
-                    .map_err(internal)?;
+                    .map_err(|e| match e {
+                        AccountError::EmailTaken => "email_taken",
+                        other => internal(other),
+                    })?;
                 link(&user.id)?;
                 return open(&user);
             }
@@ -871,13 +882,14 @@ async fn list_users(State(state): State<AppState>) -> Result<Response, Response>
 
 #[derive(Deserialize)]
 struct NewUserBody {
+    email: String,
+    /// Affichage seulement ; tiré de l'adresse s'il est vide.
+    #[serde(default)]
     username: String,
     #[serde(default)]
     password: Option<String>,
     #[serde(default)]
     display_name: Option<String>,
-    #[serde(default)]
-    email: Option<String>,
     #[serde(default)]
     role: Option<Role>,
 }
@@ -891,7 +903,7 @@ async fn create_user(
         let user = accounts.create_user(NewUser {
             username: body.username,
             display_name: body.display_name,
-            email: body.email,
+            email: Some(body.email),
             // Un mot de passe vide : compte réservé à OIDC.
             password: body.password.filter(|password| !password.is_empty()),
             role: body.role,
@@ -1155,7 +1167,7 @@ mod tests {
         accounts
             .create_user(NewUser {
                 username: name.into(),
-                email: email.map(str::to_string),
+                email: Some(email.map_or_else(|| format!("{name}@local.test"), str::to_string)),
                 password: Some("motdepasse1".into()),
                 ..NewUser::default()
             })
@@ -1319,16 +1331,44 @@ mod tests {
                 .user_id,
             alice.id
         );
+    }
 
-        // Deux comptes locaux de même adresse : ambigu, donc refusé.
-        local(&accounts, "alice2", Some("dup@example.org"));
-        local(&accounts, "alice3", Some("dup@example.org"));
-        let mut ambiguous = claims("s2");
-        ambiguous.email = Some("dup@example.org".into());
-        assert_eq!(
-            resolve(&accounts, &settings, &Intent::Login, None, &ambiguous, 60).err(),
-            Some("no_account")
+    #[test]
+    fn auto_create_needs_a_certified_email() {
+        let (accounts, mut settings) = setup();
+        settings.auto_create = true;
+
+        let mut unverified = claims("s1");
+        unverified.email_verified = false;
+        let mut missing = claims("s2");
+        missing.email = None;
+        for refused in [unverified, missing] {
+            assert_eq!(
+                resolve(&accounts, &settings, &Intent::Login, None, &refused, 60).err(),
+                Some("email_required")
+            );
+        }
+        assert_eq!(accounts.count_users().unwrap(), 0);
+    }
+
+    #[test]
+    fn auto_create_never_takes_over_an_existing_address() {
+        let (accounts, mut settings) = setup();
+        settings.auto_create = true;
+        let local_alice = local(&accounts, "alice-locale", Some("alice@example.org"));
+
+        let outcome = resolve(
+            &accounts,
+            &settings,
+            &Intent::Login,
+            None,
+            &claims("s1"),
+            60,
         );
+        assert_eq!(outcome.err(), Some("email_taken"));
+        // Sans `link_by_email`, le compte local n'est pas lié pour autant.
+        assert!(accounts.identities_of(&local_alice.id).unwrap().is_empty());
+        assert_eq!(accounts.count_users().unwrap(), 1);
     }
 
     #[test]

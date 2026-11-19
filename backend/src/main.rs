@@ -131,8 +131,8 @@ async fn run(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// La base vit dans `EASYBOOK_DATA_DIR` (à monter en volume : sans lui, les
 /// comptes disparaissent avec le conteneur), sinon dans `books/.easybook/`.
-/// Au premier démarrage, un administrateur est créé : `EASYBOOK_ADMIN_USER`
-/// (défaut `admin`) et `EASYBOOK_ADMIN_PASSWORD` — sans mot de passe imposé, il
+/// Au premier démarrage, un administrateur est créé : `EASYBOOK_ADMIN_EMAIL`
+/// (défaut `admin@easybook.local`) et `EASYBOOK_ADMIN_PASSWORD` — sans mot de passe imposé, il
 /// est tiré au hasard et affiché **une seule fois** ici.
 fn enable_accounts(
     state: api::AppState,
@@ -153,17 +153,21 @@ fn enable_accounts(
     println!("Comptes   : {}", path.display());
 
     let nonblank = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
-    let username = nonblank("EASYBOOK_ADMIN_USER").unwrap_or_else(|| "admin".to_string());
-    if let Some(boot) = accounts.bootstrap_admin(&username, nonblank("EASYBOOK_ADMIN_PASSWORD"))? {
+    let email =
+        nonblank("EASYBOOK_ADMIN_EMAIL").unwrap_or_else(|| "admin@easybook.local".to_string());
+    if let Some(boot) = accounts.bootstrap_admin(&email, nonblank("EASYBOOK_ADMIN_PASSWORD"))? {
         match boot.generated_password {
             Some(password) => {
                 println!(
-                    "Administrateur créé : « {} », mot de passe : {password}",
-                    boot.user.username
+                    "Administrateur créé : {}, mot de passe : {password}",
+                    boot.user.email.as_deref().unwrap_or_default()
                 );
                 println!("  (affiché une seule fois : changez-le dès la première connexion)");
             }
-            None => println!("Administrateur créé : « {} »", boot.user.username),
+            None => println!(
+                "Administrateur créé : {}",
+                boot.user.email.as_deref().unwrap_or_default()
+            ),
         }
     }
     if settings.oidc.is_enabled() {

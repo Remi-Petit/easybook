@@ -165,7 +165,6 @@
 	"nav.logout": "Sign out",
 	"auth.title": "Sign in",
 	"auth.subtitle": "Sign in to access your library.",
-	"auth.username": "Username",
 	"auth.password": "Password",
 	"auth.submit": "Sign in",
 	"auth.submitting": "Signing in…",
@@ -218,7 +217,6 @@
 	"users.title": "Accounts",
 	"users.subtitle": "Library users and their link to an OIDC provider.",
 	"users.new": "New account",
-	"users.username": "Username",
 	"users.displayName": "Display name",
 	"users.email": "E-mail",
 	"users.passwordOptional": "Password (empty: OIDC sign-in only)",
@@ -254,5 +252,8 @@
 	"users.link.add": "Link",
 	"users.link.added": "Account linked",
 	"users.link.removed": "Account unlinked",
-	"users.link.noOidc": "OIDC is not configured on this server."
+	"users.link.noOidc": "OIDC is not configured on this server.",
+	"auth.email": "E-mail address",
+	"auth.error.email_taken": "This e-mail address is already used by another account.",
+	"auth.error.email_required": "The provider must supply a verified e-mail address to create an account."
 }

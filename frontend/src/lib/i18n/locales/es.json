@@ -165,7 +165,6 @@
 	"nav.logout": "Cerrar sesión",
 	"auth.title": "Iniciar sesión",
 	"auth.subtitle": "Inicie sesión para acceder a su biblioteca.",
-	"auth.username": "Usuario",
 	"auth.password": "Contraseña",
 	"auth.submit": "Entrar",
 	"auth.submitting": "Entrando…",
@@ -218,7 +217,6 @@
 	"users.title": "Cuentas",
 	"users.subtitle": "Usuarios de la biblioteca y su vinculación con un proveedor OIDC.",
 	"users.new": "Nueva cuenta",
-	"users.username": "Usuario",
 	"users.displayName": "Nombre visible",
 	"users.email": "Correo",
 	"users.passwordOptional": "Contraseña (vacía: solo inicio de sesión OIDC)",
@@ -254,5 +252,8 @@
 	"users.link.add": "Vincular",
 	"users.link.added": "Cuenta vinculada",
 	"users.link.removed": "Cuenta desvinculada",
-	"users.link.noOidc": "OIDC no está configurado en este servidor."
+	"users.link.noOidc": "OIDC no está configurado en este servidor.",
+	"auth.email": "Dirección de correo",
+	"auth.error.email_taken": "Esta dirección de correo ya la usa otra cuenta.",
+	"auth.error.email_required": "El proveedor debe facilitar una dirección de correo verificada para crear una cuenta."
 }

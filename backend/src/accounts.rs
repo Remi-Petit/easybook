@@ -25,7 +25,7 @@ pub const MIN_PASSWORD: usize = 8;
 pub const MAX_PASSWORD: usize = 256;
 
 /// Version du schéma (`PRAGMA user_version`).
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA: &str = "
 CREATE TABLE users (
@@ -39,7 +39,7 @@ CREATE TABLE users (
     created_at    INTEGER NOT NULL,
     last_login_at INTEGER
 );
-CREATE INDEX users_email ON users (email);
+CREATE UNIQUE INDEX users_email ON users (email);
 
 CREATE TABLE identities (
     id         TEXT PRIMARY KEY,
@@ -141,6 +141,7 @@ pub enum AccountError {
     InvalidEmail,
     WeakPassword,
     UsernameTaken,
+    EmailTaken,
     IdentityTaken,
     NotFound,
     /// Le dernier administrateur actif ne peut être ni retiré, ni rétrogradé.
@@ -157,6 +158,7 @@ impl AccountError {
             Self::InvalidEmail => "invalid_email",
             Self::WeakPassword => "weak_password",
             Self::UsernameTaken => "username_taken",
+            Self::EmailTaken => "email_taken",
             Self::IdentityTaken => "identity_taken",
             Self::NotFound => "not_found",
             Self::LastAdmin => "last_admin",
@@ -258,6 +260,22 @@ fn clean_email(raw: &str) -> Result<Option<String>> {
     Ok(Some(email.to_string()))
 }
 
+/// Adresse obligatoire (la connexion se fait par e-mail).
+fn require_email(raw: &str) -> Result<String> {
+    clean_email(raw)?.ok_or(AccountError::InvalidEmail)
+}
+
+fn constraint_error(e: rusqlite::Error) -> AccountError {
+    if !is_unique_violation(&e) {
+        return e.into();
+    }
+    if e.to_string().contains("users.email") {
+        AccountError::EmailTaken
+    } else {
+        AccountError::UsernameTaken
+    }
+}
+
 fn clean_text(raw: &str) -> Option<String> {
     let text = raw.trim();
     (!text.is_empty()).then(|| text.chars().take(128).collect())
@@ -350,11 +368,22 @@ impl Accounts {
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
-        let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        let mut version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
         if version == 0 {
             conn.execute_batch(SCHEMA)?;
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        } else if version != SCHEMA_VERSION {
+            version = SCHEMA_VERSION;
+        } else if version == 1 {
+            // v2 : la connexion se fait par e-mail, unique et obligatoire.
+            conn.execute_batch(
+                "UPDATE users SET email = lower(username) || '@easybook.local' WHERE email IS NULL;
+                 DROP INDEX IF EXISTS users_email;
+                 CREATE UNIQUE INDEX users_email ON users (email);",
+            )?;
+            conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+            version = SCHEMA_VERSION;
+        }
+        if version != SCHEMA_VERSION {
             return Err(AccountError::Internal(format!(
                 "schéma des comptes en version {version}, {SCHEMA_VERSION} attendue"
             )));
@@ -371,10 +400,12 @@ impl Accounts {
     // ── Utilisateurs ─────────────────────────────────────────────────────
 
     pub fn create_user(&self, new: NewUser) -> Result<User> {
-        let username = clean_username(&new.username)?;
-        let email = match &new.email {
-            Some(email) => clean_email(email)?,
-            None => None,
+        let email = require_email(new.email.as_deref().unwrap_or_default())?;
+        // Sans identifiant, il est tiré de l'adresse : il ne sert qu'à l'affichage.
+        let username = if new.username.trim().is_empty() {
+            self.available_username(email.split('@').next().unwrap_or_default())?
+        } else {
+            clean_username(&new.username)?
         };
         let hash = match &new.password {
             Some(password) => {
@@ -401,13 +432,7 @@ impl Accounts {
                 now()
             ],
         )
-        .map_err(|e| {
-            if is_unique_violation(&e) {
-                AccountError::UsernameTaken
-            } else {
-                e.into()
-            }
-        })?;
+        .map_err(constraint_error)?;
         fetch_user(&conn, &id)?.ok_or(AccountError::NotFound)
     }
 
@@ -426,17 +451,16 @@ impl Accounts {
             .optional()?)
     }
 
-    /// Le compte de cette adresse, **s'il n'y en a qu'un** : deux comptes de même
-    /// adresse rendraient la liaison par e-mail ambiguë.
-    pub fn user_by_unique_email(&self, email: &str) -> Result<Option<User>> {
-        let conn = self.conn();
-        let mut statement = conn.prepare(&format!(
-            "SELECT {USER_COLUMNS} FROM users WHERE email = ?1 LIMIT 2"
-        ))?;
-        let mut found = statement
-            .query_map([email.trim()], user_from)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(if found.len() == 1 { found.pop() } else { None })
+    /// Le compte de cette adresse (unique, sans tenir compte de la casse).
+    pub fn user_by_email(&self, email: &str) -> Result<Option<User>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {USER_COLUMNS} FROM users WHERE email = ?1"),
+                [email.trim()],
+                user_from,
+            )
+            .optional()?)
     }
 
     pub fn list_users(&self) -> Result<Vec<User>> {
@@ -457,7 +481,7 @@ impl Accounts {
 
     pub fn update_user(&self, id: &str, patch: &UserPatch) -> Result<User> {
         let email = match &patch.email {
-            Some(email) => Some(clean_email(email)?),
+            Some(email) => Some(require_email(email)?),
             None => None,
         };
         let conn = self.conn();
@@ -475,11 +499,12 @@ impl Accounts {
             Some(name) => clean_text(name),
             None => current.display_name.clone(),
         };
-        let email = email.unwrap_or(current.email.clone());
+        let email = email.or(current.email.clone());
         conn.execute(
             "UPDATE users SET display_name = ?2, email = ?3, role = ?4, disabled = ?5 WHERE id = ?1",
             params![id, display_name, email, role.as_str(), disabled],
-        )?;
+        )
+        .map_err(constraint_error)?;
         if disabled {
             conn.execute("DELETE FROM sessions WHERE user_id = ?1", [id])?;
         }
@@ -514,14 +539,14 @@ impl Accounts {
         Ok(())
     }
 
-    /// Vérifie un identifiant et un mot de passe. Un compte inactif, sans mot de
-    /// passe ou inconnu rend `None`, après le même travail de hachage.
-    pub fn authenticate(&self, username: &str, password: &str) -> Result<Option<User>> {
+    /// Vérifie une adresse e-mail et un mot de passe. Un compte inactif, sans mot
+    /// de passe ou inconnu rend `None`, après le même travail de hachage.
+    pub fn authenticate(&self, email: &str, password: &str) -> Result<Option<User>> {
         let row: Option<(User, Option<String>)> = {
             let conn = self.conn();
             conn.query_row(
-                &format!("SELECT {USER_COLUMNS}, password_hash FROM users WHERE username = ?1"),
-                [username.trim()],
+                &format!("SELECT {USER_COLUMNS}, password_hash FROM users WHERE email = ?1"),
+                [email.trim()],
                 |row| Ok((user_from(row)?, row.get(9)?)),
             )
             .optional()?
@@ -598,7 +623,7 @@ impl Accounts {
     /// et rendu à l'appelant, qui l'affiche une seule fois.
     pub fn bootstrap_admin(
         &self,
-        username: &str,
+        email: &str,
         password: Option<String>,
     ) -> Result<Option<Bootstrap>> {
         if self.count_users()? > 0 {
@@ -606,7 +631,7 @@ impl Accounts {
         }
         let generated = password.is_none().then(|| random_token(15));
         let user = self.create_user(NewUser {
-            username: username.to_string(),
+            email: Some(email.to_string()),
             password: password.or_else(|| generated.clone()),
             role: Some(Role::Admin),
             ..NewUser::default()
@@ -809,6 +834,7 @@ mod tests {
         store
             .create_user(NewUser {
                 username: name.into(),
+                email: Some(format!("{name}@local.test")),
                 password: Some("motdepasse1".into()),
                 role: Some(role),
                 ..NewUser::default()
@@ -831,14 +857,19 @@ mod tests {
         assert!(!stored.contains("motdepasse1"));
     }
 
+    fn with_email(username: &str, email: &str) -> NewUser {
+        NewUser {
+            username: username.into(),
+            email: Some(email.into()),
+            ..NewUser::default()
+        }
+    }
+
     #[test]
     fn usernames_are_unique_regardless_of_case() {
         let store = store();
         user(&store, "Alice", Role::User);
-        let again = store.create_user(NewUser {
-            username: "alice".into(),
-            ..NewUser::default()
-        });
+        let again = store.create_user(with_email("alice", "autre@local.test"));
         assert_eq!(again.unwrap_err(), AccountError::UsernameTaken);
         assert_eq!(
             store.user_by_username("ALICE").unwrap().unwrap().username,
@@ -847,39 +878,110 @@ mod tests {
     }
 
     #[test]
+    fn emails_are_unique_regardless_of_case() {
+        let store = store();
+        let alice = user(&store, "alice", Role::User);
+        let again = store.create_user(with_email("autre", "ALICE@local.TEST"));
+        assert_eq!(again.unwrap_err(), AccountError::EmailTaken);
+        assert_eq!(
+            store
+                .user_by_email(" Alice@LOCAL.test ")
+                .unwrap()
+                .unwrap()
+                .id,
+            alice.id
+        );
+        assert!(store.user_by_email("zed@local.test").unwrap().is_none());
+
+        // Changer l'adresse d'un compte vers celle d'un autre : refusé.
+        let bob = user(&store, "bob", Role::User);
+        let taken = UserPatch {
+            email: Some("alice@local.test".into()),
+            ..UserPatch::default()
+        };
+        assert_eq!(
+            store.update_user(&bob.id, &taken).unwrap_err(),
+            AccountError::EmailTaken
+        );
+    }
+
+    #[test]
+    fn the_email_is_required_and_the_username_derived_from_it() {
+        let store = store();
+        let missing = store.create_user(NewUser {
+            username: "bob".into(),
+            ..NewUser::default()
+        });
+        assert_eq!(missing.unwrap_err(), AccountError::InvalidEmail);
+
+        let derived = store
+            .create_user(NewUser {
+                email: Some("Marie.Curie@example.org".into()),
+                ..NewUser::default()
+            })
+            .unwrap();
+        assert_eq!(derived.username, "Marie.Curie");
+        let twin = store
+            .create_user(NewUser {
+                email: Some("marie.curie@example.net".into()),
+                ..NewUser::default()
+            })
+            .unwrap();
+        assert_eq!(twin.username, "marie.curie-2");
+
+        // L'adresse d'un compte ne peut pas être effacée.
+        let clear = UserPatch {
+            email: Some(String::new()),
+            ..UserPatch::default()
+        };
+        assert_eq!(
+            store.update_user(&derived.id, &clear).unwrap_err(),
+            AccountError::InvalidEmail
+        );
+    }
+
+    #[test]
+    fn only_the_email_logs_in_never_the_username() {
+        let store = store();
+        user(&store, "alice", Role::User);
+        assert!(
+            store
+                .authenticate("alice@local.test", "motdepasse1")
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            store
+                .authenticate("alice", "motdepasse1")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn input_is_validated() {
         let store = store();
         let bad = |new: NewUser| store.create_user(new).unwrap_err();
+        let named = |username: &str| NewUser {
+            username: username.into(),
+            email: Some("bob@local.test".into()),
+            ..NewUser::default()
+        };
+        assert_eq!(bad(named("a\nb")), AccountError::InvalidUsername);
         assert_eq!(
             bad(NewUser {
-                username: "  ".into(),
-                ..NewUser::default()
-            }),
-            AccountError::InvalidUsername
-        );
-        assert_eq!(
-            bad(NewUser {
-                username: "a\nb".into(),
-                ..NewUser::default()
-            }),
-            AccountError::InvalidUsername
-        );
-        assert_eq!(
-            bad(NewUser {
-                username: "bob".into(),
                 password: Some("court".into()),
-                ..NewUser::default()
+                ..named("bob")
             }),
             AccountError::WeakPassword
         );
-        assert_eq!(
-            bad(NewUser {
-                username: "bob".into(),
-                email: Some("pas-une-adresse".into()),
-                ..NewUser::default()
-            }),
-            AccountError::InvalidEmail
-        );
+        for email in ["pas-une-adresse", "a b@c.d", ""] {
+            assert_eq!(
+                bad(with_email("bob", email)),
+                AccountError::InvalidEmail,
+                "{email:?}"
+            );
+        }
     }
 
     #[test]
@@ -888,20 +990,25 @@ mod tests {
         let alice = user(&store, "alice", Role::User);
         assert!(
             store
-                .authenticate("alice", "motdepasse1")
+                .authenticate("alice@local.test", "motdepasse1")
                 .unwrap()
                 .is_some()
         );
         assert!(
             store
-                .authenticate(" ALICE ", "motdepasse1")
+                .authenticate(" ALICE@LOCAL.TEST ", "motdepasse1")
                 .unwrap()
                 .is_some()
         );
-        assert!(store.authenticate("alice", "mauvais").unwrap().is_none());
         assert!(
             store
-                .authenticate("inconnu", "motdepasse1")
+                .authenticate("alice@local.test", "mauvais")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .authenticate("inconnu@local.test", "motdepasse1")
                 .unwrap()
                 .is_none()
         );
@@ -917,7 +1024,7 @@ mod tests {
             .unwrap();
         assert!(
             store
-                .authenticate("alice", "motdepasse1")
+                .authenticate("alice@local.test", "motdepasse1")
                 .unwrap()
                 .is_none()
         );
@@ -927,16 +1034,18 @@ mod tests {
     fn an_oidc_only_account_cannot_use_a_password() {
         let store = store();
         let carol = store
-            .create_user(NewUser {
-                username: "carol".into(),
-                ..NewUser::default()
-            })
+            .create_user(with_email("carol", "carol@local.test"))
             .unwrap();
         assert!(!carol.has_password);
-        assert!(store.authenticate("carol", "").unwrap().is_none());
         assert!(
             store
-                .authenticate("carol", "motdepasse1")
+                .authenticate("carol@local.test", "")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .authenticate("carol@local.test", "motdepasse1")
                 .unwrap()
                 .is_none()
         );
@@ -974,13 +1083,13 @@ mod tests {
         assert!(store.session_user(&first).unwrap().is_none());
         assert!(
             store
-                .authenticate("alice", "nouveaumdp1")
+                .authenticate("alice@local.test", "nouveaumdp1")
                 .unwrap()
                 .is_some()
         );
         assert!(
             store
-                .authenticate("alice", "motdepasse1")
+                .authenticate("alice@local.test", "motdepasse1")
                 .unwrap()
                 .is_none()
         );
@@ -1051,17 +1160,18 @@ mod tests {
         assert_eq!(updated.email.as_deref(), Some("alice@example.org"));
         assert_eq!(updated.role, Role::User);
 
-        let cleared = store
+        // Seul ce qui est donné change.
+        let renamed = store
             .update_user(
                 &alice.id,
                 &UserPatch {
-                    email: Some(String::new()),
+                    display_name: Some(String::new()),
                     ..UserPatch::default()
                 },
             )
             .unwrap();
-        assert_eq!(cleared.email, None);
-        assert_eq!(cleared.display_name.as_deref(), Some("Alice L."));
+        assert_eq!(renamed.display_name, None);
+        assert_eq!(renamed.email.as_deref(), Some("alice@example.org"));
         assert_eq!(
             store
                 .update_user("inconnu", &UserPatch::default())
@@ -1076,10 +1186,7 @@ mod tests {
         let alice = user(&store, "alice", Role::User);
         let bob = user(&store, "bob", Role::User);
         let carol = store
-            .create_user(NewUser {
-                username: "carol".into(),
-                ..NewUser::default()
-            })
+            .create_user(with_email("carol", "carol@local.test"))
             .unwrap();
 
         let identity = store
@@ -1173,43 +1280,6 @@ mod tests {
     }
 
     #[test]
-    fn unique_email_lookup_refuses_ambiguity() {
-        let store = store();
-        let with_email = |name: &str, email: &str| {
-            store
-                .create_user(NewUser {
-                    username: name.into(),
-                    email: Some(email.into()),
-                    ..NewUser::default()
-                })
-                .unwrap()
-        };
-        let alice = with_email("alice", "Alice@Example.org");
-        with_email("bob", "bob@example.org");
-        assert_eq!(
-            store
-                .user_by_unique_email("alice@example.ORG")
-                .unwrap()
-                .unwrap()
-                .id,
-            alice.id
-        );
-        with_email("alice2", "alice@example.org");
-        assert!(
-            store
-                .user_by_unique_email("alice@example.org")
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            store
-                .user_by_unique_email("zed@example.org")
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[test]
     fn available_username_avoids_collisions() {
         let store = store();
         assert_eq!(store.available_username("alice").unwrap(), "alice");
@@ -1223,21 +1293,34 @@ mod tests {
     #[test]
     fn bootstrap_creates_an_admin_only_on_an_empty_base() {
         let store = store();
-        let first = store.bootstrap_admin("admin", None).unwrap().unwrap();
+        let first = store
+            .bootstrap_admin("admin@x.test", None)
+            .unwrap()
+            .unwrap();
         assert_eq!(first.user.role, Role::Admin);
         let password = first.generated_password.unwrap();
-        assert!(store.authenticate("admin", &password).unwrap().is_some());
-        assert!(store.bootstrap_admin("autre", None).unwrap().is_none());
+        assert!(
+            store
+                .authenticate("admin@x.test", &password)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            store
+                .bootstrap_admin("autre@x.test", None)
+                .unwrap()
+                .is_none()
+        );
 
         let imposed = Accounts::open_in_memory().unwrap();
         let boot = imposed
-            .bootstrap_admin("root", Some("imposé-123".into()))
+            .bootstrap_admin("root@x.test", Some("imposé-123".into()))
             .unwrap()
             .unwrap();
         assert!(boot.generated_password.is_none());
         assert!(
             imposed
-                .authenticate("root", "imposé-123")
+                .authenticate("root@x.test", "imposé-123")
                 .unwrap()
                 .is_some()
         );
@@ -1254,6 +1337,42 @@ mod tests {
         let store = Accounts::open(&path).unwrap();
         assert_eq!(store.user(&id).unwrap().unwrap().username, "alice");
         assert_eq!(store.count_users().unwrap(), 1);
+    }
+
+    #[test]
+    fn a_v1_base_is_migrated_to_email_login() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(SCHEMA).unwrap();
+            conn.execute_batch(
+                "DROP INDEX users_email;
+                 CREATE INDEX users_email ON users (email);
+                 INSERT INTO users (id, username, role, created_at) VALUES ('u1', 'Admin', 'admin', 0);
+                 INSERT INTO users (id, username, email, role, created_at)
+                     VALUES ('u2', 'bob', 'bob@x.test', 'user', 0);",
+            )
+            .unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+        }
+        let store = Accounts::open(&path).unwrap();
+        // Un compte sans adresse en reçoit une, déduite de son nom.
+        assert_eq!(
+            store.user("u1").unwrap().unwrap().email.as_deref(),
+            Some("admin@easybook.local")
+        );
+        assert_eq!(
+            store.user("u2").unwrap().unwrap().email.as_deref(),
+            Some("bob@x.test")
+        );
+        // L'unicité est désormais imposée.
+        assert_eq!(
+            store
+                .create_user(with_email("x", "BOB@x.test"))
+                .unwrap_err(),
+            AccountError::EmailTaken
+        );
     }
 
     #[test]

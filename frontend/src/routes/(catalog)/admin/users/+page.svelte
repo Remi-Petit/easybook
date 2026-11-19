@@ -16,7 +16,7 @@
 	const selected = $derived(users.find((user) => user.id === selectedId) ?? null);
 
 	// Nouveau compte.
-	let draft = $state({ username: '', display_name: '', email: '', password: '', role: 'user' as Role });
+	let draft = $state({ display_name: '', email: '', password: '', role: 'user' as Role });
 	// Panneau du compte choisi.
 	let resetPassword = $state('');
 	let subject = $state('');
@@ -46,7 +46,6 @@
 	async function create(event: SubmitEvent) {
 		event.preventDefault();
 		const result = await call<User>('POST', '/api/admin/users', {
-			username: draft.username,
 			display_name: draft.display_name,
 			email: draft.email,
 			password: draft.password,
@@ -54,7 +53,7 @@
 		});
 		if (!result.ok) return fail(result.code);
 		notify(t('users.created', { name: displayName(result.data) }), { tone: 'ok' });
-		draft = { username: '', display_name: '', email: '', password: '', role: 'user' };
+		draft = { display_name: '', email: '', password: '', role: 'user' };
 		await load();
 		selectedId = result.data.id;
 	}
@@ -136,16 +135,12 @@
 			<summary>{t('users.new')}</summary>
 			<form class="stack-form" onsubmit={create}>
 				<label class="field">
-					<span>{t('users.username')}</span>
-					<input name="username" autocomplete="off" required bind:value={draft.username} />
+					<span>{t('users.email')}</span>
+					<input name="email" type="email" autocomplete="off" required bind:value={draft.email} />
 				</label>
 				<label class="field">
 					<span>{t('users.displayName')}</span>
 					<input name="display_name" autocomplete="off" bind:value={draft.display_name} />
-				</label>
-				<label class="field">
-					<span>{t('users.email')}</span>
-					<input name="email" type="email" autocomplete="off" bind:value={draft.email} />
 				</label>
 				<label class="field">
 					<span>{t('users.passwordOptional')}</span>
@@ -189,8 +184,7 @@
 								<td>
 									<strong>{displayName(user)}</strong>
 									{#if user.id === me}<span class="badge">{t('users.you')}</span>{/if}
-									<br /><code>{user.username}</code>
-									{#if user.email}<span class="muted"> · {user.email}</span>{/if}
+									<br /><code>{user.email}</code>
 								</td>
 								<td>{t(`account.role.${user.role}`)}</td>
 								<td>{user.disabled ? t('users.status.disabled') : t('users.status.active')}</td>

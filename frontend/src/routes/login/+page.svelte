@@ -9,7 +9,7 @@
 	// Un échec de connexion OIDC revient ici avec `?error=<code>`.
 	const returned = $derived(page.url.searchParams.get('error'));
 
-	let username = $state('');
+	let email = $state('');
 	let password = $state('');
 	let busy = $state(false);
 	let failure = $state<string | null>(null);
@@ -24,7 +24,7 @@
 		if (busy) return;
 		busy = true;
 		failure = null;
-		const result = await call('POST', '/api/auth/login', { username, password });
+		const result = await call('POST', '/api/auth/login', { email, password });
 		if (result.ok) {
 			// Rechargement complet : le serveur relit la session et le temps réel démarre.
 			location.assign(next);
@@ -51,14 +51,15 @@
 		{/if}
 
 		<label class="field">
-			<span>{t('auth.username')}</span>
+			<span>{t('auth.email')}</span>
 			<input
-				name="username"
+				name="email"
+				type="email"
 				autocomplete="username"
 				autocapitalize="none"
 				spellcheck="false"
 				required
-				bind:value={username}
+				bind:value={email}
 			/>
 		</label>
 		<label class="field">

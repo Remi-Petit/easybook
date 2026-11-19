@@ -115,7 +115,7 @@ async fn the_cookie_is_secure_behind_https() {
             "POST",
             "/api/auth/login",
             None,
-            Some(json!({ "username": "root", "password": PASSWORD })),
+            Some(json!({ "email": "root@local.test", "password": PASSWORD })),
             &[("x-forwarded-proto", "https")],
         )
         .await;
@@ -182,7 +182,7 @@ async fn repeated_failures_lock_the_login_for_a_while() {
                 "POST",
                 "/api/auth/login",
                 None,
-                Some(json!({ "username": "root", "password": password })),
+                Some(json!({ "email": "root@local.test", "password": password })),
                 &[("x-forwarded-for", client)],
             )
             .await
@@ -366,23 +366,45 @@ async fn an_admin_manages_accounts() {
 
     // Doublon (casse comprise), mot de passe trop court, nom vide.
     let post = |body: Value| site.post("/api/admin/users", Some(&admin), body);
+    let code = |reply: &common::http::Reply| (reply.status, reply.error());
     assert_eq!(
-        post(json!({ "username": "ALICE" })).await.status,
-        StatusCode::CONFLICT
-    );
-    let weak = post(json!({ "username": "bob", "password": "court" })).await;
-    assert_eq!(
-        (weak.status, weak.error().as_deref()),
-        (StatusCode::BAD_REQUEST, Some("weak_password"))
+        code(&post(json!({ "username": "ALICE", "email": "autre@example.org" })).await),
+        (StatusCode::CONFLICT, Some("username_taken".into()))
     );
     assert_eq!(
-        post(json!({ "username": " " })).await.status,
-        StatusCode::BAD_REQUEST
+        code(&post(json!({ "email": "ALICE@example.org" })).await),
+        (StatusCode::CONFLICT, Some("email_taken".into()))
+    );
+    assert_eq!(
+        code(&post(json!({ "email": "bob@example.org", "password": "court" })).await),
+        (StatusCode::BAD_REQUEST, Some("weak_password".into()))
+    );
+    assert_eq!(
+        code(&post(json!({ "email": "pas-une-adresse" })).await),
+        (StatusCode::BAD_REQUEST, Some("invalid_email".into()))
+    );
+    assert_eq!(
+        code(&post(json!({ "username": "a\nb", "email": "b@example.org" })).await),
+        (StatusCode::BAD_REQUEST, Some("invalid_username".into()))
+    );
+    // L'adresse est obligatoire.
+    assert!(
+        !post(json!({ "username": "sans-adresse" }))
+            .await
+            .status
+            .is_success()
     );
 
-    // Le nouveau compte se connecte.
+    // Sans identifiant, il est tiré de l'adresse.
+    let derived = post(json!({ "email": "marie.curie@example.org" })).await;
+    assert_eq!(derived.status, StatusCode::CREATED);
+    assert_eq!(derived.json()["username"], "marie.curie");
+
+    // Le nouveau compte se connecte par son adresse.
     assert_eq!(
-        site.login_reply("alice", "un-bon-mdp-1").await.status,
+        site.login_reply("alice@example.org", "un-bon-mdp-1")
+            .await
+            .status,
         StatusCode::OK
     );
 
@@ -393,7 +415,7 @@ async fn an_admin_manages_accounts() {
         .iter()
         .map(|u| u["username"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["alice", "root"]);
+    assert_eq!(names, ["alice", "marie.curie", "root"]);
 
     let patched = site
         .request(
@@ -419,7 +441,9 @@ async fn an_admin_manages_accounts() {
         .await;
     assert_eq!(deleted.status, StatusCode::NO_CONTENT);
     assert_eq!(
-        site.login_reply("alice", "un-bon-mdp-1").await.status,
+        site.login_reply("alice@example.org", "un-bon-mdp-1")
+            .await
+            .status,
         StatusCode::UNAUTHORIZED
     );
     let gone = site
@@ -702,4 +726,87 @@ async fn sessions_last_as_long_as_configured() {
     let reply = site.login_reply("root", PASSWORD).await;
     let line = reply.set_cookie_line("easybook_session").unwrap();
     assert!(line.contains(&format!("Max-Age={}", 2 * 86_400)), "{line}");
+}
+
+#[tokio::test]
+async fn only_the_email_logs_in_never_the_name() {
+    let site = site();
+    // Le nom ne passe nulle part : ni dans le champ `email`, ni comme ancien champ `username`.
+    let by_name_in_email = site
+        .post(
+            "/api/auth/login",
+            None,
+            json!({ "email": "root", "password": PASSWORD }),
+        )
+        .await;
+    assert_eq!(by_name_in_email.status, StatusCode::UNAUTHORIZED);
+    let by_username = site
+        .post(
+            "/api/auth/login",
+            None,
+            json!({ "username": "root", "password": PASSWORD }),
+        )
+        .await;
+    assert!(!by_username.status.is_success());
+    assert!(by_username.cookie("easybook_session").is_none());
+
+    // L'adresse, elle, passe — quelle que soit la casse.
+    let reply = site.login_reply("Root@Local.TEST", PASSWORD).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.json()["email"], "root@local.test");
+}
+
+#[tokio::test]
+async fn an_admin_cannot_give_an_account_an_existing_address() {
+    let site = site();
+    let admin = site.admin().await;
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    let uri = format!("/api/admin/users/{}", alice.id);
+
+    let taken = site
+        .request(
+            "PATCH",
+            &uri,
+            Some(&admin),
+            Some(json!({ "email": "ROOT@local.test" })),
+            &[],
+        )
+        .await;
+    assert_eq!(
+        (taken.status, taken.error().as_deref()),
+        (StatusCode::CONFLICT, Some("email_taken"))
+    );
+    let blank = site
+        .request(
+            "PATCH",
+            &uri,
+            Some(&admin),
+            Some(json!({ "email": "" })),
+            &[],
+        )
+        .await;
+    assert_eq!(
+        (blank.status, blank.error().as_deref()),
+        (StatusCode::BAD_REQUEST, Some("invalid_email"))
+    );
+
+    // Changer d'adresse change l'identifiant de connexion.
+    let moved = site
+        .request(
+            "PATCH",
+            &uri,
+            Some(&admin),
+            Some(json!({ "email": "alice@example.org" })),
+            &[],
+        )
+        .await;
+    assert_eq!(moved.status, StatusCode::OK);
+    assert_eq!(
+        site.login_reply("alice@local.test", PASSWORD).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        site.login_reply("alice@example.org", PASSWORD).await.status,
+        StatusCode::OK
+    );
 }

@@ -47,7 +47,7 @@ services:
       # Administrateur créé au premier démarrage (base vide). Mot de passe de
       # **test** : en production, le laisser vide en tirerait un au hasard,
       # affiché une fois dans les journaux (`docker logs easybook`).
-      EASYBOOK_ADMIN_USER: admin
+      EASYBOOK_ADMIN_EMAIL: admin@easybook.local
       EASYBOOK_ADMIN_PASSWORD: ${EASYBOOK_ADMIN_PASSWORD:-admin-dev-1234}
       # Connexion par Keycloak (conteneur `keycloak`, plus bas). L'émetteur est
       # l'adresse que voit le **navigateur** ; easybook, lui, lit la découverte
