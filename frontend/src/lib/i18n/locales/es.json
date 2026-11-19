@@ -256,6 +256,5 @@
 	"auth.email": "Dirección de correo",
 	"auth.error.email_taken": "Esta dirección de correo ya la usa otra cuenta.",
 	"auth.error.email_required": "El proveedor debe facilitar una dirección de correo verificada para crear una cuenta.",
-	"auth.devNotice": "Modo desarrollo: las cuentas de {provider} inician sesión aquí directamente, con su correo y contraseña.",
 	"auth.quick": "Acceso rápido (desarrollo)"
 }
