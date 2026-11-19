@@ -173,7 +173,17 @@ fn enable_accounts(
     if settings.oidc.is_enabled() {
         println!("OIDC      : {}", settings.oidc.issuer);
     }
-    Ok(state.with_auth(auth::AuthState::new(Arc::new(accounts), settings)))
+    let mut auth = auth::AuthState::new(Arc::new(accounts), settings);
+    if config::dev_mode() {
+        println!("⚠️  EASYBOOK_MODE=dev : outils de développement actifs.");
+        auth = auth.with_direct_login();
+        if auth.direct_login() {
+            println!(
+                "  - connexion directe à OIDC depuis le formulaire (mot de passe vu par easybook)"
+            );
+        }
+    }
+    Ok(state.with_auth(auth))
 }
 
 /// Chemin canonique, sans le préfixe « verbatim » de Windows (`\\?\C:\…`).

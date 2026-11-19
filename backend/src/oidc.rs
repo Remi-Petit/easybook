@@ -187,14 +187,39 @@ impl Provider {
         verifier: &str,
         nonce: &str,
     ) -> Result<Claims> {
+        let id_token = self
+            .token_request(&[
+                ("grant_type", "authorization_code"),
+                ("code", code),
+                ("redirect_uri", redirect_uri),
+                ("code_verifier", verifier),
+            ])
+            .await?;
+        self.verify_id_token(&id_token, Some(nonce)).await
+    }
+
+    /// Connexion **directe** (`grant_type=password`) : l'e-mail et le mot de passe
+    /// du fournisseur sont vérifiés par lui, sans passer par sa page. Réservé au
+    /// développement : easybook voit alors le mot de passe, ce que le flux avec
+    /// redirection évite.
+    pub async fn password_grant(&self, email: &str, password: &str) -> Result<Claims> {
+        let id_token = self
+            .token_request(&[
+                ("grant_type", "password"),
+                ("username", email),
+                ("password", password),
+                ("scope", "openid profile email"),
+            ])
+            .await?;
+        // Pas de redirection, donc pas de `nonce` à comparer.
+        self.verify_id_token(&id_token, None).await
+    }
+
+    /// Appelle le point d'accès jeton avec les identifiants du client.
+    async fn token_request(&self, fields: &[(&str, &str)]) -> Result<String> {
         let meta = self.metadata().await?;
-        let mut form = vec![
-            ("grant_type", "authorization_code"),
-            ("code", code),
-            ("redirect_uri", redirect_uri),
-            ("client_id", self.cfg.client_id.as_str()),
-            ("code_verifier", verifier),
-        ];
+        let mut form = fields.to_vec();
+        form.push(("client_id", self.cfg.client_id.as_str()));
         if !self.cfg.client_secret.is_empty() {
             form.push(("client_secret", self.cfg.client_secret.as_str()));
         }
@@ -204,18 +229,18 @@ impl Provider {
             .form(&form)
             .send()
             .await
-            .map_err(|e| OidcError(format!("échange du code : {e}")))?;
+            .map_err(|e| OidcError(format!("point d'accès jeton : {e}")))?;
         if !response.status().is_success() {
-            return fail(format!("échange du code : HTTP {}", response.status()));
+            return fail(format!("point d'accès jeton : HTTP {}", response.status()));
         }
         let tokens: TokenResponse = response
             .json()
             .await
             .map_err(|e| OidcError(format!("réponse du point d'accès jeton : {e}")))?;
-        self.verify_id_token(&tokens.id_token, nonce).await
+        Ok(tokens.id_token)
     }
 
-    async fn verify_id_token(&self, token: &str, nonce: &str) -> Result<Claims> {
+    async fn verify_id_token(&self, token: &str, nonce: Option<&str>) -> Result<Claims> {
         let header =
             decode_header(token).map_err(|e| OidcError(format!("jeton illisible : {e}")))?;
         let algorithm = header.alg;
@@ -256,7 +281,9 @@ impl Provider {
         }
         let claims: IdToken = serde_json::from_value(Value::Object(data.claims))
             .map_err(|e| OidcError(format!("jeton incomplet : {e}")))?;
-        if claims.nonce.as_deref() != Some(nonce) {
+        if let Some(nonce) = nonce
+            && claims.nonce.as_deref() != Some(nonce)
+        {
             return fail("nonce du jeton différent de celui de la demande");
         }
         if claims.sub.is_empty() {

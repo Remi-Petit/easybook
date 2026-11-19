@@ -255,5 +255,6 @@
 	"users.link.noOidc": "OIDC is not configured on this server.",
 	"auth.email": "E-mail address",
 	"auth.error.email_taken": "This e-mail address is already used by another account.",
-	"auth.error.email_required": "The provider must supply a verified e-mail address to create an account."
+	"auth.error.email_required": "The provider must supply a verified e-mail address to create an account.",
+	"auth.devNotice": "Development mode: {provider} accounts sign in directly here, with their e-mail and password."
 }

@@ -69,6 +69,15 @@ pub fn site() -> Site {
 }
 
 pub fn site_with(settings: config::Auth) -> Site {
+    build(settings, false)
+}
+
+/// Comme [`site_with`], avec la connexion directe au fournisseur (mode dev).
+pub fn site_direct(settings: config::Auth) -> Site {
+    build(settings, true)
+}
+
+fn build(settings: config::Auth, direct: bool) -> Site {
     let dir = tempfile::tempdir().unwrap();
     let accounts = Arc::new(Accounts::open_in_memory().unwrap());
     accounts
@@ -82,8 +91,11 @@ pub fn site_with(settings: config::Auth) -> Site {
         .unwrap();
 
     let (tx, _) = tokio::sync::broadcast::channel(4);
-    let state =
-        AppState::new(dir.path(), tx).with_auth(AuthState::new(Arc::clone(&accounts), settings));
+    let mut auth = AuthState::new(Arc::clone(&accounts), settings);
+    if direct {
+        auth = auth.with_direct_login();
+    }
+    let state = AppState::new(dir.path(), tx).with_auth(auth);
     Site {
         app: api::routes(state),
         accounts,

@@ -29,6 +29,9 @@ const OTHER_KEY: &str = include_str!("keys/other.pem");
 const IDP_MODULUS: &str = "1t8L_11Wl56b-D88vr0EXnE4ZtJ8iR98SpxinkmpYzSIkdv55L3xhmQKQppQF7pe6l3F0SCD_bHc1MYlzKVejDlNn8MN_g2IUlHFqZbWlEpFT7SmnPtWa2z2R58GIwAtFGMjqNtjqChzCH9yWQdwelArv5LcU0jkDdAWjCml72VizmVTjbhKfZdE5v8Bfsaf2rLrw38lPZcXqPsSNY8MlnNjJhqooZJI3mIsvoL_C1KEE12HJeqIenCAeEtAeh-4tDglr68OeojtoLhtvlhWkEoX5ryMtj0BQANM5eZdeLnhU4uvhhIzp6k9oh9ToBKEPZIjQpR9pAw3QAR3FQVm-w";
 const KID: &str = "test-key";
 
+/// Mot de passe de tous les comptes du faux fournisseur (connexion directe).
+pub const IDP_PASSWORD: &str = "mdp-fournisseur";
+
 #[derive(Clone, Default)]
 pub struct Person {
     pub email: Option<String>,
@@ -267,33 +270,48 @@ async fn token(State(s): State<Arc<Shared>>, Form(f): Form<HashMap<String, Strin
             .into_response()
     };
 
-    if get("grant_type") != "authorization_code"
-        || get("client_id") != s.client_id
-        || get("client_secret") != s.client_secret
-    {
+    if get("client_id") != s.client_id || get("client_secret") != s.client_secret {
         return reject("client");
     }
-    // Un code ne sert qu'une fois.
-    let Some(grant) = s.codes.lock().unwrap().remove(&get("code")) else {
-        return reject("code");
+    let (sub, nonce) = match get("grant_type").as_str() {
+        "authorization_code" => {
+            // Un code ne sert qu'une fois.
+            let Some(grant) = s.codes.lock().unwrap().remove(&get("code")) else {
+                return reject("code");
+            };
+            let verifier = get("code_verifier");
+            if URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())) != grant.challenge {
+                return reject("pkce");
+            }
+            if get("redirect_uri") != grant.redirect_uri || !grant.scope.contains("openid") {
+                return reject("redirect_uri");
+            }
+            (grant.sub, Some(grant.nonce))
+        }
+        // Connexion directe : l'e-mail et le mot de passe, sans redirection.
+        "password" => {
+            let wanted = get("username").to_lowercase();
+            let found = s.people.lock().unwrap().iter().find_map(|(sub, person)| {
+                (person.email.as_deref().map(str::to_lowercase) == Some(wanted.clone()))
+                    .then(|| sub.clone())
+            });
+            match found {
+                Some(sub) if get("password") == IDP_PASSWORD => (sub, None),
+                _ => return reject("credentials"),
+            }
+        }
+        _ => return reject("grant_type"),
     };
-    let verifier = get("code_verifier");
-    if URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())) != grant.challenge {
-        return reject("pkce");
-    }
-    if get("redirect_uri") != grant.redirect_uri || !grant.scope.contains("openid") {
-        return reject("redirect_uri");
-    }
 
-    let person = s.people.lock().unwrap().get(&grant.sub).cloned().unwrap();
+    let person = s.people.lock().unwrap().get(&sub).cloned().unwrap();
     let now = easybook::accounts::now();
     let claims = json!({
         "iss": quirks.issuer.clone().unwrap_or_else(|| s.base.clone()),
         "aud": quirks.audience.clone().unwrap_or_else(|| s.client_id.clone()),
-        "sub": grant.sub,
+        "sub": sub,
         "iat": now,
         "exp": if quirks.expired { now - 3600 } else { now + 300 },
-        "nonce": quirks.nonce.clone().unwrap_or(grant.nonce),
+        "nonce": quirks.nonce.clone().or(nonce),
         "email": person.email,
         "email_verified": person.email_verified,
         "preferred_username": person.username,

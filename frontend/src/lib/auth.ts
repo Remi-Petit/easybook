@@ -35,7 +35,8 @@ export type Session = {
 	/** `false` : le serveur n'exige aucune connexion. */
 	enabled: boolean;
 	user: User | null;
-	oidc: { label: string; self_link: boolean } | null;
+	/** `direct` : mode développement, le formulaire accepte les comptes du fournisseur. */
+	oidc: { label: string; self_link: boolean; direct: boolean } | null;
 };
 
 /** Session « personne » : API injoignable ou réponse illisible. */

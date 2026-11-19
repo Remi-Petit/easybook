@@ -293,7 +293,8 @@ cd backend  && cargo test --test keycloak -- --ignored
   **faux fournisseur** sur un vrai port (PKCE, secret, JWKS) : création, liaison
   par invitation, par identifiant, par e-mail, de son propre compte, et chaque
   faute qu'un jeton peut commettre (audience, émetteur, `nonce`, échéance,
-  signature, HS256). `tests/keycloak.rs` refait le parcours contre le **vrai
+  signature, HS256). `tests/direct.rs` : la connexion directe du mode dev
+  (désactivée par défaut, politique de liaison, jetons invalides). `tests/keycloak.rs` refait le parcours contre le **vrai
   Keycloak** du compose.
 - **Frontend** — `auth.ts` : garde des pages, redirections sûres, appels de
   l'API, messages d'erreur. `catalog.ts` : parent, enfants, `level()` (les sous-dossiers
@@ -380,6 +381,7 @@ Variables d'environnement :
 | `EASYBOOK_HOST` | `127.0.0.1` | interface d'écoute de l'API (`0.0.0.0` en conteneur) |
 | `PORT` | `8091` | port de l'API |
 | `PUBLIC_EASYBOOK_API` (frontend) | `http://<hôte>:8091` | adresse de l'API vue par le navigateur — `/` quand c'est le **même serveur** qui sert les deux (cas de l'image Docker) |
+| `EASYBOOK_MODE` | `prod` | `dev` : connexion directe à Keycloak depuis le formulaire (développement uniquement) |
 | `EASYBOOK_DATA_DIR` | `<books>/.easybook` | dossier de la base des comptes (`accounts.db`) — **à monter en volume** (`/data` dans l'image) |
 | `EASYBOOK_ADMIN_EMAIL`, `EASYBOOK_ADMIN_PASSWORD` | `admin@easybook.local`, aléatoire | administrateur créé au premier démarrage |
 
@@ -443,14 +445,34 @@ est **refusé** : c'est l'administrateur qui décide. Il a trois façons de lier
 Un compte lié se connecte des deux façons ; on ne peut pas délier la seule
 façon de se connecter d'un compte.
 
-### Tester avec Keycloak
+### Production par défaut, développement avec `.env.dev`
 
-Le `docker-compose.yml` de développement embarque un Keycloak **réservé aux
-tests** (realm `easybook`, utilisateurs `alice`, `bob`, `carol` — mot de passe =
-nom ; console sur <http://localhost:8180>, `admin` / `admin`) :
+Le `docker-compose.yml` est en **production** tant qu'on ne lui dit pas
+autrement : pas de Keycloak, pas de connexion directe, OIDC désactivé tant que
+`EASYBOOK_OIDC_*` est vide, administrateur au mot de passe aléatoire. Tout se
+règle par variables d'environnement ; le développement tient dans `.env.dev` :
 
 ```bash
-docker compose up -d --build     # http://localhost:5200 — admin@easybook.local / admin-dev-1234
+docker compose up -d --build                         # production
+docker compose --env-file .env.dev up -d --build     # développement
+```
+
+`.env.dev` lance un Keycloak **réservé aux tests** (profil `dev`, console sur
+<http://localhost:8180>, `admin` / `admin`), avec le realm `easybook` importé
+(`docker/keycloak/easybook-realm.json`) et ses utilisateurs `alice@example.org`,
+`bob@example.org` (e-mail vérifié) et `carol@example.org` (non vérifié) — mot de
+passe = prénom en minuscules. L'administrateur est `admin@easybook.local` /
+`admin-dev-1234`.
+
+**Connexion « directe »** (`EASYBOOK_MODE=dev` seulement) : le formulaire de
+connexion accepte aussi l'e-mail et le mot de passe d'un compte Keycloak, sans
+redirection (*direct access grant* : easybook les transmet à Keycloak et vérifie
+le jeton). La même politique de liaison s'applique — compte déjà lié,
+`link_by_email`, `auto_create` (activé dans `.env.dev`), sinon refus. En
+production le mode est ignoré : ce flux fait passer le mot de passe par
+easybook, ce que la redirection évite.
+
+```bash
 cd backend && cargo test --test keycloak -- --ignored   # contre le vrai Keycloak
 ```
 

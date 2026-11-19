@@ -236,6 +236,17 @@ pub fn auth() -> Auth {
     auth
 }
 
+/// `true` quand `EASYBOOK_MODE=dev` : outils de développement (connexion directe
+/// à Keycloak). Tout autre valeur, ou l'absence de variable : production.
+pub fn is_dev(mode: Option<&str>) -> bool {
+    mode.is_some_and(|mode| mode.trim().eq_ignore_ascii_case("dev"))
+}
+
+/// Mode de l'environnement (`EASYBOOK_MODE`).
+pub fn dev_mode() -> bool {
+    is_dev(std::env::var("EASYBOOK_MODE").ok().as_deref())
+}
+
 /// Réglages de réduction des planches en vigueur.
 pub fn resize() -> Resize {
     let mut resize = INSTALLED
@@ -452,6 +463,16 @@ mod tests {
         assert!(!oidc.auto_create);
         // Une variable blanche ne compte pas.
         assert_eq!(oidc.label, Oidc::default().label);
+    }
+
+    #[test]
+    fn production_is_the_default_mode() {
+        assert!(!is_dev(None));
+        assert!(!is_dev(Some("")));
+        assert!(!is_dev(Some("prod")));
+        assert!(!is_dev(Some("development-ish")));
+        assert!(is_dev(Some("dev")));
+        assert!(is_dev(Some(" DEV ")));
     }
 
     #[test]

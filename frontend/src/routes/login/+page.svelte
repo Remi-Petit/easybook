@@ -77,6 +77,10 @@
 			{busy ? t('auth.submitting') : t('auth.submit')}
 		</button>
 
+		{#if data.session.oidc?.direct}
+			<p class="auth-dev">{t('auth.devNotice', { provider: data.session.oidc.label })}</p>
+		{/if}
+
 		{#if data.session.oidc}
 			<p class="auth-or"><span>{t('auth.or')}</span></p>
 			<a class="btn-plain auth-sso" href={oidcLoginUrl(next)}>

@@ -60,6 +60,8 @@ pub struct AuthState {
     flows: Flows,
     throttle: Throttle,
     session_ttl: i64,
+    /// Connexion directe au fournisseur depuis le formulaire (développement).
+    direct: bool,
 }
 
 impl AuthState {
@@ -74,7 +76,21 @@ impl AuthState {
             flows: Flows::default(),
             throttle: Throttle::default(),
             session_ttl: i64::from(settings.session_days) * 86_400,
+            direct: false,
         }
+    }
+
+    /// Accepte, au formulaire de connexion, l'e-mail et le mot de passe d'un
+    /// compte du fournisseur (`grant_type=password`). **Développement
+    /// seulement** ; sans effet si OIDC n'est pas configuré.
+    #[must_use]
+    pub fn with_direct_login(mut self) -> Self {
+        self.direct = self.provider.is_some();
+        self
+    }
+
+    pub fn direct_login(&self) -> bool {
+        self.direct
     }
 
     pub fn oidc(&self) -> Option<&Provider> {
@@ -398,6 +414,7 @@ async fn session(State(state): State<AppState>, MaybeUser(user): MaybeUser) -> R
         serde_json::json!({
             "label": provider.config().label,
             "self_link": provider.config().self_link,
+            "direct": auth.direct,
         })
     });
     (
@@ -444,10 +461,11 @@ async fn login(
 
     let ttl = auth.session_ttl;
     let (email, password) = (body.email, body.password);
-    let outcome = db(
+    let (local_email, local_password) = (email.clone(), password.clone());
+    let mut outcome = db(
         &auth,
         move |accounts| -> Result<Option<(User, String)>, AccountError> {
-            let Some(user) = accounts.authenticate(&email, &password)? else {
+            let Some(user) = accounts.authenticate(&local_email, &local_password)? else {
                 return Ok(None);
             };
             let token = accounts.create_session(&user.id, ttl)?;
@@ -457,6 +475,11 @@ async fn login(
     )
     .await?
     .map_err(account_error)?;
+
+    // Un compte local d'abord ; sinon, en développement, le fournisseur lui-même.
+    if outcome.is_none() {
+        outcome = direct_login(&auth, &email, &password).await?;
+    }
 
     let Some((user, token)) = outcome else {
         auth.throttle.failure(&key);
@@ -469,6 +492,43 @@ async fn login(
         .await?
         .map_err(account_error)?;
     Ok(([(header::SET_COOKIE, cookie)], Json(user)).into_response())
+}
+
+/// Connexion directe au fournisseur (`grant_type=password`), si elle est permise.
+///
+/// Le compte easybook se décide comme pour un retour de redirection : identité
+/// déjà liée, sinon `link_by_email`, sinon `auto_create`, sinon refus (`403`).
+async fn direct_login(
+    auth: &Arc<AuthState>,
+    email: &str,
+    password: &str,
+) -> Result<Option<(User, String)>, Response> {
+    let Some(provider) = auth.oidc().filter(|_| auth.direct) else {
+        return Ok(None);
+    };
+    let claims = match provider.password_grant(email, password).await {
+        Ok(claims) => claims,
+        Err(e) => {
+            eprintln!("OIDC (connexion directe) : {e}");
+            return Ok(None);
+        }
+    };
+
+    let (settings, ttl) = (provider.config().clone(), auth.session_ttl);
+    let resolved = db(auth, move |accounts| {
+        let resolved = resolve(accounts, &settings, &Intent::Login, None, &claims, ttl)?;
+        let session = resolved.session.ok_or("internal")?;
+        let user = accounts
+            .session_user(&session)
+            .map_err(|_| "internal")?
+            .ok_or("internal")?;
+        Ok::<_, &'static str>((user, session))
+    })
+    .await?;
+    match resolved {
+        Ok(found) => Ok(Some(found)),
+        Err(code) => Err(error(StatusCode::FORBIDDEN, code)),
+    }
 }
 
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, Response> {

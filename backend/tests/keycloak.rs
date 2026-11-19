@@ -16,7 +16,7 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::http::{Reply, Site, site_with};
+use common::http::{Reply, Site, site_direct, site_with};
 use common::idp::path_and_query;
 use easybook::accounts::{NewUser, Role};
 use easybook::config;
@@ -206,4 +206,50 @@ async fn keycloak_links_by_certified_email_only() {
     let reply = sign_in(&site, "/api/auth/oidc/login", "carol", "carol").await;
     assert_eq!(reply.location().as_deref(), Some("/login?error=no_account"));
     assert_eq!(site.accounts.count_users().unwrap(), 3);
+}
+
+#[tokio::test]
+#[ignore = "demande `docker compose --env-file .env.dev up -d keycloak`"]
+async fn keycloak_accepts_a_direct_login_from_the_form() {
+    let mut oidc = config::Oidc {
+        issuer: realm(),
+        client_id: "easybook".into(),
+        client_secret: "easybook-test-secret".into(),
+        auto_create: true,
+        ..config::Oidc::default()
+    };
+    oidc.label = "Keycloak".into();
+    let site = site_direct(config::Auth {
+        oidc,
+        ..config::Auth::default()
+    });
+    let login = |email: &str, password: &str| {
+        site.post(
+            "/api/auth/login",
+            None,
+            json!({ "email": email, "password": password }),
+        )
+    };
+
+    let reply = login("alice@example.org", "alice").await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.json());
+    assert_eq!(reply.json()["email"], "alice@example.org");
+    let subject = reply.json()["identities"][0]["subject"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(uuid::Uuid::parse_str(&subject).is_ok(), "{subject}");
+
+    // Un mauvais mot de passe, un compte inconnu : refusés.
+    assert_eq!(
+        login("alice@example.org", "faux").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        login("inconnue@example.org", "x").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    // Une seconde connexion retrouve le même compte.
+    let again = login("alice@example.org", "alice").await;
+    assert_eq!(again.json()["id"], reply.json()["id"]);
 }
