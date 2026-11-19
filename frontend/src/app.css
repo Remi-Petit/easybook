@@ -1784,3 +1784,279 @@ code {
 		transition: none;
 	}
 }
+
+/* ── Comptes : connexion, mon compte, administration ─────────────────────── */
+
+.auth {
+	display: grid;
+	place-items: center;
+	min-height: 100vh;
+	padding: 24px;
+}
+
+.auth-card {
+	display: grid;
+	gap: 14px;
+	width: min(380px, 100%);
+	padding: 30px 28px 24px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+}
+
+.auth-card h1 {
+	margin: 0;
+	font-size: 22px;
+	font-weight: 640;
+	letter-spacing: -0.02em;
+}
+
+.auth-sub {
+	margin: -8px 0 4px;
+	color: var(--muted);
+	font-size: 13.5px;
+}
+
+.auth-error {
+	margin: 0;
+	padding: 9px 12px;
+	border: 1px solid rgba(224, 113, 92, 0.4);
+	border-radius: 9px;
+	background: rgba(224, 113, 92, 0.1);
+	color: var(--danger);
+	font-size: 13.5px;
+}
+
+.field {
+	display: grid;
+	gap: 5px;
+	font-size: 12.5px;
+	color: var(--muted);
+}
+
+.field input,
+.field select {
+	width: 100%;
+	padding: 9px 12px;
+	background: var(--bg);
+	border: 1px solid var(--line);
+	border-radius: 9px;
+	color: var(--text);
+	font: inherit;
+	font-size: 14px;
+	outline: none;
+}
+
+.field input:focus,
+.field select:focus {
+	border-color: var(--accent);
+}
+
+.auth-submit {
+	padding: 10px 14px;
+}
+
+.auth-sso {
+	display: block;
+	text-align: center;
+	border: 1px solid var(--line);
+}
+
+.auth-or {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 2px 0;
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.auth-or::before,
+.auth-or::after {
+	content: '';
+	flex: 1;
+	height: 1px;
+	background: var(--line);
+}
+
+.auth-lang {
+	display: flex;
+	justify-content: center;
+}
+
+.auth-lang select {
+	padding: 4px 8px;
+	background: transparent;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	color: var(--muted);
+	font: inherit;
+	font-size: 12.5px;
+}
+
+.admin-stack {
+	display: grid;
+	gap: 18px;
+	max-width: 880px;
+}
+
+.panel-card {
+	min-width: 0;
+	padding: 18px 20px 20px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	overflow-x: auto;
+}
+
+.panel-card h2 {
+	margin: 0 0 14px;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.panel-card h3 {
+	margin: 22px 0 10px;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.panel-card summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.panel-hint {
+	margin: 0;
+	font-size: 12.5px;
+	color: var(--muted);
+}
+
+.stack-form {
+	display: grid;
+	gap: 12px;
+	max-width: 420px;
+	margin-top: 14px;
+}
+
+.muted {
+	color: var(--muted);
+}
+
+.badge {
+	margin-left: 6px;
+	padding: 1px 7px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	font-size: 11px;
+	color: var(--muted);
+}
+
+.users-table td,
+.users-table th {
+	text-align: left;
+	white-space: normal;
+}
+
+.users-table tr[data-selected='true'] td {
+	background: var(--accent-soft);
+}
+
+.users-table tr[data-disabled='true'] td:first-child {
+	opacity: 0.55;
+}
+
+.action-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+
+.action-row .btn-plain,
+.identity-list .btn-plain {
+	border: 1px solid var(--line);
+}
+
+.danger {
+	color: var(--danger);
+}
+
+.identity-list {
+	display: grid;
+	gap: 8px;
+	margin: 0 0 14px;
+	padding: 0;
+	list-style: none;
+}
+
+.identity-list li {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 9px 12px;
+	background: var(--panel-2);
+	border-radius: 9px;
+}
+
+.identity-list li > div {
+	display: grid;
+	min-width: 0;
+}
+
+.identity-sub {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 11.5px;
+}
+
+.invite-box {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 9px 12px;
+	background: var(--bg);
+	border: 1px dashed var(--line);
+	border-radius: 9px;
+}
+
+.invite-box code {
+	overflow-wrap: anywhere;
+	font-size: 12px;
+}
+
+/* Compte connecté : nom, rôle, déconnexion. */
+.sidebar-user {
+	display: grid;
+	gap: 4px;
+	padding: 10px;
+	background: var(--panel-2);
+	border-radius: 10px;
+}
+
+.user-link {
+	display: grid;
+}
+
+.user-name {
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.user-role {
+	font-size: 12px;
+	color: var(--muted);
+}
+
+.sidebar-user .btn-plain {
+	justify-self: start;
+	padding: 4px 0 0;
+	font-size: 12.5px;
+}

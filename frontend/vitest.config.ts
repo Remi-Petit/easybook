@@ -36,6 +36,7 @@ export default defineConfig({
 			include: [
 				'src/lib/catalog.ts',
 				'src/lib/api.ts',
+				'src/lib/auth.ts',
 				'src/lib/i18n/messages.ts',
 				'src/lib/i18n/state.svelte.ts'
 			],

@@ -17,6 +17,9 @@
 //! | `DELETE /api/auth/identities/{id}` | connecté — délie sa propre identité |
 //! | `/api/admin/users…` | administrateur |
 
+// `Response` comme erreur : c'est ce que les routes axum renvoient telle quelle.
+#![allow(clippy::result_large_err)]
+
 use crate::accounts::{
     AccountError, Accounts, Identity, NewUser, Role, User, UserPatch, random_token,
 };

@@ -54,6 +54,10 @@ services:
       # par le réseau de Compose.
       EASYBOOK_OIDC_ISSUER: http://localhost:8180/realms/easybook
       EASYBOOK_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/easybook
+      # Un proxy d'entreprise injecté dans les conteneurs (variables HTTP_PROXY du
+      # démon Docker) intercepterait l'appel vers `keycloak` : on l'en écarte.
+      NO_PROXY: localhost,127.0.0.1,keycloak
+      no_proxy: localhost,127.0.0.1,keycloak
       EASYBOOK_OIDC_CLIENT_ID: easybook
       EASYBOOK_OIDC_CLIENT_SECRET: easybook-test-secret
       EASYBOOK_OIDC_LABEL: Keycloak

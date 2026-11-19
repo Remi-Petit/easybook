@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     ports:
       # Un seul port : nginx sert l'interface **et** relaie l'API (`/api`, `/ws`).
-      # L'API n'a pas d'authentification : elle n'écoute que dans le conteneur.
+      # L'API n'écoute que dans le conteneur ; l'interface exige une connexion.
       - "5100:8080"
     volumes:
       # La bibliothèque : lue **et écrite** (création de catégories, dépôt de
@@ -20,3 +20,10 @@ services:
       # dossier doit lui appartenir (`chown -R 1000:1000 books`) pour que le
       # dépôt de livres fonctionne.
       - ./books:/books
+      # Les comptes (SQLite) : à garder entre deux conteneurs. Au premier démarrage,
+      # le mot de passe de l'administrateur est affiché dans `docker logs easybook`
+      # (ou imposé par `EASYBOOK_ADMIN_PASSWORD`).
+      - easybook-data:/data
+
+volumes:
+  easybook-data:

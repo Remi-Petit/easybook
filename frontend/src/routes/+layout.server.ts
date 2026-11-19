@@ -1,4 +1,7 @@
 import type { LayoutServerLoad } from './$types';
 
-/** La langue négociée pour cette requête part à toute l'application. */
-export const load: LayoutServerLoad = ({ locals }) => ({ locale: locals.locale });
+/** La langue et la session de cette requête partent à toute l'application. */
+export const load: LayoutServerLoad = ({ locals }) => ({
+	locale: locals.locale,
+	session: locals.session
+});
