@@ -2163,6 +2163,66 @@ code {
 	text-decoration: underline;
 }
 
+/*
+ * Ouvre-liste des `<select>`.
+ *
+ * Le contrôle fermé est dessiné par nos soins, mais la liste ouverte appartient
+ * au navigateur : sur fond sombre il la peignait avec ses couleurs système (une
+ * surbrillance bleu clair, un liseré blanc). Deux niveaux de correction :
+ *
+ *   1. partout, les options prennent nos couleurs ;
+ *   2. là où `appearance: base-select` existe (Chromium 135 et plus), la liste
+ *      devient une vraie boîte, thémée comme le reste de l'interface.
+ *
+ * `!important` sur `appearance` : chaque contexte (`.table-select`,
+ * `.page-size select`, `.sidebar-lang select`…) impose sinon `appearance: none`,
+ * qui est plus spécifique qu'un sélecteur de balise.
+ */
+select option {
+	background-color: var(--panel-2);
+	color: var(--text);
+}
+
+@supports (appearance: base-select) {
+	select,
+	select::picker(select) {
+		appearance: base-select !important;
+	}
+
+	/* Le chevron est déjà dessiné en fond du contrôle : pas de second. */
+	select::picker-icon {
+		display: none;
+	}
+
+	select::picker(select) {
+		margin-block: 6px;
+		padding: 4px;
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		box-shadow: 0 16px 40px rgb(0 0 0 / 50%);
+	}
+
+	select option {
+		display: flex;
+		align-items: center;
+		padding: 8px 10px;
+		border-radius: 7px;
+		background-color: transparent;
+		font-size: 13.5px;
+	}
+
+	select option:hover,
+	select option:focus-visible {
+		background-color: var(--panel-2);
+	}
+
+	select option:checked {
+		background-color: var(--accent-soft);
+		color: var(--accent);
+	}
+}
+
 .table-select {
 	width: 100%;
 	padding: 8px 32px 8px 12px;
