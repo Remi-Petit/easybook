@@ -2394,6 +2394,11 @@ html:has(.drawer[open]) {
 	border: 1px solid var(--line);
 }
 
+.action-row .btn-plain:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
 .danger {
 	color: var(--danger);
 }

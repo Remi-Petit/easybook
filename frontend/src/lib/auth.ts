@@ -177,6 +177,8 @@ export const ERROR_CODES = [
 	'last_admin',
 	'last_credential',
 	'cannot_delete_self',
+	'cannot_demote_self',
+	'cannot_disable_self',
 	'self_link_disabled',
 	'no_account',
 	'account_disabled',

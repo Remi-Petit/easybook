@@ -29,6 +29,7 @@
 	let loaded = $state(false);
 	let selectedId = $state<string | null>(null);
 	const selected = $derived(users.find((user) => user.id === selectedId) ?? null);
+	const isSelf = $derived(selected?.id === me);
 
 	// Tableau : tri, recherche, filtres, colonnes et pagination viennent de TanStack Table.
 	const features = tableFeatures({
@@ -638,6 +639,7 @@
 				<button
 					type="button"
 					class="btn-plain"
+					disabled={isSelf}
 					onclick={() => patch(selected, { role: selected.role === 'admin' ? 'user' : 'admin' })}
 				>
 					{selected.role === 'admin' ? t('users.makeUser') : t('users.makeAdmin')}
@@ -645,16 +647,18 @@
 				<button
 					type="button"
 					class="btn-plain"
+					disabled={isSelf}
 					onclick={() => patch(selected, { disabled: !selected.disabled })}
 				>
 					{selected.disabled ? t('users.enable') : t('users.disable')}
 				</button>
-				{#if selected.id !== me}
-					<button type="button" class="btn-plain danger" onclick={() => remove(selected)}>
-						{t('users.delete')}
-					</button>
-				{/if}
+				<button type="button" class="btn-plain danger" disabled={isSelf} onclick={() => remove(selected)}>
+					{t('users.delete')}
+				</button>
 			</div>
+			{#if isSelf}
+				<p class="panel-hint">{t('users.selfHint')}</p>
+			{/if}
 			{:else if tab === 'password'}
 			<form class="stack-form" method="post" onsubmit={(event) => setPassword(event, selected)}>
 				<label class="field">

@@ -1032,10 +1032,20 @@ async fn create_user(
 
 async fn update_user(
     State(state): State<AppState>,
+    SessionUser(actor): SessionUser,
     Path(id): Path<String>,
     Json(patch): Json<UserPatch>,
 ) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
+    // Sinon un administrateur pourrait se retirer ses droits, ou se verrouiller dehors.
+    if actor.id == id {
+        if patch.role == Some(Role::User) {
+            return Err(error(StatusCode::CONFLICT, "cannot_demote_self"));
+        }
+        if patch.disabled == Some(true) {
+            return Err(error(StatusCode::CONFLICT, "cannot_disable_self"));
+        }
+    }
     let updated = db(&auth, move |accounts| -> Result<UserView, AccountError> {
         let user = accounts.update_user(&id, &patch)?;
         view(accounts, user)

@@ -483,11 +483,13 @@ async fn an_admin_manages_accounts() {
 }
 
 #[tokio::test]
-async fn the_last_admin_cannot_be_removed_or_demoted() {
+async fn an_admin_cannot_demote_or_disable_themselves() {
     let site = site();
     let admin = site.admin().await;
     let root = site.accounts.user_by_username("root").unwrap().unwrap();
     let uri = format!("/api/admin/users/{}", root.id);
+    // Même avec d'autres administrateurs : le refus ne dépend pas de leur nombre.
+    site.add_user("second", Role::Admin, Some(PASSWORD));
 
     let demote = site
         .request(
@@ -500,7 +502,7 @@ async fn the_last_admin_cannot_be_removed_or_demoted() {
         .await;
     assert_eq!(
         (demote.status, demote.error().as_deref()),
-        (StatusCode::CONFLICT, Some("last_admin"))
+        (StatusCode::CONFLICT, Some("cannot_demote_self"))
     );
     let disable = site
         .request(
@@ -511,9 +513,22 @@ async fn the_last_admin_cannot_be_removed_or_demoted() {
             &[],
         )
         .await;
-    assert_eq!(disable.status, StatusCode::CONFLICT);
-    // Se supprimer soi-même est refusé, même avec d'autres administrateurs.
-    site.add_user("second", Role::Admin, Some(PASSWORD));
+    assert_eq!(
+        (disable.status, disable.error().as_deref()),
+        (StatusCode::CONFLICT, Some("cannot_disable_self"))
+    );
+    // Modifier autre chose que son rôle ou son état reste permis.
+    let rename = site
+        .request(
+            "PATCH",
+            &uri,
+            Some(&admin),
+            Some(json!({ "display_name": "Moi" })),
+            &[],
+        )
+        .await;
+    assert_eq!(rename.status, StatusCode::OK);
+    // Se supprimer soi-même est refusé aussi.
     let delete = site.request("DELETE", &uri, Some(&admin), None, &[]).await;
     assert_eq!(
         (delete.status, delete.error().as_deref()),
