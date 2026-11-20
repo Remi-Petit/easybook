@@ -1018,8 +1018,9 @@ async fn create_user(
             username: body.username,
             display_name: body.display_name,
             email: Some(body.email),
-            // Un mot de passe vide : compte réservé à OIDC.
-            password: body.password.filter(|password| !password.is_empty()),
+            // Un compte créé ici a toujours un mot de passe : les comptes OIDC se
+            // créent à la première connexion (`auto_create`), pas par ce formulaire.
+            password: Some(body.password.unwrap_or_default()),
             role: body.role,
         })?;
         view(accounts, user)

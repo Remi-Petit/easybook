@@ -218,7 +218,6 @@
 	"users.add": "Añadir un usuario",
 	"users.displayName": "Nombre visible",
 	"users.email": "Correo",
-	"users.passwordOptional": "Contraseña (vacía: solo inicio de sesión OIDC)",
 	"users.role": "Rol",
 	"users.create": "Crear",
 	"users.created": "Cuenta «{name}» creada",

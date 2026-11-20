@@ -326,12 +326,13 @@
 			<input name="display_name" autocomplete="off" bind:value={draft.display_name} />
 		</label>
 		<label class="field">
-			<span>{t('users.passwordOptional')}</span>
+			<span>{t('auth.password')}</span>
 			<input
 				name="password"
 				type="password"
 				autocomplete="new-password"
 				minlength="8"
+				required
 				bind:value={draft.password}
 			/>
 		</label>
@@ -349,7 +350,7 @@
 			<button class="btn-plain" type="button" onclick={() => addDialog?.close()}>
 				{t('common.cancel')}
 			</button>
-			<button class="btn-main" type="submit" disabled={adding || draft.email.trim() === ''}>
+			<button class="btn-main" type="submit" disabled={adding || draft.email.trim() === '' || draft.password === ''}>
 				{t('users.create')}
 			</button>
 		</div>

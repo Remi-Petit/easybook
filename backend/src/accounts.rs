@@ -233,7 +233,8 @@ fn dummy_hash() -> &'static str {
 
 fn check_password(password: &str) -> Result<()> {
     let length = password.chars().count();
-    if (MIN_PASSWORD..=MAX_PASSWORD).contains(&length) {
+    // Huit espaces ne sont pas un mot de passe.
+    if (MIN_PASSWORD..=MAX_PASSWORD).contains(&length) && !password.trim().is_empty() {
         Ok(())
     } else {
         Err(AccountError::WeakPassword)
@@ -975,6 +976,17 @@ mod tests {
             }),
             AccountError::WeakPassword
         );
+        // Trop court, ou blanc : refusé.
+        for password in ["court", "        ", "\t\t\t\t\t\t\t\t"] {
+            assert_eq!(
+                bad(NewUser {
+                    password: Some(password.into()),
+                    ..named("bob")
+                }),
+                AccountError::WeakPassword,
+                "{password:?}"
+            );
+        }
         for email in ["pas-une-adresse", "a b@c.d", ""] {
             assert_eq!(
                 bad(with_email("bob", email)),

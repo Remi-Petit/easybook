@@ -218,7 +218,6 @@
 	"users.add": "Aggiungi un utente",
 	"users.displayName": "Nome visualizzato",
 	"users.email": "E-mail",
-	"users.passwordOptional": "Password (vuota: solo accesso OIDC)",
 	"users.role": "Ruolo",
 	"users.create": "Crea",
 	"users.created": "Account «{name}» creato",

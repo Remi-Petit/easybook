@@ -218,7 +218,6 @@
 	"users.add": "Adicionar um utilizador",
 	"users.displayName": "Nome apresentado",
 	"users.email": "E-mail",
-	"users.passwordOptional": "Palavra-passe (vazia: apenas início de sessão OIDC)",
 	"users.role": "Função",
 	"users.create": "Criar",
 	"users.created": "Conta «{name}» criada",

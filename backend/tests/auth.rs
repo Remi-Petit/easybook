@@ -368,11 +368,11 @@ async fn an_admin_manages_accounts() {
     let post = |body: Value| site.post("/api/admin/users", Some(&admin), body);
     let code = |reply: &common::http::Reply| (reply.status, reply.error());
     assert_eq!(
-        code(&post(json!({ "username": "ALICE", "email": "autre@example.org" })).await),
+        code(&post(json!({ "username": "ALICE", "email": "autre@example.org", "password": "un-bon-mdp-1" })).await),
         (StatusCode::CONFLICT, Some("username_taken".into()))
     );
     assert_eq!(
-        code(&post(json!({ "email": "ALICE@example.org" })).await),
+        code(&post(json!({ "email": "ALICE@example.org", "password": "un-bon-mdp-1" })).await),
         (StatusCode::CONFLICT, Some("email_taken".into()))
     );
     assert_eq!(
@@ -384,7 +384,12 @@ async fn an_admin_manages_accounts() {
         (StatusCode::BAD_REQUEST, Some("invalid_email".into()))
     );
     assert_eq!(
-        code(&post(json!({ "username": "a\nb", "email": "b@example.org" })).await),
+        code(
+            &post(
+                json!({ "username": "a\nb", "email": "b@example.org", "password": "un-bon-mdp-1" })
+            )
+            .await
+        ),
         (StatusCode::BAD_REQUEST, Some("invalid_username".into()))
     );
     // L'adresse est obligatoire.
@@ -395,8 +400,27 @@ async fn an_admin_manages_accounts() {
             .is_success()
     );
 
+    // Le mot de passe est obligatoire : absent, vide ou blanc, le compte n'est pas créé.
+    for body in [
+        json!({ "email": "sans-mdp@example.org" }),
+        json!({ "email": "sans-mdp@example.org", "password": "" }),
+        json!({ "email": "sans-mdp@example.org", "password": "        " }),
+    ] {
+        assert_eq!(
+            code(&post(body).await),
+            (StatusCode::BAD_REQUEST, Some("weak_password".into()))
+        );
+    }
+    assert!(
+        site.accounts
+            .user_by_email("sans-mdp@example.org")
+            .unwrap()
+            .is_none()
+    );
+
     // Sans identifiant, il est tiré de l'adresse.
-    let derived = post(json!({ "email": "marie.curie@example.org" })).await;
+    let derived =
+        post(json!({ "email": "marie.curie@example.org", "password": "un-bon-mdp-1" })).await;
     assert_eq!(derived.status, StatusCode::CREATED);
     assert_eq!(derived.json()["username"], "marie.curie");
 
