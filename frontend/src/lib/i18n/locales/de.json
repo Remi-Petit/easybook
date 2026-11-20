@@ -215,7 +215,6 @@
 	"account.identities.link": "Mein {provider}-Konto verknüpfen",
 	"account.identities.adminOnly": "Die Verknüpfung wird von einem Administrator verwaltet: Fragen Sie nach einem Einladungslink.",
 	"users.title": "Konten",
-	"users.subtitle": "Benutzer der Bibliothek und ihre Verknüpfung mit einem OIDC-Anbieter.",
 	"users.add": "Benutzer hinzufügen",
 	"users.displayName": "Anzeigename",
 	"users.email": "E-Mail",

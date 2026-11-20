@@ -215,7 +215,6 @@
 	"account.identities.link": "Associar a minha conta {provider}",
 	"account.identities.adminOnly": "A associação é gerida por um administrador: peça-lhe um link de convite.",
 	"users.title": "Contas",
-	"users.subtitle": "Utilizadores da biblioteca e associação a um fornecedor OIDC.",
 	"users.add": "Adicionar um utilizador",
 	"users.displayName": "Nome apresentado",
 	"users.email": "E-mail",

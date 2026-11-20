@@ -146,10 +146,7 @@
 <div class="page">
 	<section class="intro">
 		<div class="intro-head">
-			<div>
-				<h1>{t('users.title')}</h1>
-				<p>{t('users.subtitle')}</p>
-			</div>
+			<h1>{t('users.title')}</h1>
 			<button type="button" class="btn-main btn-icon" onclick={openAdd}>
 				<!-- Plus : ajouter un utilisateur. -->
 				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">

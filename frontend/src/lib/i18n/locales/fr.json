@@ -215,7 +215,6 @@
 	"account.identities.link": "Lier mon compte {provider}",
 	"account.identities.adminOnly": "La liaison est gérée par un administrateur : demandez-lui un lien d’invitation.",
 	"users.title": "Comptes",
-	"users.subtitle": "Utilisateurs de la bibliothèque et liaison à un fournisseur OIDC.",
 	"users.add": "Ajouter un utilisateur",
 	"users.displayName": "Nom affiché",
 	"users.email": "E-mail",
