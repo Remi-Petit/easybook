@@ -185,6 +185,8 @@
 	"auth.error.cannot_disable_self": "No puede desactivar su propia cuenta.",
 	"users.selfHint": "No puede quitarse sus derechos, desactivar ni eliminar su propia cuenta: pida a otro administrador.",
 	"users.password.generate": "Generar",
+	"users.password.show": "Mostrar contraseña",
+	"users.password.hide": "Ocultar contraseña",
 	"users.password.copied": "Contraseña copiada",
 	"users.password.temporary": "Contraseña temporal",
 	"users.password.temporaryHint": "En su próximo acceso se invita a la persona a cambiarla; también puede conservarla.",

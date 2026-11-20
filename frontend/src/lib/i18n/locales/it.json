@@ -185,6 +185,8 @@
 	"auth.error.cannot_disable_self": "Non puoi disattivare il tuo account.",
 	"users.selfHint": "Non puoi toglierti i diritti, disattivare o eliminare il tuo account: chiedi a un altro amministratore.",
 	"users.password.generate": "Genera",
+	"users.password.show": "Mostra password",
+	"users.password.hide": "Nascondi password",
 	"users.password.copied": "Password copiata",
 	"users.password.temporary": "Password temporanea",
 	"users.password.temporaryHint": "Al prossimo accesso la persona viene invitata a cambiarla; può anche tenerla.",

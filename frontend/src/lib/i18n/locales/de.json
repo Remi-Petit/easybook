@@ -185,6 +185,8 @@
 	"auth.error.cannot_disable_self": "Sie können Ihr eigenes Konto nicht deaktivieren.",
 	"users.selfHint": "Sie können sich weder die Rechte entziehen noch Ihr eigenes Konto deaktivieren oder löschen: Bitten Sie einen anderen Administrator.",
 	"users.password.generate": "Erzeugen",
+	"users.password.show": "Passwort anzeigen",
+	"users.password.hide": "Passwort verbergen",
 	"users.password.copied": "Passwort kopiert",
 	"users.password.temporary": "Temporäres Passwort",
 	"users.password.temporaryHint": "Bei der nächsten Anmeldung wird die Person gebeten, es zu ändern; sie kann es auch behalten.",

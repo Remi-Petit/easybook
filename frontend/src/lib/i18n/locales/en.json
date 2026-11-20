@@ -185,6 +185,8 @@
 	"auth.error.cannot_disable_self": "You cannot disable your own account.",
 	"users.selfHint": "You cannot remove your own rights, disable or delete your own account: ask another administrator.",
 	"users.password.generate": "Generate",
+	"users.password.show": "Show password",
+	"users.password.hide": "Hide password",
 	"users.password.copied": "Password copied",
 	"users.password.temporary": "Temporary password",
 	"users.password.temporaryHint": "At their next sign-in the person is invited to change it; they can also keep it.",

@@ -2410,6 +2410,34 @@ html:has(.drawer[open]) {
 	min-width: 0;
 }
 
+.input-eye {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+}
+
+.input-eye input {
+	padding-right: 38px;
+}
+
+.eye {
+	position: absolute;
+	top: 50%;
+	right: 6px;
+	display: grid;
+	place-items: center;
+	width: 28px;
+	height: 28px;
+	transform: translateY(-50%);
+	border-radius: 6px;
+	color: var(--muted);
+}
+
+.eye:hover,
+.eye[aria-pressed='true'] {
+	color: var(--accent);
+}
+
 .field-row .btn-plain {
 	flex: none;
 	padding: 8px 12px;
