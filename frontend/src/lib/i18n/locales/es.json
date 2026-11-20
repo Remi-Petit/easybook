@@ -264,5 +264,12 @@
 	"users.filter.type": "Todos los tipos",
 	"users.type.local": "Local",
 	"users.type.sso": "SSO",
-	"users.empty": "Ninguna cuenta coincide."
+	"users.empty": "Ninguna cuenta coincide.",
+	"users.page": "Página {page} de {pages}",
+	"users.prev": "Página anterior",
+	"users.next": "Página siguiente",
+	"users.first": "Primera página",
+	"users.last": "Última página",
+	"users.perPage": "Por página",
+	"users.range": "{from}–{to} de {total}"
 }

@@ -264,5 +264,12 @@
 	"users.filter.type": "Alle Typen",
 	"users.type.local": "Lokal",
 	"users.type.sso": "SSO",
-	"users.empty": "Kein passendes Konto."
+	"users.empty": "Kein passendes Konto.",
+	"users.page": "Seite {page} von {pages}",
+	"users.prev": "Vorherige Seite",
+	"users.next": "Nächste Seite",
+	"users.first": "Erste Seite",
+	"users.last": "Letzte Seite",
+	"users.perPage": "Pro Seite",
+	"users.range": "{from}–{to} von {total}"
 }

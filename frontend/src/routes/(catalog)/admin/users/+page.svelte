@@ -4,10 +4,12 @@
 		columnFilteringFeature,
 		columnVisibilityFeature,
 		createFilteredRowModel,
+		createPaginatedRowModel,
 		createSortedRowModel,
 		createTable,
 		filterFns,
 		globalFilteringFeature,
+		rowPaginationFeature,
 		rowSortingFeature,
 		sortFns,
 		tableFeatures,
@@ -28,17 +30,31 @@
 	let selectedId = $state<string | null>(null);
 	const selected = $derived(users.find((user) => user.id === selectedId) ?? null);
 
-	// Tableau : tri, recherche, filtres et colonnes viennent de TanStack Table.
+	// Tableau : tri, recherche, filtres, colonnes et pagination viennent de TanStack Table.
 	const features = tableFeatures({
 		rowSortingFeature,
 		columnFilteringFeature,
 		globalFilteringFeature,
 		columnVisibilityFeature,
+		rowPaginationFeature,
 		sortedRowModel: createSortedRowModel(),
 		filteredRowModel: createFilteredRowModel(),
+		paginatedRowModel: createPaginatedRowModel(),
 		filterFns,
 		sortFns
 	});
+
+	const PAGE_SIZES = [5, 10, 25, 50, 100];
+	const PAGE_SIZE_KEY = 'easybook.users.pageSize';
+
+	function savedPageSize(): number {
+		try {
+			const saved = Number(localStorage.getItem(PAGE_SIZE_KEY));
+			return PAGE_SIZES.includes(saved) ? saved : 10;
+		} catch {
+			return 10;
+		}
+	}
 
 	const COLUMN_LABELS = {
 		user: 'users.col.user',
@@ -106,6 +122,7 @@
 		getRowId: (user) => user.id,
 		globalFilterFn: 'includesString',
 		initialState: {
+			pagination: { pageIndex: 0, pageSize: savedPageSize() },
 			columnVisibility: {
 				created: false,
 				type: !!untrack(() => data.session.oidc),
@@ -113,6 +130,21 @@
 			}
 		}
 	});
+
+	const pagination = $derived(table.atoms.pagination.get());
+	const totalRows = $derived(table.getPrePaginatedRowModel().rows.length);
+	const pageCount = $derived(Math.max(table.getPageCount(), 1));
+	const rangeFrom = $derived(totalRows === 0 ? 0 : pagination.pageIndex * pagination.pageSize + 1);
+	const rangeTo = $derived(Math.min(totalRows, (pagination.pageIndex + 1) * pagination.pageSize));
+
+	function setPageSize(size: number) {
+		table.setPageSize(size);
+		try {
+			localStorage.setItem(PAGE_SIZE_KEY, String(size));
+		} catch {
+			// Stockage refusé : le choix vaut pour cette visite seulement.
+		}
+	}
 
 	let search = $state('');
 	let roleFilter = $state('');
@@ -486,6 +518,54 @@
 						{/each}
 					</tbody>
 				</table>
+			</div>
+
+			<div class="table-pages">
+				<label class="page-size">
+					<span>{t('users.perPage')}</span>
+					<select value={pagination.pageSize} onchange={(event) => setPageSize(Number(event.currentTarget.value))}>
+						{#each PAGE_SIZES as size (size)}
+							<option value={size}>{size}</option>
+						{/each}
+					</select>
+				</label>
+				<span class="page-range">
+					{t('users.range', { from: rangeFrom, to: rangeTo, total: totalRows })}
+				</span>
+				<nav aria-label={t('users.page', { page: pagination.pageIndex + 1, pages: pageCount })}>
+					<button
+						type="button"
+						aria-label={t('users.first')}
+						disabled={!table.getCanPreviousPage()}
+						onclick={() => table.setPageIndex(0)}
+					>
+						«
+					</button>
+					<button
+						type="button"
+						aria-label={t('users.prev')}
+						disabled={!table.getCanPreviousPage()}
+						onclick={() => table.previousPage()}
+					>
+						‹
+					</button>
+					<button
+						type="button"
+						aria-label={t('users.next')}
+						disabled={!table.getCanNextPage()}
+						onclick={() => table.nextPage()}
+					>
+						›
+					</button>
+					<button
+						type="button"
+						aria-label={t('users.last')}
+						disabled={!table.getCanNextPage()}
+						onclick={() => table.setPageIndex(pageCount - 1)}
+					>
+						»
+					</button>
+				</nav>
 			</div>
 		{/if}
 	</section>

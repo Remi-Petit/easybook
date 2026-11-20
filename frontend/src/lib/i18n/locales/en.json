@@ -264,5 +264,12 @@
 	"users.filter.type": "All types",
 	"users.type.local": "Local",
 	"users.type.sso": "SSO",
-	"users.empty": "No matching account."
+	"users.empty": "No matching account.",
+	"users.page": "Page {page} of {pages}",
+	"users.prev": "Previous page",
+	"users.next": "Next page",
+	"users.first": "First page",
+	"users.last": "Last page",
+	"users.perPage": "Per page",
+	"users.range": "{from}–{to} of {total}"
 }
