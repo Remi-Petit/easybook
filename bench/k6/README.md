@@ -5,6 +5,7 @@ Tests de charge d'easybook **à travers nginx** (interface + API + WebSocket), a
 ## Prérequis
 
 - Conteneur easybook lancé (`docker compose up -d`, port 5200 par défaut) avec une vraie bibliothèque : les scénarios lisent `/api/books` et tapent sur de vrais livres.
+- Un compte : tout `/api` et `/ws` exige une session. `setup()` se connecte une fois (`POST /api/auth/login`), puis chaque VU pose le même cookie (`-e EB_EMAIL=… -e EB_PASSWORD=…`, défaut : le compte de dev du compose).
 - `docker` ; k6 est lancé via l'image `grafana/k6` s'il n'est pas installé.
 - `node` pour le rapport.
 

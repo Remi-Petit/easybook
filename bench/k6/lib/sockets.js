@@ -2,17 +2,22 @@ import ws from 'k6/ws';
 import { check } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 import { WS_URL } from './config.js';
+import { cookieHeader } from './auth.js';
 
 const messages = new Counter('ws_messages');
 const received = new Counter('ws_bytes_received');
 const firstMessage = new Trend('ws_first_message', true);
 
 // Un onglet ouvert : le catalogue arrive à la connexion, puis à chaque changement du dossier.
-export function holdSocket(seconds) {
+// Le cookie de session part en en-tête : `/ws` est protégé comme `/api`.
+export function holdSocket(seconds, data) {
   const started = Date.now();
   let first = false;
 
-  const res = ws.connect(WS_URL, { tags: { name: 'ws_library' } }, (socket) => {
+  const res = ws.connect(
+    WS_URL,
+    { headers: cookieHeader(data), tags: { name: 'ws_library' } },
+    (socket) => {
     socket.on('message', (data) => {
       messages.add(1);
       received.add(data.length);
