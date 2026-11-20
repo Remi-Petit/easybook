@@ -2446,6 +2446,54 @@ html:has(.drawer[open]) {
 	font-size: 13px;
 }
 
+.check-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.tip {
+	position: relative;
+	display: inline-grid;
+}
+
+.tip-icon {
+	display: grid;
+	place-items: center;
+	color: var(--muted);
+}
+
+.tip-icon:hover,
+.tip-icon:focus-visible {
+	color: var(--accent);
+}
+
+.tip-text {
+	position: absolute;
+	bottom: calc(100% + 8px);
+	left: 50%;
+	z-index: 5;
+	width: max-content;
+	max-width: 240px;
+	padding: 8px 10px;
+	background: var(--panel-2);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+	color: var(--text);
+	font-size: 12.5px;
+	line-height: 1.4;
+	transform: translateX(-50%);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease;
+}
+
+.tip:hover .tip-text,
+.tip:focus-within .tip-text {
+	opacity: 1;
+}
+
 .check {
 	display: flex;
 	align-items: center;

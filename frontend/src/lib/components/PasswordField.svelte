@@ -73,9 +73,23 @@
 			{/if}
 		</span>
 	</div>
-	<label class="check">
-		<input type="checkbox" bind:checked={temporary} />
-		{t('users.password.temporary')}
-	</label>
-	<p class="panel-hint">{t('users.password.temporaryHint')}</p>
+	<div class="check-row">
+		<label class="check">
+			<input type="checkbox" bind:checked={temporary} />
+			{t('users.password.temporary')}
+		</label>
+		<span class="tip">
+			<button type="button" class="tip-icon" aria-describedby="tip-{uid}" aria-label={t('users.password.temporary')}>
+				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+					<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+						<circle cx="12" cy="12" r="9" />
+						<path d="M12 11v5M12 8h.01" />
+					</g>
+				</svg>
+			</button>
+			<span class="tip-text" id="tip-{uid}" role="tooltip">
+				{t('users.password.temporaryHint')}
+			</span>
+		</span>
+	</div>
 </div>
