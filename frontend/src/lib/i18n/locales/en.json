@@ -260,18 +260,9 @@
 	"users.filter.status": "All statuses",
 	"users.columns": "Columns",
 	"users.col.created": "Created",
-	"users.count": { "one": "{count} account", "other": "{count} accounts" },
-	"users.selected": { "one": "{count} selected", "other": "{count} selected" },
-	"users.selectAll": "Select all",
-	"users.selectRow": "Select {name}",
-	"users.clearSelection": "Clear selection",
-	"users.deleteMany": {
-		"one": "Delete this account? This cannot be undone.",
-		"other": "Delete these {count} accounts? This cannot be undone."
-	},
-	"users.empty": "No matching account.",
-	"users.page": "Page {page} of {pages}",
-	"users.perPage": "Per page",
-	"users.prev": "Previous",
-	"users.next": "Next"
+	"users.col.type": "Type",
+	"users.filter.type": "All types",
+	"users.type.local": "Local",
+	"users.type.sso": "SSO",
+	"users.empty": "No matching account."
 }

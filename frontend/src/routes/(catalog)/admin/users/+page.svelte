@@ -4,13 +4,10 @@
 		columnFilteringFeature,
 		columnVisibilityFeature,
 		createFilteredRowModel,
-		createPaginatedRowModel,
 		createSortedRowModel,
 		createTable,
 		filterFns,
 		globalFilteringFeature,
-		rowPaginationFeature,
-		rowSelectionFeature,
 		rowSortingFeature,
 		sortFns,
 		tableFeatures,
@@ -31,17 +28,14 @@
 	let selectedId = $state<string | null>(null);
 	const selected = $derived(users.find((user) => user.id === selectedId) ?? null);
 
-	// Tableau : tri, recherche, filtres, colonnes, pagination et sélection viennent de TanStack Table.
+	// Tableau : tri, recherche, filtres et colonnes viennent de TanStack Table.
 	const features = tableFeatures({
 		rowSortingFeature,
 		columnFilteringFeature,
 		globalFilteringFeature,
 		columnVisibilityFeature,
-		rowPaginationFeature,
-		rowSelectionFeature,
 		sortedRowModel: createSortedRowModel(),
 		filteredRowModel: createFilteredRowModel(),
-		paginatedRowModel: createPaginatedRowModel(),
 		filterFns,
 		sortFns
 	});
@@ -50,6 +44,7 @@
 		user: 'users.col.user',
 		role: 'users.role',
 		status: 'users.col.status',
+		type: 'users.col.type',
 		links: 'users.col.links',
 		lastLogin: 'users.col.lastLogin',
 		created: 'users.col.created'
@@ -58,7 +53,6 @@
 	const label = (id: string) => t(COLUMN_LABELS[id as ColumnId]);
 
 	const columns: ColumnDef<typeof features, User>[] = [
-		{ id: 'select', enableSorting: false, enableHiding: false, enableGlobalFilter: false },
 		{
 			id: 'user',
 			accessorFn: (user) => `${displayName(user)} ${user.email ?? ''} ${user.username}`,
@@ -75,6 +69,12 @@
 			id: 'status',
 			accessorFn: (user) => (user.disabled ? 'disabled' : 'active'),
 			filterFn: 'equalsString',
+			enableGlobalFilter: false
+		},
+		{
+			id: 'type',
+			accessorFn: (user) => accountKinds(user).join(' '),
+			filterFn: 'includesString',
 			enableGlobalFilter: false
 		},
 		{
@@ -104,22 +104,20 @@
 			return users;
 		},
 		getRowId: (user) => user.id,
-		// Son propre compte ne se supprime ni ne se désactive en lot.
-		enableRowSelection: (row) => row.original.id !== me,
 		globalFilterFn: 'includesString',
 		initialState: {
-			pagination: { pageIndex: 0, pageSize: 10 },
-			columnVisibility: { created: false, links: !!untrack(() => data.session.oidc) }
+			columnVisibility: {
+				created: false,
+				type: !!untrack(() => data.session.oidc),
+				links: false
+			}
 		}
 	});
-
-	const pagination = $derived(table.atoms.pagination.get());
-	const filteredCount = $derived(table.getRowCount());
-	const selectedUsers = $derived(table.getSelectedRowModel().rows.map((row) => row.original));
 
 	let search = $state('');
 	let roleFilter = $state('');
 	let statusFilter = $state('');
+	let typeFilter = $state('');
 	let columnsMenu = $state<HTMLDetailsElement>();
 
 	function setSearch(value: string) {
@@ -127,9 +125,16 @@
 		table.setGlobalFilter(value || undefined);
 	}
 
-	function setFilter(id: 'role' | 'status', value: string) {
+	// Un compte est local (mot de passe), SSO (identité liée), ou les deux.
+	const accountKinds = (user: User) => [
+		...(user.has_password ? ['local'] : []),
+		...(user.identities.length > 0 ? ['sso'] : [])
+	];
+
+	function setFilter(id: 'role' | 'status' | 'type', value: string) {
 		if (id === 'role') roleFilter = value;
-		else statusFilter = value;
+		else if (id === 'status') statusFilter = value;
+		else typeFilter = value;
 		table.getColumn(id)?.setFilterValue(value || undefined);
 	}
 
@@ -221,27 +226,7 @@
 		if (!result.ok) return fail(result.code);
 		notify(t('users.deleted', { name: displayName(user) }), { tone: 'ok' });
 		closeDrawer();
-		table.resetRowSelection();
 		users = users.filter((entry) => entry.id !== user.id);
-	}
-
-	async function bulk(action: 'enable' | 'disable' | 'delete') {
-		const targets = selectedUsers;
-		if (action === 'delete' && !confirm(t('users.deleteMany', { count: targets.length }))) return;
-		for (const user of targets) {
-			const result =
-				action === 'delete'
-					? await call('DELETE', `/api/admin/users/${user.id}`)
-					: await call<User>('PATCH', `/api/admin/users/${user.id}`, {
-							disabled: action === 'disable'
-						});
-			if (!result.ok) {
-				fail(result.code);
-				break;
-			}
-		}
-		table.resetRowSelection();
-		await load();
 	}
 
 	async function setPassword(event: SubmitEvent, user: User) {
@@ -372,10 +357,22 @@
 					<option value="active">{t('users.status.active')}</option>
 					<option value="disabled">{t('users.status.disabled')}</option>
 				</select>
+				{#if oidc}
+					<select
+						class="table-select"
+						aria-label={t('users.col.type')}
+						value={typeFilter}
+						onchange={(event) => setFilter('type', event.currentTarget.value)}
+					>
+						<option value="">{t('users.filter.type')}</option>
+						<option value="local">{t('users.type.local')}</option>
+						<option value="sso">{t('users.type.sso')}</option>
+					</select>
+				{/if}
 				<details class="menu" bind:this={columnsMenu}>
 					<summary class="table-select">{t('users.columns')}</summary>
 					<div class="menu-pop">
-						{#each table.getAllLeafColumns().filter((column) => column.getCanHide() && (column.id !== 'links' || oidc)) as column (column.id)}
+						{#each table.getAllLeafColumns().filter((column) => column.getCanHide() && ((column.id !== 'links' && column.id !== 'type') || oidc)) as column (column.id)}
 							<label>
 								<input
 									type="checkbox"
@@ -389,24 +386,6 @@
 				</details>
 			</div>
 
-			{#if selectedUsers.length > 0}
-				<div class="bulk-bar" role="toolbar" aria-label={t('users.selected', { count: selectedUsers.length })}>
-					<strong>{t('users.selected', { count: selectedUsers.length })}</strong>
-					<button type="button" class="btn-plain" onclick={() => bulk('enable')}>
-						{t('users.enable')}
-					</button>
-					<button type="button" class="btn-plain" onclick={() => bulk('disable')}>
-						{t('users.disable')}
-					</button>
-					<button type="button" class="btn-plain danger" onclick={() => bulk('delete')}>
-						{t('users.delete')}
-					</button>
-					<button type="button" class="btn-plain bulk-clear" onclick={() => table.resetRowSelection()}>
-						{t('users.clearSelection')}
-					</button>
-				</div>
-			{/if}
-
 			<div class="table-scroll">
 				<table class="data-table">
 					<thead>
@@ -419,15 +398,7 @@
 										data-col={id}
 										aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined}
 									>
-										{#if id === 'select'}
-											<input
-												type="checkbox"
-												aria-label={t('users.selectAll')}
-												checked={table.getIsAllPageRowsSelected()}
-												indeterminate={table.getIsSomePageRowsSelected()}
-												onchange={(event) => table.toggleAllPageRowsSelected(event.currentTarget.checked)}
-											/>
-										{:else if id === 'actions'}
+										{#if id === 'actions'}
 											<span class="visually-hidden">{t('users.manage')}</span>
 										{:else if header.column.getCanSort()}
 											<button
@@ -455,7 +426,6 @@
 							<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 							<tr
 								data-selected={user.id === selectedId}
-								data-checked={row.getIsSelected()}
 								data-disabled={user.disabled}
 								onclick={(event) => {
 									if (!(event.target as HTMLElement).closest('button, input, label')) select(user.id);
@@ -464,15 +434,7 @@
 								{#each row.getVisibleCells() as cell (cell.id)}
 									{@const id = cell.column.id}
 									<td data-col={id}>
-										{#if id === 'select'}
-											<input
-												type="checkbox"
-												aria-label={t('users.selectRow', { name: displayName(user) })}
-												checked={row.getIsSelected()}
-												disabled={!row.getCanSelect()}
-												onchange={row.getToggleSelectedHandler()}
-											/>
-										{:else if id === 'user'}
+										{#if id === 'user'}
 											<div class="user-cell">
 												{@render avatar(user)}
 												<div>
@@ -487,6 +449,14 @@
 											{@render rolePill(user.role)}
 										{:else if id === 'status'}
 											{@render statusPill(user.disabled)}
+										{:else if id === 'type'}
+											<span class="pill-group">
+												{#each accountKinds(user) as kind (kind)}
+													<span class="pill" data-tone={kind === 'sso' ? 'accent' : 'muted'}>
+														{t(kind === 'sso' ? 'users.type.sso' : 'users.type.local')}
+													</span>
+												{/each}
+											</span>
 										{:else if id === 'links'}
 											{user.identities.length}
 										{:else if id === 'lastLogin'}
@@ -494,8 +464,14 @@
 										{:else if id === 'created'}
 											{formatDate(user.created_at)}
 										{:else if id === 'actions'}
-											<button type="button" class="btn-plain" onclick={() => select(user.id)}>
-												{t('users.manage')}
+											<button
+												type="button"
+												class="btn-plain row-open"
+												aria-label={t('users.manage')}
+												title={t('users.manage')}
+												onclick={() => select(user.id)}
+											>
+												<span aria-hidden="true">›</span>
 											</button>
 										{/if}
 									</td>
@@ -510,46 +486,6 @@
 						{/each}
 					</tbody>
 				</table>
-			</div>
-
-			<div class="table-foot">
-				<span class="muted">{t('users.count', { count: filteredCount })}</span>
-				<label class="per-page">
-					<span>{t('users.perPage')}</span>
-					<select
-						class="table-select"
-						value={pagination.pageSize}
-						onchange={(event) => table.setPageSize(Number(event.currentTarget.value))}
-					>
-						{#each [10, 25, 50, 100] as size (size)}
-							<option value={size}>{size}</option>
-						{/each}
-					</select>
-				</label>
-				<div class="pager">
-					<button
-						type="button"
-						class="btn-plain"
-						disabled={!table.getCanPreviousPage()}
-						onclick={() => table.previousPage()}
-					>
-						{t('users.prev')}
-					</button>
-					<span class="muted">
-						{t('users.page', {
-							page: pagination.pageIndex + 1,
-							pages: Math.max(table.getPageCount(), 1)
-						})}
-					</span>
-					<button
-						type="button"
-						class="btn-plain"
-						disabled={!table.getCanNextPage()}
-						onclick={() => table.nextPage()}
-					>
-						{t('users.next')}
-					</button>
-				</div>
 			</div>
 		{/if}
 	</section>

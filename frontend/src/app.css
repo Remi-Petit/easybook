@@ -2065,28 +2065,19 @@ code {
 	background: var(--accent-soft);
 }
 
-.bulk-bar {
-	display: flex;
-	align-items: center;
-	flex-wrap: wrap;
-	gap: 8px;
-	padding: 10px 16px;
-	background: var(--accent-soft);
-	border-bottom: 1px solid var(--line);
-	font-size: 13.5px;
-}
-
-.bulk-bar .btn-plain {
-	border: 1px solid var(--line);
-	padding: 4px 10px;
-}
-
-.bulk-clear {
-	margin-left: auto;
+.menu-pop input {
+	accent-color: var(--accent);
 }
 
 .table-scroll {
+	position: relative;
 	overflow-x: auto;
+}
+
+.row-open {
+	padding: 0 8px;
+	font-size: 20px;
+	line-height: 1;
 }
 
 .data-table {
@@ -2127,27 +2118,22 @@ code {
 	background: rgba(255, 255, 255, 0.025);
 }
 
-.data-table tr[data-checked='true'] td,
 .data-table tr[data-selected='true'] td {
 	background: var(--accent-soft);
 }
 
-.data-table tr[data-disabled='true'] td:not([data-col='actions']):not([data-col='select']) {
+.data-table tr[data-disabled='true'] td:not([data-col='actions']) {
 	opacity: 0.55;
-}
-
-.data-table [data-col='select'] {
-	width: 40px;
-	padding-right: 0;
 }
 
 .data-table [data-col='actions'] {
 	text-align: right;
 }
 
-.data-table input[type='checkbox'] {
-	accent-color: var(--accent);
-	cursor: pointer;
+.pill-group {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 4px;
 }
 
 .table-empty td {
@@ -2244,44 +2230,6 @@ code {
 	height: 6px;
 	border-radius: 50%;
 	background: currentColor;
-}
-
-.table-foot {
-	display: flex;
-	align-items: center;
-	flex-wrap: wrap;
-	gap: 12px 20px;
-	padding: 12px 16px;
-	border-top: 1px solid var(--line);
-	font-size: 13px;
-}
-
-.per-page {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	margin-left: auto;
-	color: var(--muted);
-}
-
-.per-page .table-select {
-	padding: 4px 8px;
-}
-
-.pager {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-}
-
-.pager .btn-plain {
-	border: 1px solid var(--line);
-	padding: 4px 12px;
-}
-
-.pager .btn-plain:disabled {
-	opacity: 0.4;
-	cursor: default;
 }
 
 /* Tiroir : le compte choisi, collé au bord droit. */

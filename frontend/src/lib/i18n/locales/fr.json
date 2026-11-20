@@ -260,18 +260,9 @@
 	"users.filter.status": "Tous les états",
 	"users.columns": "Colonnes",
 	"users.col.created": "Créé le",
-	"users.count": { "one": "{count} compte", "other": "{count} comptes" },
-	"users.selected": { "one": "{count} sélectionné", "other": "{count} sélectionnés" },
-	"users.selectAll": "Tout sélectionner",
-	"users.selectRow": "Sélectionner {name}",
-	"users.clearSelection": "Tout désélectionner",
-	"users.deleteMany": {
-		"one": "Supprimer ce compte ? Cette action est définitive.",
-		"other": "Supprimer ces {count} comptes ? Cette action est définitive."
-	},
-	"users.empty": "Aucun compte ne correspond.",
-	"users.page": "Page {page} sur {pages}",
-	"users.perPage": "Par page",
-	"users.prev": "Précédent",
-	"users.next": "Suivant"
+	"users.col.type": "Type",
+	"users.filter.type": "Tous les types",
+	"users.type.local": "Local",
+	"users.type.sso": "SSO",
+	"users.empty": "Aucun compte ne correspond."
 }
