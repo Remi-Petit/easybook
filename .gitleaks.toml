@@ -1,0 +1,7 @@
+# Règles par défaut de gitleaks + exceptions **documentées**.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Clés RSA jetables du faux fournisseur OIDC des tests (aucune valeur)"
+paths = ['''backend/tests/common/keys/.*\.pem''']

@@ -77,7 +77,7 @@
 				{#if !user.has_password}
 					<p class="panel-hint">{t('account.password.none')}</p>
 				{/if}
-				<form class="stack-form" onsubmit={changePassword}>
+				<form class="stack-form" method="post" onsubmit={changePassword}>
 					<!-- Champ caché : les gestionnaires de mots de passe retrouvent l'identifiant. -->
 					<input type="text" name="email" value={user.email ?? ''} autocomplete="username" hidden />
 					{#if user.has_password}

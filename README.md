@@ -1,6 +1,7 @@
 # easybook
 
 [![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
+[![sécurité](https://github.com/Remi-Petit/easybook/actions/workflows/security.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/security.yml)
 [![license](https://img.shields.io/github/license/Remi-Petit/easybook)](LICENSE)
 [![image](https://img.shields.io/badge/image-ghcr.io%2Fremi--petit%2Feasybook-blue)](https://github.com/Remi-Petit/easybook/pkgs/container/easybook)
 <!-- couverture:start -->
@@ -329,6 +330,39 @@ touche que le README ne lance rien.
 
 L'image est construite sans être publiée, avec un cache GHA : la CI vérifie ce
 que l'utilisateur lance vraiment, pas seulement les lockfiles.
+
+### Sécurité
+
+`.github/workflows/security.yml` regarde **tout le dépôt** (pas de filtre `paths`) :
+à chaque push sur `master`, chaque pull request, et chaque lundi.
+
+| Job | Ce qu'il vérifie |
+|---|---|
+| `gitleaks` | secrets (clés, jetons, mots de passe) dans le code **et l'historique** ; exceptions documentées dans `.gitleaks.toml` (clés RSA jetables des tests) |
+| `semgrep` | motifs de code dangereux (`p/security-audit`, `p/secrets`, `p/typescript`, `p/dockerfile`) — bloquant |
+
+Les deux tournent depuis leur image officielle, version épinglée. `p/rust` n'est
+pas activé : il signale chaque `unsafe`, que ce code justifie (`mmap`, `libc`).
+En local :
+
+```bash
+docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 detect --source /repo --config /repo/.gitleaks.toml --redact
+docker run --rm -v "$PWD:/src" semgrep/semgrep:1.186.0 semgrep scan --config p/security-audit --config p/secrets --metrics=off
+```
+
+**OWASP ZAP** (développement) : le `docker-compose.yml` embarque un service `zap`
+qui ne démarre jamais seul. Il se connecte en administrateur, explore l'interface
+et l'API en **passif** (il observe, il n'attaque pas) et écrit un rapport :
+
+```bash
+docker compose --env-file .env.dev run --rm zap
+# → zap-reports/zap-report.html (et .json, ignorés par git)
+```
+
+Les avertissements restants sont connus : pas de `default-src` / `script-src`
+(le rendu des EPUB et pdf.js en demanderaient une très large), et « pas de jeton
+anti-CSRF » — la protection est le cookie `SameSite=Lax` plus le contrôle de
+l'en-tête `Origin` côté API. Ne scanner que ses propres serveurs.
 
 Les badges de couverture ne sont **jamais** saisis à la main : le job les
 réécrit, et ne commite que s'ils ont bougé (`README.md` n'est pas dans les

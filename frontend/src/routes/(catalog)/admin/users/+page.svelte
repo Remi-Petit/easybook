@@ -133,7 +133,7 @@
 	<div class="admin-stack">
 		<details class="panel-card">
 			<summary>{t('users.new')}</summary>
-			<form class="stack-form" onsubmit={create}>
+			<form class="stack-form" method="post" onsubmit={create}>
 				<label class="field">
 					<span>{t('users.email')}</span>
 					<input name="email" type="email" autocomplete="off" required bind:value={draft.email} />
@@ -228,7 +228,7 @@
 					{/if}
 				</div>
 
-				<form class="stack-form" onsubmit={(event) => setPassword(event, selected)}>
+				<form class="stack-form" method="post" onsubmit={(event) => setPassword(event, selected)}>
 					<label class="field">
 						<span>{t('users.resetPassword')}</span>
 						<input
@@ -287,7 +287,7 @@
 						{/if}
 					</div>
 
-					<form class="stack-form" onsubmit={(event) => linkBySubject(event, selected)}>
+					<form class="stack-form" method="post" onsubmit={(event) => linkBySubject(event, selected)}>
 						<label class="field">
 							<span>{t('users.link.subject')}</span>
 							<input autocomplete="off" spellcheck="false" required bind:value={subject} />

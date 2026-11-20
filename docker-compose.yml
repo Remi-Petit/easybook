@@ -124,5 +124,33 @@ services:
       retries: 40
       start_period: 20s
 
+  # Scanner de sécurité **OWASP ZAP** (passif), pour le développement :
+  #
+  #   docker compose --env-file .env.dev run --rm zap
+  #
+  # Il se connecte en administrateur à `easybook`, explore l'interface et l'API,
+  # puis écrit `zap-reports/zap-report.html` (et `.json`). Ne démarre jamais tout
+  # seul : profil `zap`, donc ignoré par `docker compose up`. Ne jamais le diriger
+  # vers un serveur qui n'est pas le vôtre.
+  zap:
+    profiles: ["zap"]
+    image: ghcr.io/zaproxy/zaproxy:stable
+    container_name: easybook-zap
+    depends_on:
+      easybook:
+        condition: service_healthy
+    environment:
+      ZAP_TARGET: http://easybook:8080
+      ZAP_EMAIL: ${EASYBOOK_ADMIN_EMAIL:-admin@easybook.local}
+      ZAP_PASSWORD: ${EASYBOOK_ADMIN_PASSWORD:-}
+      # Voir `easybook` : le proxy d'entreprise injecté dans les conteneurs ne doit pas
+      # intercepter le trafic vers un autre conteneur.
+      NO_PROXY: localhost,127.0.0.1,easybook
+      no_proxy: localhost,127.0.0.1,easybook
+    volumes:
+      - ./docker/zap/scan.py:/zap/scan.py:ro
+      - ./zap-reports:/zap/wrk:rw
+    command: ["python3", "/zap/scan.py"]
+
 volumes:
   easybook-data:

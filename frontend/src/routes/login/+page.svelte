@@ -55,7 +55,7 @@
 </svelte:head>
 
 <main class="auth">
-	<form class="auth-card" onsubmit={submit}>
+	<form class="auth-card" method="post" onsubmit={submit}>
 		<a class="mark" href="/login">easybook</a>
 		<h1>{t('auth.title')}</h1>
 		<p class="auth-sub">{t('auth.subtitle')}</p>
