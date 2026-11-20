@@ -5,8 +5,10 @@
 //! depuis [`IDLE`]. À ce moment, le cache de fichiers que le noyau garde pour ce
 //! livre est rendu ([`release`]) : sans cela, il resterait en mémoire tant que le
 //! système n'en manque pas, c'est-à-dire indéfiniment sur une machine qui a de la
-//! place.
-//!
+//! place.//!
+//! S'y ajoute le **cache média** de nginx (`/tmp/nginx-cache`, planches et
+//! couvertures) : ses pages sont rendues elles aussi dès que plus personne ne
+//! lit, pour la même raison.//!
 //! La mémoire d'une lecture est celle du livre dans le cache de fichiers
 //! (`mincore`), toutes lectures confondues : le noyau ne sait pas la distinguer
 //! par lecteur. Hors Linux (glibc), elle est inconnue et rien n'est rendu.
@@ -22,11 +24,8 @@ use std::time::{Duration, Instant};
 pub const IDLE: Duration = Duration::from_secs(60);
 /// Période de vérification des lectures terminées.
 const SWEEP: Duration = Duration::from_secs(5);
-/// Silence après lequel les pages du cache média (nginx) sont rendues : les
-/// fichiers restent sur disque, seule leur copie mémoire part.
-const MEDIA_IDLE: Duration = Duration::from_secs(600);
-/// Un tour sur douze (5 s × 12) : parcourir l'arborescence est plus coûteux que
-/// vérifier deux ou trois livres.
+/// Un tour sur douze (5 s × 12) : parcourir l'arborescence du cache média est
+/// plus coûteux que vérifier deux ou trois livres.
 const MEDIA_EVERY: u32 = 12;
 /// Cache média de nginx (voir `docker/nginx.conf`, `proxy_cache_path`).
 const MEDIA_DIR: &str = "/tmp/nginx-cache";
@@ -83,6 +82,13 @@ impl Registry {
         self.live
             .get(path)
             .is_some_and(|reading| now.duration_since(reading.last) < IDLE)
+    }
+
+    /// Quelqu'un lit-il encore quelque chose ?
+    fn any_active(&self, now: Instant) -> bool {
+        self.live
+            .values()
+            .any(|reading| now.duration_since(reading.last) < IDLE)
     }
 }
 
@@ -252,11 +258,20 @@ pub fn release(path: &Path) {
 
 /// Cache média de nginx : ses fichiers sont des copies de planches et de
 /// couvertures, que le noyau garde en mémoire après les avoir écrits et lus.
-/// On rend ces pages quand plus personne ne les demande depuis un moment : les
-/// fichiers, eux, restent sur disque, nginx les resservira sans repasser par
-/// l'API. Le dossier se règle par `EASYBOOK_MEDIA_CACHE` (défaut : celui de
-/// `docker/nginx.conf`).
+/// On rend ces pages quand plus personne ne lit : les fichiers, eux, restent sur
+/// disque, nginx les resservira sans repasser par l'API. Le dossier se règle par
+/// `EASYBOOK_MEDIA_CACHE` (défaut : celui de `docker/nginx.conf`).
+///
+/// La condition est l'activité de lecture, pas l'âge des fichiers : nginx ne
+/// met pas à jour leur date quand il les ressert depuis le cache (vérifié), donc
+/// une fenêtre fixe finirait par vider les pages d'un lecteur en pleine lecture.
 fn sweep_media() {
+    let reading = registry()
+        .lock()
+        .is_ok_and(|registry| registry.any_active(Instant::now()));
+    if reading {
+        return;
+    }
     let dir = std::env::var_os("EASYBOOK_MEDIA_CACHE")
         .map_or_else(|| PathBuf::from(MEDIA_DIR), PathBuf::from);
     walk_media(&dir, 0);
@@ -297,11 +312,14 @@ fn release_media(path: &Path) {
 }
 
 /// Une entrée du cache média est-elle assez vieille pour que ses pages partent ?
+///
+/// Même seuil que pour un livre : le silence qui termine une lecture vaut aussi
+/// pour les planches qu'elle a laissées dans le cache média.
 fn media_expired(meta: &std::fs::Metadata) -> bool {
     meta.modified()
         .ok()
         .and_then(|modified| modified.elapsed().ok())
-        .is_some_and(|idle| idle >= MEDIA_IDLE)
+        .is_some_and(|idle| idle >= IDLE)
 }
 
 /// Demande au noyau d'oublier les pages en cache de ce fichier ; rend les octets
@@ -404,7 +422,7 @@ mod tests {
         let old = dir.path().join("vieux");
         std::fs::write(&fresh, vec![1u8; 4096]).unwrap();
         std::fs::write(&old, vec![1u8; 4096]).unwrap();
-        // Deux heures plus tôt : bien au-delà de `MEDIA_IDLE`.
+        // Deux heures plus tôt : bien au-delà de `IDLE`.
         let past = SystemTime::now() - Duration::from_secs(2 * 3600);
         std::fs::File::options()
             .write(true)
@@ -415,5 +433,16 @@ mod tests {
 
         assert!(!media_expired(&std::fs::metadata(&fresh).unwrap()));
         assert!(media_expired(&std::fs::metadata(&old).unwrap()));
+    }
+
+    #[test]
+    fn the_media_cache_waits_for_the_reading_to_end() {
+        let origin = Instant::now();
+        let mut registry = Registry::default();
+        registry.touch(Path::new("/books/a.cbz"), "a.cbz", 1, origin);
+
+        assert!(registry.any_active(at(0, origin)));
+        assert!(registry.any_active(at(IDLE.as_secs() - 1, origin)));
+        assert!(!registry.any_active(at(IDLE.as_secs(), origin)));
     }
 }
