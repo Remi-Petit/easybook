@@ -208,3 +208,15 @@ export function formatDate(seconds: number | null): string {
 		year: 'numeric'
 	});
 }
+
+/** Date et heure (`12 nov. 2026, 14:35`), dans la langue et le fuseau du navigateur. */
+export function formatDateTime(seconds: number | null): string {
+	if (!seconds) return '';
+	return new Date(seconds * 1000).toLocaleString(intlLocale(), {
+		day: 'numeric',
+		month: 'short',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit'
+	});
+}

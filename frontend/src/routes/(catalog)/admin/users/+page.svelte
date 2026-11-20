@@ -15,7 +15,7 @@
 		tableFeatures,
 		type ColumnDef
 	} from '@tanstack/svelte-table';
-	import { formatDate } from '$lib/api';
+	import { formatDateTime } from '$lib/api';
 	import PasswordField from '$lib/components/PasswordField.svelte';
 	import InfoTip from '$lib/components/InfoTip.svelte';
 	import { call, displayName, errorKey, type Role, type Session, type User } from '$lib/auth';
@@ -597,9 +597,9 @@
 										{:else if id === 'links'}
 											{user.identities.length}
 										{:else if id === 'lastLogin'}
-											{user.last_login_at ? formatDate(user.last_login_at) : t('users.never')}
+											{user.last_login_at ? formatDateTime(user.last_login_at) : t('users.never')}
 										{:else if id === 'created'}
-											{formatDate(user.created_at)}
+											{formatDateTime(user.created_at)}
 										{:else if id === 'actions'}
 											<button
 												type="button"
@@ -704,7 +704,7 @@
 				{/if}
 				<span class="muted">
 					{t('users.col.lastLogin')} :
-					{selected.last_login_at ? formatDate(selected.last_login_at) : t('users.never')}
+					{selected.last_login_at ? formatDateTime(selected.last_login_at) : t('users.never')}
 				</span>
 			</div>
 

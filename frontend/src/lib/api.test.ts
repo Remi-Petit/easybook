@@ -10,6 +10,7 @@ import {
 	createFolderUrl,
 	formatBytes,
 	formatDate,
+	formatDateTime,
 	pageUrl,
 	pageWidth,
 	rawUrl,
@@ -130,6 +131,22 @@ describe('formatDate', () => {
 
 		applyLocale('en');
 		expect(formatDate(twelfthOfNovember)).toBe('Nov 12, 2026');
+
+		applyLocale('fr');
+	});
+});
+
+describe('formatDateTime', () => {
+	it('ajoute l’heure et la minute, dans la langue courante', () => {
+		// 14 h 35 **locale** : le résultat ne dépend pas du fuseau du runner.
+		const afternoon = new Date(2026, 10, 12, 14, 35).getTime() / 1000;
+
+		applyLocale('fr');
+		expect(formatDateTime(null)).toBe('');
+		expect(formatDateTime(afternoon)).toMatch(/12 nov\. 2026.*14:35/);
+
+		applyLocale('en');
+		expect(formatDateTime(afternoon)).toMatch(/Nov 12, 2026.*0?2:35/);
 
 		applyLocale('fr');
 	});
