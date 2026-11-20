@@ -37,14 +37,14 @@ export function cookieHeader(data) {
   return data && data.token ? { Cookie: `${SESSION_COOKIE}=${data.token}` } : {};
 }
 
-let adopted = false;
-
 /**
- * Pose le cookie de `setup()` dans le jar de ce VU. Chaque VU a son propre
- * runtime : la garde évite de refaire le travail à chaque itération.
+ * Pose le cookie de `setup()` dans le jar de ce VU.
+ *
+ * k6 **vide le jar au début de chaque itération** : le cookie doit donc être
+ * reposé à chaque passage, sinon tout ce qui suit la première requête part sans
+ * session (401). L'appel est en mémoire, il ne coûte rien.
  */
 export function adopt(data) {
-  if (adopted || !data || !data.token) return;
-  adopted = true;
-  http.cookieJar().set(BASE_URL, SESSION_COOKIE, data.token);
+  if (!data || !data.token) return;
+  http.cookieJar().set(BASE_URL, SESSION_COOKIE, data.token, { path: '/' });
 }
