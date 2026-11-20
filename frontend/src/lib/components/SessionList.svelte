@@ -2,6 +2,7 @@
 	import { agentLabel } from '$lib/agent';
 	import { formatDateTime, formatRelative } from '$lib/api';
 	import { call, errorKey, type SessionInfo } from '$lib/auth';
+	import AgentIcon from '$lib/components/AgentIcon.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import InfoTip from '$lib/components/InfoTip.svelte';
 	import { t } from '$lib/i18n/state.svelte';
@@ -79,6 +80,7 @@
 			<li data-current={session.current}>
 				<div class="session-main">
 					<span class="session-title">
+						<AgentIcon user_agent={session.user_agent} />
 						<strong>{agentLabel(session.user_agent) ?? t('users.sessions.unknown')}</strong>
 						{#if session.current}<span class="badge">{t('users.sessions.current')}</span>{/if}
 						<span class="pill" data-tone={session.online ? 'ok' : recently(session) ? 'accent' : 'muted'}>

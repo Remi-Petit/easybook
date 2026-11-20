@@ -2673,6 +2673,22 @@ html:has(.drawer[open]) {
 	gap: 8px;
 }
 
+/* Appareil et navigateur : discrets, alignés sur la ligne du titre. */
+.agent-icons {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--muted);
+}
+
+.agent-icon {
+	display: inline-flex;
+}
+
+.agent-icon svg {
+	display: block;
+}
+
 .session-title .badge {
 	margin-left: 0;
 }
