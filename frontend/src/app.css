@@ -2071,3 +2071,9 @@ code {
 	padding: 4px 0 0;
 	font-size: 12.5px;
 }
+
+.btn-icon {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}

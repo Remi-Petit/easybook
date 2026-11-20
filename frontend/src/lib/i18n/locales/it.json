@@ -216,7 +216,7 @@
 	"account.identities.adminOnly": "Il collegamento è gestito da un amministratore: chiedigli un link d’invito.",
 	"users.title": "Account",
 	"users.subtitle": "Utenti della biblioteca e collegamento a un provider OIDC.",
-	"users.new": "Nuovo account",
+	"users.add": "Aggiungi un utente",
 	"users.displayName": "Nome visualizzato",
 	"users.email": "E-mail",
 	"users.passwordOptional": "Password (vuota: solo accesso OIDC)",

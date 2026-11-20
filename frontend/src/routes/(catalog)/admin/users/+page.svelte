@@ -15,8 +15,12 @@
 	let selectedId = $state<string | null>(null);
 	const selected = $derived(users.find((user) => user.id === selectedId) ?? null);
 
-	// Nouveau compte.
+	// Popup « Ajouter un utilisateur ».
+	let addDialog = $state<HTMLDialogElement>();
+	let emailField = $state<HTMLInputElement>();
 	let draft = $state({ display_name: '', email: '', password: '', role: 'user' as Role });
+	let addError = $state<string | null>(null);
+	let adding = $state(false);
 	// Panneau du compte choisi.
 	let resetPassword = $state('');
 	let subject = $state('');
@@ -43,17 +47,32 @@
 		invitation = null;
 	}
 
+	function openAdd() {
+		draft = { display_name: '', email: '', password: '', role: 'user' };
+		addError = null;
+		addDialog?.showModal();
+		emailField?.focus();
+	}
+
 	async function create(event: SubmitEvent) {
 		event.preventDefault();
+		if (adding) return;
+		adding = true;
+		addError = null;
 		const result = await call<User>('POST', '/api/admin/users', {
 			display_name: draft.display_name,
 			email: draft.email,
 			password: draft.password,
 			role: draft.role
 		});
-		if (!result.ok) return fail(result.code);
+		adding = false;
+		// La popup reste ouverte sur une erreur : on corrige sans tout retaper.
+		if (!result.ok) {
+			addError = t(errorKey(result.code));
+			return;
+		}
+		addDialog?.close();
 		notify(t('users.created', { name: displayName(result.data) }), { tone: 'ok' });
-		draft = { display_name: '', email: '', password: '', role: 'user' };
 		await load();
 		selectedId = result.data.id;
 	}
@@ -126,43 +145,28 @@
 
 <div class="page">
 	<section class="intro">
-		<h1>{t('users.title')}</h1>
-		<p>{t('users.subtitle')}</p>
+		<div class="intro-head">
+			<div>
+				<h1>{t('users.title')}</h1>
+				<p>{t('users.subtitle')}</p>
+			</div>
+			<button type="button" class="btn-main btn-icon" onclick={openAdd}>
+				<!-- Plus : ajouter un utilisateur. -->
+				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+					<path
+						d="M12 5v14M5 12h14"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.9"
+						stroke-linecap="round"
+					/>
+				</svg>
+				{t('users.add')}
+			</button>
+		</div>
 	</section>
 
 	<div class="admin-stack">
-		<details class="panel-card">
-			<summary>{t('users.new')}</summary>
-			<form class="stack-form" method="post" onsubmit={create}>
-				<label class="field">
-					<span>{t('users.email')}</span>
-					<input name="email" type="email" autocomplete="off" required bind:value={draft.email} />
-				</label>
-				<label class="field">
-					<span>{t('users.displayName')}</span>
-					<input name="display_name" autocomplete="off" bind:value={draft.display_name} />
-				</label>
-				<label class="field">
-					<span>{t('users.passwordOptional')}</span>
-					<input
-						name="password"
-						type="password"
-						autocomplete="new-password"
-						minlength="8"
-						bind:value={draft.password}
-					/>
-				</label>
-				<label class="field">
-					<span>{t('users.role')}</span>
-					<select bind:value={draft.role}>
-						<option value="user">{t('account.role.user')}</option>
-						<option value="admin">{t('account.role.admin')}</option>
-					</select>
-				</label>
-				<div><button type="submit" class="btn-main">{t('users.create')}</button></div>
-			</form>
-		</details>
-
 		<section class="panel-card">
 			{#if !loaded}
 				<p class="panel-hint">{t('status.connecting')}</p>
@@ -301,3 +305,56 @@
 		{/if}
 	</div>
 </div>
+
+<dialog
+	bind:this={addDialog}
+	class="dialog"
+	onclick={(event) => event.target === addDialog && addDialog?.close()}
+>
+	<form class="dialog-body" method="post" onsubmit={create}>
+		<h2>{t('users.add')}</h2>
+		<label class="field">
+			<span>{t('users.email')}</span>
+			<input
+				bind:this={emailField}
+				name="email"
+				type="email"
+				autocomplete="off"
+				required
+				bind:value={draft.email}
+			/>
+		</label>
+		<label class="field">
+			<span>{t('users.displayName')}</span>
+			<input name="display_name" autocomplete="off" bind:value={draft.display_name} />
+		</label>
+		<label class="field">
+			<span>{t('users.passwordOptional')}</span>
+			<input
+				name="password"
+				type="password"
+				autocomplete="new-password"
+				minlength="8"
+				bind:value={draft.password}
+			/>
+		</label>
+		<label class="field">
+			<span>{t('users.role')}</span>
+			<select bind:value={draft.role}>
+				<option value="user">{t('account.role.user')}</option>
+				<option value="admin">{t('account.role.admin')}</option>
+			</select>
+		</label>
+		{#if addError}
+			<p class="dialog-error" role="alert">{addError}</p>
+		{/if}
+		<div class="dialog-actions">
+			<button class="btn-plain" type="button" onclick={() => addDialog?.close()}>
+				{t('common.cancel')}
+			</button>
+			<button class="btn-main" type="submit" disabled={adding || draft.email.trim() === ''}>
+				{t('users.create')}
+			</button>
+		</div>
+	</form>
+</dialog>

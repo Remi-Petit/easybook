@@ -216,7 +216,7 @@
 	"account.identities.adminOnly": "La vinculación la gestiona un administrador: pídale un enlace de invitación.",
 	"users.title": "Cuentas",
 	"users.subtitle": "Usuarios de la biblioteca y su vinculación con un proveedor OIDC.",
-	"users.new": "Nueva cuenta",
+	"users.add": "Añadir un usuario",
 	"users.displayName": "Nombre visible",
 	"users.email": "Correo",
 	"users.passwordOptional": "Contraseña (vacía: solo inicio de sesión OIDC)",

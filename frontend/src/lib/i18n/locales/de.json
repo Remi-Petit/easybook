@@ -216,7 +216,7 @@
 	"account.identities.adminOnly": "Die Verknüpfung wird von einem Administrator verwaltet: Fragen Sie nach einem Einladungslink.",
 	"users.title": "Konten",
 	"users.subtitle": "Benutzer der Bibliothek und ihre Verknüpfung mit einem OIDC-Anbieter.",
-	"users.new": "Neues Konto",
+	"users.add": "Benutzer hinzufügen",
 	"users.displayName": "Anzeigename",
 	"users.email": "E-Mail",
 	"users.passwordOptional": "Passwort (leer: nur OIDC-Anmeldung)",

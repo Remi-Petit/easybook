@@ -216,7 +216,7 @@
 	"account.identities.adminOnly": "A associação é gerida por um administrador: peça-lhe um link de convite.",
 	"users.title": "Contas",
 	"users.subtitle": "Utilizadores da biblioteca e associação a um fornecedor OIDC.",
-	"users.new": "Nova conta",
+	"users.add": "Adicionar um utilizador",
 	"users.displayName": "Nome apresentado",
 	"users.email": "E-mail",
 	"users.passwordOptional": "Palavra-passe (vazia: apenas início de sessão OIDC)",

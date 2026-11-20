@@ -216,7 +216,7 @@
 	"account.identities.adminOnly": "Linking is managed by an administrator: ask them for an invitation link.",
 	"users.title": "Accounts",
 	"users.subtitle": "Library users and their link to an OIDC provider.",
-	"users.new": "New account",
+	"users.add": "Add a user",
 	"users.displayName": "Display name",
 	"users.email": "E-mail",
 	"users.passwordOptional": "Password (empty: OIDC sign-in only)",
