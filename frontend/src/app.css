@@ -2299,15 +2299,18 @@ code {
 
 .data-table {
 	width: 100%;
-	border-collapse: collapse;
+	min-width: max-content;
+	border-collapse: separate;
+	border-spacing: 0;
 	font-size: 13.5px;
 }
 
 .data-table th,
 .data-table td {
-	padding: 10px 12px;
+	padding: 10px;
 	text-align: left;
 	vertical-align: middle;
+	white-space: nowrap;
 }
 
 .data-table th {
@@ -2345,6 +2348,23 @@ code {
 
 .data-table [data-col='actions'] {
 	text-align: right;
+	padding: 10px 8px 10px 4px;
+}
+
+/* Reste visible quand le tableau déborde : fond opaque, aux couleurs de la ligne survolée ou ouverte. */
+.data-table [data-col='actions'] {
+	position: sticky;
+	right: 0;
+	z-index: 1;
+	background: var(--panel);
+}
+
+.data-table tbody tr:hover td[data-col='actions'] {
+	background: color-mix(in srgb, var(--panel) 97.5%, white);
+}
+
+.data-table tbody tr[data-selected='true'] td[data-col='actions'] {
+	background: color-mix(in srgb, var(--panel) 86%, var(--accent));
 }
 
 .pill-group {
@@ -2362,7 +2382,7 @@ code {
 .sort-btn {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
+	gap: 4px;
 	padding: 0;
 	color: inherit;
 	font: inherit;
@@ -2383,7 +2403,7 @@ code {
 .user-cell {
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	gap: 10px;
 }
 
 .user-cell > div {
