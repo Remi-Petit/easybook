@@ -274,6 +274,8 @@
 	"users.filter.role": "Alle Rollen",
 	"users.filter.status": "Alle Status",
 	"users.columns": "Spalten",
+	"users.filters": "Filter",
+	"users.filter.reset": "Zurücksetzen",
 	"users.col.created": "Erstellt",
 	"users.col.type": "Typ",
 	"users.filter.type": "Alle Typen",

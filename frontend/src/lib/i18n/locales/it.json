@@ -274,6 +274,8 @@
 	"users.filter.role": "Tutti i ruoli",
 	"users.filter.status": "Tutti gli stati",
 	"users.columns": "Colonne",
+	"users.filters": "Filtri",
+	"users.filter.reset": "Reimposta",
 	"users.col.created": "Creato",
 	"users.col.type": "Tipo",
 	"users.filter.type": "Tutti i tipi",

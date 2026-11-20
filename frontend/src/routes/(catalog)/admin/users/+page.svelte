@@ -153,6 +153,8 @@
 	let roleFilter = $state('');
 	let statusFilter = $state('');
 	let typeFilter = $state('');
+	let filtersOpen = $state(false);
+	const activeFilters = $derived([roleFilter, statusFilter, typeFilter].filter(Boolean).length);
 	let columnsMenu = $state<HTMLDetailsElement>();
 
 	function setSearch(value: string) {
@@ -171,6 +173,12 @@
 		else if (id === 'status') statusFilter = value;
 		else typeFilter = value;
 		table.getColumn(id)?.setFilterValue(value || undefined);
+	}
+
+	function resetFilters() {
+		setFilter('role', '');
+		setFilter('status', '');
+		setFilter('type', '');
 	}
 
 	const initials = (user: User) =>
@@ -408,62 +416,111 @@
 			<p class="panel-hint table-pad">{t('status.connecting')}</p>
 		{:else}
 			<div class="table-toolbar">
-				<input
-					class="table-search"
-					type="search"
-					autocomplete="off"
-					placeholder={t('users.search')}
-					aria-label={t('users.search')}
-					value={search}
-					oninput={(event) => setSearch(event.currentTarget.value)}
-				/>
-				<select
-					class="table-select"
-					aria-label={t('users.role')}
-					value={roleFilter}
-					onchange={(event) => setFilter('role', event.currentTarget.value)}
-				>
-					<option value="">{t('users.filter.role')}</option>
-					<option value="admin">{t('account.role.admin')}</option>
-					<option value="user">{t('account.role.user')}</option>
-				</select>
-				<select
-					class="table-select"
-					aria-label={t('users.col.status')}
-					value={statusFilter}
-					onchange={(event) => setFilter('status', event.currentTarget.value)}
-				>
-					<option value="">{t('users.filter.status')}</option>
-					<option value="active">{t('users.status.active')}</option>
-					<option value="disabled">{t('users.status.disabled')}</option>
-				</select>
-				{#if oidc}
-					<select
-						class="table-select"
-						aria-label={t('users.col.type')}
-						value={typeFilter}
-						onchange={(event) => setFilter('type', event.currentTarget.value)}
+				<div class="toolbar-row">
+					<label class="search-box">
+						<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+							<g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+								<circle cx="11" cy="11" r="6.5" />
+								<path d="M16 16l4.5 4.5" />
+							</g>
+						</svg>
+						<input
+							class="table-search"
+							type="search"
+							autocomplete="off"
+							placeholder={t('users.search')}
+							aria-label={t('users.search')}
+							value={search}
+							oninput={(event) => setSearch(event.currentTarget.value)}
+						/>
+					</label>
+					<button
+						type="button"
+						class="tool-btn"
+						aria-expanded={filtersOpen}
+						aria-controls="filters-panel"
+						onclick={() => (filtersOpen = !filtersOpen)}
 					>
-						<option value="">{t('users.filter.type')}</option>
-						<option value="local">{t('users.type.local')}</option>
-						<option value="sso">{t('users.type.sso')}</option>
-					</select>
-				{/if}
-				<details class="menu" bind:this={columnsMenu}>
-					<summary class="table-select">{t('users.columns')}</summary>
-					<div class="menu-pop">
-						{#each table.getAllLeafColumns().filter((column) => column.getCanHide() && ((column.id !== 'links' && column.id !== 'type') || oidc)) as column (column.id)}
-							<label>
-								<input
-									type="checkbox"
-									checked={column.getIsVisible()}
-									onchange={column.getToggleVisibilityHandler()}
-								/>
-								{label(column.id)}
+						<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+							<path
+								d="M4 5h16l-6 8v6l-4-2v-4z"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.7"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						{t('users.filters')}
+						{#if activeFilters > 0}<span class="count">{activeFilters}</span>{/if}
+						<span class="chevron" data-open={filtersOpen} aria-hidden="true">▾</span>
+					</button>
+					<details class="menu" bind:this={columnsMenu}>
+						<summary class="tool-btn">
+							{t('users.columns')}
+							<span class="chevron" aria-hidden="true">▾</span>
+						</summary>
+						<div class="menu-pop">
+							{#each table.getAllLeafColumns().filter((column) => column.getCanHide() && ((column.id !== 'links' && column.id !== 'type') || oidc)) as column (column.id)}
+								<label>
+									<input
+										type="checkbox"
+										checked={column.getIsVisible()}
+										onchange={column.getToggleVisibilityHandler()}
+									/>
+									{label(column.id)}
+								</label>
+							{/each}
+						</div>
+					</details>
+				</div>
+
+				{#if filtersOpen}
+					<div class="filters-panel" id="filters-panel">
+						<label class="filter">
+							<span>{t('users.role')}</span>
+							<select
+								class="table-select"
+								value={roleFilter}
+								onchange={(event) => setFilter('role', event.currentTarget.value)}
+							>
+								<option value="">{t('users.filter.role')}</option>
+								<option value="admin">{t('account.role.admin')}</option>
+								<option value="user">{t('account.role.user')}</option>
+							</select>
+						</label>
+						<label class="filter">
+							<span>{t('users.col.status')}</span>
+							<select
+								class="table-select"
+								value={statusFilter}
+								onchange={(event) => setFilter('status', event.currentTarget.value)}
+							>
+								<option value="">{t('users.filter.status')}</option>
+								<option value="active">{t('users.status.active')}</option>
+								<option value="disabled">{t('users.status.disabled')}</option>
+							</select>
+						</label>
+						{#if oidc}
+							<label class="filter">
+								<span>{t('users.col.type')}</span>
+								<select
+									class="table-select"
+									value={typeFilter}
+									onchange={(event) => setFilter('type', event.currentTarget.value)}
+								>
+									<option value="">{t('users.filter.type')}</option>
+									<option value="local">{t('users.type.local')}</option>
+									<option value="sso">{t('users.type.sso')}</option>
+								</select>
 							</label>
-						{/each}
+						{/if}
+						{#if activeFilters > 0}
+							<button type="button" class="filter-reset" onclick={resetFilters}>
+								{t('users.filter.reset')}
+							</button>
+						{/if}
 					</div>
-				</details>
+				{/if}
 			</div>
 
 			<div class="table-scroll">

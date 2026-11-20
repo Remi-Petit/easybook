@@ -274,6 +274,8 @@
 	"users.filter.role": "Todos os papéis",
 	"users.filter.status": "Todos os estados",
 	"users.columns": "Colunas",
+	"users.filters": "Filtros",
+	"users.filter.reset": "Repor",
 	"users.col.created": "Criada",
 	"users.col.type": "Tipo",
 	"users.filter.type": "Todos os tipos",

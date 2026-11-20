@@ -274,6 +274,8 @@
 	"users.filter.role": "Todos los roles",
 	"users.filter.status": "Todos los estados",
 	"users.columns": "Columnas",
+	"users.filters": "Filtros",
+	"users.filter.reset": "Restablecer",
 	"users.col.created": "Creada",
 	"users.col.type": "Tipo",
 	"users.filter.type": "Todos los tipos",

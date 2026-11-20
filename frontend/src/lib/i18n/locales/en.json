@@ -274,6 +274,8 @@
 	"users.filter.role": "All roles",
 	"users.filter.status": "All statuses",
 	"users.columns": "Columns",
+	"users.filters": "Filters",
+	"users.filter.reset": "Reset",
 	"users.col.created": "Created",
 	"users.col.type": "Type",
 	"users.filter.type": "All types",
