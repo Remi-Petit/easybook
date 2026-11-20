@@ -57,6 +57,36 @@ pub struct App {
     pub cover_cache_budget: u64,
     pub cover_cache_entries: u64,
     pub page_cache_entries: u64,
+    /// Tas vivant de l'API, compté par l'allocateur (hors piles et `mmap`).
+    pub heap_live: u64,
+    /// Plus haut niveau du tas depuis le démarrage.
+    pub heap_peak: u64,
+    /// Catalogue sérialisé gardé en mémoire.
+    pub catalog_bytes: u64,
+    /// Archives ZIP gardées ouvertes entre deux lectures.
+    pub open_archives: u64,
+    /// Sessions ouvertes en base (toutes personnes confondues).
+    pub sessions: u64,
+    /// Onglets WebSocket connectés.
+    pub sockets: u64,
+    /// Mémoire réclamée par un hachage Argon2 — transitoire, pas résidente.
+    pub argon2_bytes: u64,
+    /// Vérifications de session et microsecondes passées à les vérifier.
+    pub guard_calls: u64,
+    pub guard_usec: u64,
+    /// Hachages de mot de passe et microsecondes passées à hacher.
+    pub hash_calls: u64,
+    pub hash_usec: u64,
+}
+
+/// Ce que l'API seule sait de plus que `/proc` : rempli par `api.rs`.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Detail {
+    pub catalog_bytes: u64,
+    pub sessions: u64,
+    pub sockets: u64,
+    pub guard_calls: u64,
+    pub guard_usec: u64,
 }
 
 #[derive(Serialize, Debug, Default)]
@@ -78,9 +108,10 @@ pub struct Snapshot {
     pub readings: crate::readings::Overview,
 }
 
-pub fn snapshot() -> Snapshot {
+pub fn snapshot(detail: Detail) -> Snapshot {
     let supported = fs::metadata("/proc/self/status").is_ok();
     let (cover_entries, cover_bytes) = crate::thumbnail::cache_stats();
+    let (hash_calls, hash_usec) = crate::accounts::hash_stats();
     // `memory.current` n'existe pas à la racine des cgroups : sans lui, les
     // compteurs du cgroup décrivent toute la machine, pas l'application.
     let memory = memory();
@@ -105,6 +136,19 @@ pub fn snapshot() -> Snapshot {
             cover_cache_bytes: cover_bytes as u64,
             cover_cache_budget: crate::thumbnail::CACHE_BYTES as u64,
             page_cache_entries: crate::pages::cache_entries() as u64,
+            heap_live: crate::alloc::live(),
+            heap_peak: crate::alloc::peak(),
+            catalog_bytes: detail.catalog_bytes,
+            open_archives: crate::archive::pooled() as u64,
+            sessions: detail.sessions,
+            sockets: detail.sockets,
+            // Coût mémoire d'un hachage Argon2id, lu dans ses paramètres
+            // (`m_cost` en Kio) : c'est lui qui explique le pic de RSS au login.
+            argon2_bytes: u64::from(argon2::Params::default().m_cost()) * 1024,
+            guard_calls: detail.guard_calls,
+            guard_usec: detail.guard_usec,
+            hash_calls,
+            hash_usec,
         },
         readings: crate::readings::overview(),
     }
@@ -284,7 +328,7 @@ mod tests {
 
     #[test]
     fn lists_this_process() {
-        let snapshot = snapshot();
+        let snapshot = snapshot(Detail::default());
         if !snapshot.supported {
             return;
         }

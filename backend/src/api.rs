@@ -211,6 +211,29 @@ impl AppState {
         }
         self.snapshot.read().ok()?.clone()
     }
+
+    /// Ce que l'API seule connaît : catalogue en mémoire, sessions, onglets
+    /// connectés et coût cumulé du garde de session (voir la page Performance).
+    fn detail(&self) -> crate::perf::Detail {
+        let catalog_bytes = self
+            .snapshot
+            .read()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|snapshot| snapshot.text.len() as u64))
+            .unwrap_or(0);
+        let mut detail = crate::perf::Detail {
+            catalog_bytes,
+            ..Default::default()
+        };
+        if let Some(auth) = self.auth.as_ref() {
+            let (calls, usec) = auth.guard_stats();
+            detail.sessions = auth.accounts.session_count().unwrap_or(0).max(0) as u64;
+            detail.sockets = auth.online_total() as u64;
+            detail.guard_calls = calls;
+            detail.guard_usec = usec;
+        }
+        detail
+    }
 }
 
 /// Démarre le serveur et bloque jusqu'à son arrêt.
@@ -264,8 +287,9 @@ async fn health() -> Json<serde_json::Value> {
 ///
 /// L'interface l'interroge à intervalle régulier et calcule les taux CPU à
 /// partir de deux mesures successives (les compteurs sont cumulés).
-async fn get_performance() -> Response {
-    match tokio::task::spawn_blocking(crate::perf::snapshot).await {
+async fn get_performance(State(state): State<AppState>) -> Response {
+    let detail = state.detail();
+    match tokio::task::spawn_blocking(move || crate::perf::snapshot(detail)).await {
         Ok(snapshot) => ([(header::CACHE_CONTROL, "no-store")], Json(snapshot)).into_response(),
         Err(e) => internal_error(e).into_response(),
     }

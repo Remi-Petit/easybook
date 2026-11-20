@@ -17,6 +17,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -287,20 +288,44 @@ fn digest(token: &str) -> String {
         .collect()
 }
 
+/// Coût cumulé du hachage Argon2 : la seule partie vraiment chère d'une
+/// connexion (mémoire-hard par construction).
+static HASH_CALLS: AtomicU64 = AtomicU64::new(0);
+static HASH_USEC: AtomicU64 = AtomicU64::new(0);
+
+fn note_hash(started: std::time::Instant) {
+    HASH_CALLS.fetch_add(1, AtomicOrdering::Relaxed);
+    HASH_USEC.fetch_add(started.elapsed().as_micros() as u64, AtomicOrdering::Relaxed);
+}
+
+/// (hachages effectués, microsecondes passées à hacher) depuis le démarrage.
+pub fn hash_stats() -> (u64, u64) {
+    (
+        HASH_CALLS.load(AtomicOrdering::Relaxed),
+        HASH_USEC.load(AtomicOrdering::Relaxed),
+    )
+}
+
 fn hash_password(password: &str) -> Result<String> {
+    let started = std::time::Instant::now();
     let salt = SaltString::generate(&mut OsRng);
-    Argon2::default()
+    let hashed = Argon2::default()
         .hash_password(password.as_bytes(), &salt)
         .map(|hash| hash.to_string())
-        .map_err(|e| AccountError::Internal(e.to_string()))
+        .map_err(|e| AccountError::Internal(e.to_string()));
+    note_hash(started);
+    hashed
 }
 
 fn verify_password(hash: &str, password: &str) -> bool {
-    PasswordHash::new(hash).is_ok_and(|parsed| {
+    let started = std::time::Instant::now();
+    let verified = PasswordHash::new(hash).is_ok_and(|parsed| {
         Argon2::default()
             .verify_password(password.as_bytes(), &parsed)
             .is_ok()
-    })
+    });
+    note_hash(started);
+    verified
 }
 
 /// Hache d'un mot de passe inconnu : un identifiant absent coûte le même temps
@@ -781,6 +806,13 @@ impl Accounts {
     }
 
     // ── Sessions ─────────────────────────────────────────────────────────
+
+    /// Nombre de sessions ouvertes, toutes personnes confondues.
+    pub fn session_count(&self) -> Result<i64> {
+        self.conn()
+            .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
+            .map_err(AccountError::from)
+    }
 
     /// Ouvre une session et rend son jeton (la seule fois où il existe en clair).
     pub fn create_session(&self, user_id: &str, ttl_secs: i64) -> Result<String> {

@@ -99,6 +99,15 @@
 	const cpuCapacity = $derived(snapshot ? (snapshot.cpuLimit ?? snapshot.cpus) : 1);
 	const ticksPerSecond = $derived(snapshot?.clockTicks ?? 100);
 	const minutes = $derived(formatNumber(WINDOW_MS / 60000));
+
+	// Ce que l'API garde pour elle, et ce que ses sessions coûtent en CPU.
+	const app = $derived(snapshot?.app ?? null);
+	const apiGroup = $derived(view?.groups.find((group) => group.name === 'easybook') ?? null);
+	const apiCpuSecs = $derived(apiGroup ? apiGroup.cpuTicks / ticksPerSecond : 0);
+	const guardSecs = $derived((app?.guardUsec ?? 0) / 1e6);
+	const hashSecs = $derived((app?.hashUsec ?? 0) / 1e6);
+	const guardShare = $derived(apiCpuSecs > 0 ? (guardSecs / apiCpuSecs) * 100 : 0);
+	const guardAvgMs = $derived(app && app.guardCalls > 0 ? (guardSecs * 1000) / app.guardCalls : 0);
 </script>
 
 <svelte:head>
@@ -199,7 +208,45 @@
 						</p>
 					</section>
 				</div>
-					{#if readings}
+					<section class="perf-card">
+					<h2>{t('perf.detail.title')}</h2>
+					<div class="table-wrap">
+						<table class="perf-table">
+							<tbody>
+								<tr>
+									<td>{t('perf.detail.heap')}</td>
+									<td>{formatBytes(app?.heapLive ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.heapPeak')}</td>
+									<td>{formatBytes(app?.heapPeak ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.catalog')}</td>
+									<td>{formatBytes(app?.catalogBytes ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.archives')}</td>
+									<td>{formatNumber(app?.openArchives ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.sessions')}</td>
+									<td>{formatNumber(app?.sessions ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.sockets')}</td>
+									<td>{formatNumber(app?.sockets ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.argon2')}</td>
+									<td>{formatBytes(app?.argon2Bytes ?? 0)}</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p class="stat-hint">{t('perf.detail.hint')}</p>
+				</section>
+				{#if readings}
 						<section class="perf-card">
 							<h2>
 								{t('perf.reading.title')}
@@ -272,6 +319,27 @@
 						<BarList bars={cpuBars} format={formatPercent} max={Math.max(100, ...cpuBars.map((bar) => bar.value))} />
 					</section>
 				</div>
+
+				<section class="perf-card">
+					<h2>{t('perf.auth.title')}</h2>
+					<p class="stat-line">
+						<span>{t('perf.auth.guard')}</span>
+						<span>{formatNumber(app?.guardCalls ?? 0)} · {formatDuration(guardSecs)}</span>
+					</p>
+					<p class="stat-line">
+						<span>{t('perf.auth.guardAvg')}</span>
+						<span>{formatNumber(guardAvgMs, 2)} ms</span>
+					</p>
+					<p class="stat-line">
+						<span>{t('perf.auth.hash')}</span>
+						<span>{formatNumber(app?.hashCalls ?? 0)} · {formatDuration(hashSecs)}</span>
+					</p>
+					<p class="stat-line">
+						<span>{t('perf.auth.share')}</span>
+						<span>{formatPercent(guardShare)}</span>
+					</p>
+					<p class="stat-hint">{t('perf.auth.hint')}</p>
+				</section>
 
 				<section class="perf-card">
 					<h2>

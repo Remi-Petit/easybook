@@ -37,6 +37,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
@@ -73,6 +74,9 @@ pub struct AuthState {
     presence: Mutex<HashMap<String, HashMap<String, usize>>>,
     /// Sessions fermées par un administrateur : leurs WebSocket doivent se couper.
     revoked: broadcast::Sender<Revoked>,
+    /// Coût cumulé du garde : (vérifications, microsecondes).
+    guard_calls: AtomicU64,
+    guard_usec: AtomicU64,
 }
 
 /// Ce qui vient d'être fermé.
@@ -142,7 +146,26 @@ impl AuthState {
             events: broadcast::channel(64).0,
             presence: Mutex::default(),
             revoked: broadcast::channel(64).0,
+            guard_calls: AtomicU64::new(0),
+            guard_usec: AtomicU64::new(0),
         }
+    }
+
+    /// (vérifications de session, microsecondes passées à les vérifier) depuis
+    /// le démarrage : de quoi rapporter le coût des sessions au CPU de l'API.
+    pub fn guard_stats(&self) -> (u64, u64) {
+        (
+            self.guard_calls.load(AtomicOrdering::Relaxed),
+            self.guard_usec.load(AtomicOrdering::Relaxed),
+        )
+    }
+
+    /// Onglets WebSocket ouverts, tous comptes confondus.
+    pub fn online_total(&self) -> usize {
+        let map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
+        map.values()
+            .map(|sessions| sessions.values().sum::<usize>())
+            .sum()
     }
 
     /// Prévient les administrateurs connectés que l'activité de ce compte a changé.
@@ -315,10 +338,14 @@ pub async fn guard(State(state): State<AppState>, mut request: Request, next: Ne
 
     let token = cookie_value(request.headers(), SESSION_COOKIE);
     let session_id = token.as_deref().map(Accounts::session_id);
+    let started = Instant::now();
     let user = match token {
         Some(token) => auth.accounts.session_user(&token).ok().flatten(),
         None => None,
     };
+    auth.guard_usec
+        .fetch_add(started.elapsed().as_micros() as u64, AtomicOrdering::Relaxed);
+    auth.guard_calls.fetch_add(1, AtomicOrdering::Relaxed);
 
     let path = request.uri().path().to_string();
     match user {

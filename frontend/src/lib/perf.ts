@@ -37,6 +37,26 @@ export type PerfSnapshot = {
 		coverCacheBudget: number;
 		coverCacheEntries: number;
 		pageCacheEntries: number;
+		/** Tas vivant de l'API (octets alloués, hors piles et fichiers mappés). */
+		heapLive: number;
+		/** Plus haut niveau du tas depuis le démarrage. */
+		heapPeak: number;
+		/** Catalogue sérialisé gardé en mémoire. */
+		catalogBytes: number;
+		/** Archives ZIP gardées ouvertes entre deux lectures. */
+		openArchives: number;
+		/** Sessions ouvertes en base. */
+		sessions: number;
+		/** Onglets WebSocket connectés. */
+		sockets: number;
+		/** Mémoire réclamée par un hachage Argon2 (transitoire). */
+		argon2Bytes: number;
+		/** Vérifications de session et microsecondes cumulées. */
+		guardCalls: number;
+		guardUsec: number;
+		/** Hachages de mot de passe et microsecondes cumulées. */
+		hashCalls: number;
+		hashUsec: number;
 	};
 	readings: {
 		active: PerfReading[];
