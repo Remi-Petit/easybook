@@ -28,6 +28,8 @@ export type User = {
 	has_password: boolean;
 	created_at: number;
 	last_login_at: number | null;
+	/** Mot de passe temporaire : la personne est invitée à le changer (elle peut le garder). */
+	must_change_password: boolean;
 	identities: Identity[];
 };
 

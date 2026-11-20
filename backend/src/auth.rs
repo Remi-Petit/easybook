@@ -389,6 +389,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/auth/dev-login", post(dev_login))
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/password", post(change_password))
+        .route("/api/auth/password/skip", post(skip_password_change))
         .route("/api/auth/oidc/login", get(oidc_login))
         .route("/api/auth/oidc/link", get(oidc_link))
         .route("/api/auth/oidc/callback", get(oidc_callback))
@@ -626,8 +627,12 @@ async fn change_password(
     let result = db(
         &auth,
         move |accounts| -> Result<Option<String>, AccountError> {
-            // Un compte qui n'a pas encore de mot de passe (OIDC seul) peut en poser un.
-            if user.has_password && !accounts.check_user_password(&id, &body.current)? {
+            // Un compte qui n'a pas encore de mot de passe (OIDC seul) peut en poser un ;
+            // un mot de passe temporaire se change sans le redonner, la personne vient de le saisir.
+            if user.has_password
+                && !user.must_change_password
+                && !accounts.check_user_password(&id, &body.current)?
+            {
                 return Ok(None);
             }
             accounts.set_password(&id, &body.new)?;
@@ -647,6 +652,19 @@ async fn change_password(
         [(header::SET_COOKIE, session_cookies(&headers, &token, ttl))],
     )
         .into_response())
+}
+
+async fn skip_password_change(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    db(&auth, move |accounts| {
+        accounts.clear_must_change_password(&user.id)
+    })
+    .await?
+    .map_err(account_error)?;
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 async fn unlink_own_identity(
@@ -965,6 +983,7 @@ fn resolve(
                         email: Some(email.clone()),
                         password: None,
                         role: Some(Role::User),
+                        must_change_password: false,
                     })
                     .map_err(|e| match e {
                         AccountError::EmailTaken => "email_taken",
@@ -1006,6 +1025,9 @@ struct NewUserBody {
     display_name: Option<String>,
     #[serde(default)]
     role: Option<Role>,
+    /// Le mot de passe est temporaire : l'utilisateur est invité à le changer.
+    #[serde(default)]
+    temporary: bool,
 }
 
 async fn create_user(
@@ -1022,6 +1044,7 @@ async fn create_user(
             // créent à la première connexion (`auto_create`), pas par ce formulaire.
             password: Some(body.password.unwrap_or_default()),
             role: body.role,
+            must_change_password: body.temporary,
         })?;
         view(accounts, user)
     })
@@ -1073,6 +1096,8 @@ async fn delete_user(
 #[derive(Deserialize)]
 struct SetPasswordBody {
     password: String,
+    #[serde(default)]
+    temporary: bool,
 }
 
 async fn admin_set_password(
@@ -1082,7 +1107,11 @@ async fn admin_set_password(
 ) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
     db(&auth, move |accounts| {
-        accounts.set_password(&id, &body.password)
+        if body.temporary {
+            accounts.set_temporary_password(&id, &body.password)
+        } else {
+            accounts.set_password(&id, &body.password)
+        }
     })
     .await?
     .map_err(account_error)?;

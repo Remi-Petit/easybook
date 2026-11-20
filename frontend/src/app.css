@@ -2394,6 +2394,42 @@ html:has(.drawer[open]) {
 	border: 1px solid var(--line);
 }
 
+.password-field {
+	display: grid;
+	gap: 8px;
+}
+
+.field-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.field-row input {
+	flex: 1;
+	min-width: 0;
+}
+
+.field-row .btn-plain {
+	flex: none;
+	padding: 8px 12px;
+	border: 1px solid var(--line);
+	border-radius: 9px;
+	font-size: 13px;
+}
+
+.check {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13.5px;
+	cursor: pointer;
+}
+
+.check input {
+	accent-color: var(--accent);
+}
+
 .action-row .btn-plain:disabled {
 	opacity: 0.4;
 	cursor: not-allowed;

@@ -25,7 +25,7 @@ pub const MIN_PASSWORD: usize = 8;
 pub const MAX_PASSWORD: usize = 256;
 
 /// Version du schéma (`PRAGMA user_version`).
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = "
 CREATE TABLE users (
@@ -37,7 +37,8 @@ CREATE TABLE users (
     role          TEXT NOT NULL CHECK (role IN ('admin', 'user')),
     disabled      INTEGER NOT NULL DEFAULT 0,
     created_at    INTEGER NOT NULL,
-    last_login_at INTEGER
+    last_login_at INTEGER,
+    must_change_password INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX users_email ON users (email);
 
@@ -103,6 +104,8 @@ pub struct User {
     pub has_password: bool,
     pub created_at: i64,
     pub last_login_at: Option<i64>,
+    /// Mot de passe temporaire : l'interface propose de le changer à la connexion.
+    pub must_change_password: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -122,6 +125,8 @@ pub struct NewUser {
     pub email: Option<String>,
     pub password: Option<String>,
     pub role: Option<Role>,
+    /// Le mot de passe donné est temporaire.
+    pub must_change_password: bool,
 }
 
 /// Modification d'un compte : `None` = inchangé, chaîne vide = effacer.
@@ -283,7 +288,7 @@ fn clean_text(raw: &str) -> Option<String> {
 }
 
 const USER_COLUMNS: &str = "id, username, display_name, email, password_hash IS NOT NULL, role, \
-     disabled, created_at, last_login_at";
+     disabled, created_at, last_login_at, must_change_password";
 
 fn user_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
     Ok(User {
@@ -296,6 +301,7 @@ fn user_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
         disabled: row.get(6)?,
         created_at: row.get(7)?,
         last_login_at: row.get(8)?,
+        must_change_password: row.get(9)?,
     })
 }
 
@@ -374,15 +380,24 @@ impl Accounts {
             conn.execute_batch(SCHEMA)?;
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             version = SCHEMA_VERSION;
-        } else if version == 1 {
+        }
+        if version == 1 {
             // v2 : la connexion se fait par e-mail, unique et obligatoire.
             conn.execute_batch(
                 "UPDATE users SET email = lower(username) || '@easybook.local' WHERE email IS NULL;
                  DROP INDEX IF EXISTS users_email;
                  CREATE UNIQUE INDEX users_email ON users (email);",
             )?;
-            conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-            version = SCHEMA_VERSION;
+            conn.pragma_update(None, "user_version", 2)?;
+            version = 2;
+        }
+        if version == 2 {
+            // v3 : mot de passe temporaire, à changer à la première connexion.
+            conn.execute_batch(
+                "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;",
+            )?;
+            conn.pragma_update(None, "user_version", 3)?;
+            version = 3;
         }
         if version != SCHEMA_VERSION {
             return Err(AccountError::Internal(format!(
@@ -421,8 +436,8 @@ impl Accounts {
 
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO users (id, username, display_name, email, password_hash, role, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO users (id, username, display_name, email, password_hash, role, created_at, must_change_password)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 id,
                 username,
@@ -430,7 +445,8 @@ impl Accounts {
                 email,
                 hash,
                 role.as_str(),
-                now()
+                now(),
+                new.must_change_password && hash.is_some()
             ],
         )
         .map_err(constraint_error)?;
@@ -516,12 +532,30 @@ impl Accounts {
     /// mot de passe changé parce qu'il a fuité ne doit laisser aucune session
     /// ouverte derrière lui.
     pub fn set_password(&self, id: &str, password: &str) -> Result<()> {
+        self.store_password(id, password, false)
+    }
+
+    /// Comme [`Self::set_password`], mais le compte devra (ou pourra) le changer à sa connexion.
+    pub fn set_temporary_password(&self, id: &str, password: &str) -> Result<()> {
+        self.store_password(id, password, true)
+    }
+
+    /// Renonce à l'invite de changement : le mot de passe actuel est gardé.
+    pub fn clear_must_change_password(&self, id: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE users SET must_change_password = 0 WHERE id = ?1",
+            [id],
+        )?;
+        Ok(())
+    }
+
+    fn store_password(&self, id: &str, password: &str, temporary: bool) -> Result<()> {
         check_password(password)?;
         let hash = hash_password(password)?;
         let conn = self.conn();
         let changed = conn.execute(
-            "UPDATE users SET password_hash = ?2 WHERE id = ?1",
-            params![id, hash],
+            "UPDATE users SET password_hash = ?2, must_change_password = ?3 WHERE id = ?1",
+            params![id, hash, temporary],
         )?;
         if changed == 0 {
             return Err(AccountError::NotFound);
@@ -548,7 +582,7 @@ impl Accounts {
             conn.query_row(
                 &format!("SELECT {USER_COLUMNS}, password_hash FROM users WHERE email = ?1"),
                 [email.trim()],
-                |row| Ok((user_from(row)?, row.get(9)?)),
+                |row| Ok((user_from(row)?, row.get(10)?)),
             )
             .optional()?
         };
@@ -1359,7 +1393,8 @@ mod tests {
             let conn = Connection::open(&path).unwrap();
             conn.execute_batch(SCHEMA).unwrap();
             conn.execute_batch(
-                "DROP INDEX users_email;
+                "ALTER TABLE users DROP COLUMN must_change_password;
+                 DROP INDEX users_email;
                  CREATE INDEX users_email ON users (email);
                  INSERT INTO users (id, username, role, created_at) VALUES ('u1', 'Admin', 'admin', 0);
                  INSERT INTO users (id, username, email, role, created_at)
@@ -1378,6 +1413,8 @@ mod tests {
             store.user("u2").unwrap().unwrap().email.as_deref(),
             Some("bob@x.test")
         );
+        // La colonne de la v3 existe, désactivée.
+        assert!(!store.user("u1").unwrap().unwrap().must_change_password);
         // L'unicité est désormais imposée.
         assert_eq!(
             store
@@ -1385,6 +1422,39 @@ mod tests {
                 .unwrap_err(),
             AccountError::EmailTaken
         );
+    }
+
+    #[test]
+    fn a_temporary_password_is_flagged_until_changed_or_skipped() {
+        let store = Accounts::open_in_memory().unwrap();
+        let alice = store
+            .create_user(NewUser {
+                email: Some("alice@x.test".into()),
+                password: Some("temporaire-01".into()),
+                must_change_password: true,
+                ..NewUser::default()
+            })
+            .unwrap();
+        assert!(alice.must_change_password);
+
+        store.clear_must_change_password(&alice.id).unwrap();
+        assert!(!store.user(&alice.id).unwrap().unwrap().must_change_password);
+
+        store.set_temporary_password(&alice.id, "temporaire-02").unwrap();
+        assert!(store.user(&alice.id).unwrap().unwrap().must_change_password);
+        // Un vrai changement lève le drapeau.
+        store.set_password(&alice.id, "definitif-01").unwrap();
+        assert!(!store.user(&alice.id).unwrap().unwrap().must_change_password);
+
+        // Sans mot de passe, rien à changer.
+        let carol = store
+            .create_user(NewUser {
+                email: Some("carol@x.test".into()),
+                must_change_password: true,
+                ..NewUser::default()
+            })
+            .unwrap();
+        assert!(!carol.must_change_password);
     }
 
     #[test]

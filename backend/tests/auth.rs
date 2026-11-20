@@ -690,6 +690,105 @@ async fn an_oidc_only_account_can_set_a_first_password() {
 }
 
 #[tokio::test]
+async fn a_temporary_password_can_be_changed_without_the_old_one_or_skipped() {
+    let site = site();
+    let admin = site.admin().await;
+    let flag = |cookie: &str| {
+        let site = &site;
+        let cookie = cookie.to_string();
+        async move {
+            site.get("/api/auth/session", Some(&cookie)).await.json()["user"]["must_change_password"]
+                .as_bool()
+        }
+    };
+
+    let created = site
+        .request(
+            "POST",
+            "/api/admin/users",
+            Some(&admin),
+            Some(json!({ "email": "zoe@example.org", "password": PASSWORD, "temporary": true })),
+            &[],
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    assert_eq!(created.json()["must_change_password"], true);
+    let id = created.json()["id"].as_str().unwrap().to_string();
+
+    // Changer le mot de passe temporaire ne redemande pas l'ancien, et lève l'invite.
+    let first = site
+        .login_reply("zoe@example.org", PASSWORD)
+        .await
+        .cookie("easybook_session")
+        .unwrap();
+    assert_eq!(flag(&first).await, Some(true));
+    let changed = site
+        .post(
+            "/api/auth/password",
+            Some(&first),
+            json!({ "new": "mot-de-passe-perso-1" }),
+        )
+        .await;
+    assert_eq!(changed.status, StatusCode::NO_CONTENT);
+    let renewed = changed.cookie("easybook_session").unwrap();
+    assert_eq!(flag(&renewed).await, Some(false));
+    // Hors mot de passe temporaire, l'ancien reste exigé.
+    let refused = site
+        .post(
+            "/api/auth/password",
+            Some(&renewed),
+            json!({ "new": "encore-un-autre-1" }),
+        )
+        .await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN);
+
+    // L'administrateur en pose un nouveau, temporaire ; la personne le garde en passant.
+    let reset = site
+        .request(
+            "PUT",
+            &format!("/api/admin/users/{id}/password"),
+            Some(&admin),
+            Some(json!({ "password": "temporaire-0001", "temporary": true })),
+            &[],
+        )
+        .await;
+    assert_eq!(reset.status, StatusCode::NO_CONTENT);
+    let second = site
+        .login_reply("zoe@example.org", "temporaire-0001")
+        .await
+        .cookie("easybook_session")
+        .unwrap();
+    assert_eq!(flag(&second).await, Some(true));
+    let skipped = site
+        .post("/api/auth/password/skip", Some(&second), json!({}))
+        .await;
+    assert_eq!(skipped.status, StatusCode::NO_CONTENT);
+    assert_eq!(flag(&second).await, Some(false));
+    assert_eq!(
+        site.login_reply("zoe@example.org", "temporaire-0001")
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    // Un mot de passe posé sans l'option n'invite à rien.
+    site.request(
+        "PUT",
+        &format!("/api/admin/users/{id}/password"),
+        Some(&admin),
+        Some(json!({ "password": "definitif-00001" })),
+        &[],
+    )
+    .await;
+    let third = site
+        .login_reply("zoe@example.org", "definitif-00001")
+        .await
+        .cookie("easybook_session")
+        .unwrap();
+    assert_eq!(flag(&third).await, Some(false));
+}
+
+#[tokio::test]
 async fn oidc_routes_do_not_exist_without_a_provider() {
     let site = site();
     let admin = site.admin().await;

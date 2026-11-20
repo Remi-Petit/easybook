@@ -16,6 +16,7 @@
 		type ColumnDef
 	} from '@tanstack/svelte-table';
 	import { formatDate } from '$lib/api';
+	import PasswordField from '$lib/components/PasswordField.svelte';
 	import { call, displayName, errorKey, type Role, type Session, type User } from '$lib/auth';
 	import { t } from '$lib/i18n/state.svelte';
 	import { notify } from '$lib/toasts.svelte';
@@ -182,12 +183,19 @@
 	// Popup « Ajouter un utilisateur ».
 	let addDialog = $state<HTMLDialogElement>();
 	let emailField = $state<HTMLInputElement>();
-	let draft = $state({ display_name: '', email: '', password: '', role: 'user' as Role });
+	let draft = $state({
+		display_name: '',
+		email: '',
+		password: '',
+		role: 'user' as Role,
+		temporary: false
+	});
 	let addError = $state<string | null>(null);
 	let adding = $state(false);
 	// Tiroir du compte choisi.
 	let drawer = $state<HTMLDialogElement>();
 	let resetPassword = $state('');
+	let resetTemporary = $state(false);
 	let subject = $state('');
 	let invitation = $state<{ url: string; expires_in: number } | null>(null);
 
@@ -225,6 +233,7 @@
 		tab = 'role';
 		selectedId = id;
 		resetPassword = subject = '';
+		resetTemporary = false;
 		invitation = null;
 		if (!drawer?.open) drawer?.showModal();
 	}
@@ -234,7 +243,7 @@
 	}
 
 	function openAdd() {
-		draft = { display_name: '', email: '', password: '', role: 'user' };
+		draft = { display_name: '', email: '', password: '', role: 'user', temporary: false };
 		addError = null;
 		addDialog?.showModal();
 		emailField?.focus();
@@ -249,7 +258,8 @@
 			display_name: draft.display_name,
 			email: draft.email,
 			password: draft.password,
-			role: draft.role
+			role: draft.role,
+			temporary: draft.temporary
 		});
 		adding = false;
 		// La popup reste ouverte sur une erreur : on corrige sans tout retaper.
@@ -281,10 +291,12 @@
 	async function setPassword(event: SubmitEvent, user: User) {
 		event.preventDefault();
 		const result = await call('PUT', `/api/admin/users/${user.id}/password`, {
-			password: resetPassword
+			password: resetPassword,
+			temporary: resetTemporary
 		});
 		if (!result.ok) return fail(result.code);
 		resetPassword = '';
+		resetTemporary = false;
 		notify(t('users.passwordReset'), { tone: 'ok' });
 		await load();
 	}
@@ -611,6 +623,9 @@
 			<div class="drawer-pills">
 				{@render rolePill(selected.role)}
 				{@render statusPill(selected.disabled)}
+				{#if selected.must_change_password}
+					<span class="pill" data-tone="accent">{t('users.password.temporary')}</span>
+				{/if}
 				<span class="muted">
 					{t('users.col.lastLogin')} :
 					{selected.last_login_at ? formatDate(selected.last_login_at) : t('users.never')}
@@ -661,16 +676,11 @@
 			{/if}
 			{:else if tab === 'password'}
 			<form class="stack-form" method="post" onsubmit={(event) => setPassword(event, selected)}>
-				<label class="field">
-					<span>{t('users.resetPassword')}</span>
-					<input
-						type="password"
-						autocomplete="new-password"
-						minlength="8"
-						required
-						bind:value={resetPassword}
-					/>
-				</label>
+				<PasswordField
+					label={t('users.resetPassword')}
+					bind:value={resetPassword}
+					bind:temporary={resetTemporary}
+				/>
 				<div><button type="submit" class="btn-main">{t('users.resetPasswordSubmit')}</button></div>
 				<p class="panel-hint">{t('users.resetHint')}</p>
 			</form>
@@ -753,17 +763,12 @@
 			<span>{t('users.displayName')}</span>
 			<input name="display_name" autocomplete="off" bind:value={draft.display_name} />
 		</label>
-		<label class="field">
-			<span>{t('auth.password')}</span>
-			<input
-				name="password"
-				type="password"
-				autocomplete="new-password"
-				minlength="8"
-				required
-				bind:value={draft.password}
-			/>
-		</label>
+		<PasswordField
+			name="password"
+			label={t('auth.password')}
+			bind:value={draft.password}
+			bind:temporary={draft.temporary}
+		/>
 		<label class="field">
 			<span>{t('users.role')}</span>
 			<select bind:value={draft.role}>
