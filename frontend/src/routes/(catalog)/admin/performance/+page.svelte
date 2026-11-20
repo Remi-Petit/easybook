@@ -269,6 +269,10 @@
 									})}
 								</span>
 							</p>
+							<p class="stat-line">
+								<span>{t('perf.reading.media')}</span>
+								<span>{formatBytes(readings.releasedMediaBytes)}</span>
+							</p>
 							<p class="stat-hint">
 								{t('perf.reading.hint', { seconds: formatNumber(readings.idleLimitSecs) })}
 							</p>

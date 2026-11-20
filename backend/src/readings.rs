@@ -22,9 +22,18 @@ use std::time::{Duration, Instant};
 pub const IDLE: Duration = Duration::from_secs(60);
 /// Période de vérification des lectures terminées.
 const SWEEP: Duration = Duration::from_secs(5);
+/// Silence après lequel les pages du cache média (nginx) sont rendues : les
+/// fichiers restent sur disque, seule leur copie mémoire part.
+const MEDIA_IDLE: Duration = Duration::from_secs(600);
+/// Un tour sur douze (5 s × 12) : parcourir l'arborescence est plus coûteux que
+/// vérifier deux ou trois livres.
+const MEDIA_EVERY: u32 = 12;
+/// Cache média de nginx (voir `docker/nginx.conf`, `proxy_cache_path`).
+const MEDIA_DIR: &str = "/tmp/nginx-cache";
 
 static RELEASED_BYTES: AtomicU64 = AtomicU64::new(0);
 static RELEASED_BOOKS: AtomicU64 = AtomicU64::new(0);
+static RELEASED_MEDIA: AtomicU64 = AtomicU64::new(0);
 
 struct Reading {
     rel: String,
@@ -105,9 +114,14 @@ pub fn spawn_sweeper() {
     let _ = std::thread::Builder::new()
         .name("readings".into())
         .spawn(|| {
+            let mut round = 0_u32;
             loop {
                 std::thread::sleep(SWEEP);
                 sweep();
+                round = round.wrapping_add(1);
+                if round % MEDIA_EVERY == 0 {
+                    sweep_media();
+                }
             }
         });
 }
@@ -149,6 +163,8 @@ pub struct Overview {
     /// Cache rendu au système depuis le démarrage, mesuré avant/après.
     pub released_bytes: u64,
     pub released_books: u64,
+    /// Pages du cache média de nginx rendues de la même façon.
+    pub released_media_bytes: u64,
 }
 
 pub fn overview() -> Overview {
@@ -191,6 +207,7 @@ pub fn overview() -> Overview {
         idle_limit_secs: IDLE.as_secs(),
         released_bytes: RELEASED_BYTES.load(Ordering::Relaxed),
         released_books: RELEASED_BOOKS.load(Ordering::Relaxed),
+        released_media_bytes: RELEASED_MEDIA.load(Ordering::Relaxed),
     }
 }
 
@@ -224,27 +241,92 @@ pub fn resident_bytes(_path: &Path) -> Option<u64> {
     None
 }
 
-/// Demande au noyau d'oublier les pages en cache de ce fichier.
+/// Rend le cache d'un livre lu : compte les octets et le livre.
+pub fn release(path: &Path) {
+    let freed = drop_pages(path);
+    if freed > 0 {
+        RELEASED_BYTES.fetch_add(freed, Ordering::Relaxed);
+        RELEASED_BOOKS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Cache média de nginx : ses fichiers sont des copies de planches et de
+/// couvertures, que le noyau garde en mémoire après les avoir écrits et lus.
+/// On rend ces pages quand plus personne ne les demande depuis un moment : les
+/// fichiers, eux, restent sur disque, nginx les resservira sans repasser par
+/// l'API. Le dossier se règle par `EASYBOOK_MEDIA_CACHE` (défaut : celui de
+/// `docker/nginx.conf`).
+fn sweep_media() {
+    let dir = std::env::var_os("EASYBOOK_MEDIA_CACHE")
+        .map_or_else(|| PathBuf::from(MEDIA_DIR), PathBuf::from);
+    walk_media(&dir, 0);
+}
+
+/// Parcourt le cache média (`levels=1:2` : deux étages, puis les fichiers).
+fn walk_media(path: &Path, depth: u32) {
+    // Deux étages de sous-dossiers, plus la racine : au-delà, ce n'est pas notre
+    // affaire.
+    if depth > 2 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_media(&path, depth + 1);
+        } else {
+            release_media(&path);
+        }
+    }
+}
+
+/// Rend les pages d'une entrée du cache média si elle a fini d'être servie.
+fn release_media(path: &Path) {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return;
+    };
+    if !meta.is_file() || !media_expired(&meta) {
+        return;
+    }
+    let freed = drop_pages(path);
+    if freed > 0 {
+        RELEASED_MEDIA.fetch_add(freed, Ordering::Relaxed);
+    }
+}
+
+/// Une entrée du cache média est-elle assez vieille pour que ses pages partent ?
+fn media_expired(meta: &std::fs::Metadata) -> bool {
+    meta.modified()
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|idle| idle >= MEDIA_IDLE)
+}
+
+/// Demande au noyau d'oublier les pages en cache de ce fichier ; rend les octets
+/// effectivement libérés.
 ///
 /// Seules les pages propres et non mappées partent : rien n'est écrit, rien n'est
 /// perdu, la prochaine lecture repasse par le disque.
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
-pub fn release(path: &Path) {
+fn drop_pages(path: &Path) -> u64 {
     use std::os::fd::AsRawFd;
 
     let Ok(file) = std::fs::File::open(path) else {
-        return;
+        return 0;
     };
     let before = resident_bytes(path).unwrap_or(0);
     // SAFETY: le descripteur est valide pendant tout l'appel.
     unsafe {
         libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_DONTNEED);
     }
-    let freed = before.saturating_sub(resident_bytes(path).unwrap_or(before));
-    if freed > 0 {
-        RELEASED_BYTES.fetch_add(freed, Ordering::Relaxed);
-        RELEASED_BOOKS.fetch_add(1, Ordering::Relaxed);
-    }
+    before.saturating_sub(resident_bytes(path).unwrap_or(before))
+}
+
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn drop_pages(_path: &Path) -> u64 {
+    0
 }
 
 #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
@@ -253,6 +335,7 @@ pub fn release(_path: &Path) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::SystemTime;
 
     fn at(seconds: u64, origin: Instant) -> Instant {
         origin + Duration::from_secs(seconds)
@@ -312,5 +395,25 @@ mod tests {
             assert_eq!(resident_bytes(&empty), Some(0));
             assert_eq!(resident_bytes(&dir.path().join("absent")), None);
         }
+    }
+
+    #[test]
+    fn only_old_media_entries_are_released() {
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = dir.path().join("frais");
+        let old = dir.path().join("vieux");
+        std::fs::write(&fresh, vec![1u8; 4096]).unwrap();
+        std::fs::write(&old, vec![1u8; 4096]).unwrap();
+        // Deux heures plus tôt : bien au-delà de `MEDIA_IDLE`.
+        let past = SystemTime::now() - Duration::from_secs(2 * 3600);
+        std::fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
+
+        assert!(!media_expired(&std::fs::metadata(&fresh).unwrap()));
+        assert!(media_expired(&std::fs::metadata(&old).unwrap()));
     }
 }

@@ -64,6 +64,8 @@ export type PerfSnapshot = {
 		idleLimitSecs: number;
 		releasedBytes: number;
 		releasedBooks: number;
+		/** Pages du cache média de nginx rendues de la même façon. */
+		releasedMediaBytes: number;
 	};
 };
 

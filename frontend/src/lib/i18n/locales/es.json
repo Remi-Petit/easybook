@@ -147,6 +147,7 @@
 	"perf.reading.none": "No hay ninguna lectura en curso.",
 	"perf.reading.note": "de {size} · {requests} · hace {idle} s",
 	"perf.reading.released": "Devuelto al sistema desde el arranque",
+	"perf.reading.media": "de ello, caché de medios (nginx)",
 	"perf.reading.hint": "Memoria = parte del libro presente en la caché de archivos. Tras {seconds} s sin solicitudes, la lectura termina y esta caché se devuelve al sistema de inmediato, sin esperar a que falte espacio.",
 	"perf.books": {
 		"one": "{count} libro",
