@@ -18,6 +18,8 @@ const PASSWORD = str('EB_PASSWORD', 'admin-dev-1234');
 
 /** Connexion une fois pour toutes : rend le jeton de session. */
 export function login() {
+  // `EB_AUTH=off` : instance sans comptes (`auth.enabled: false`), rien à faire.
+  if (str('EB_AUTH', 'on') === 'off') return { token: null };
   const res = http.post(
     `${BASE_URL}/api/auth/login`,
     JSON.stringify({ email: EMAIL, password: PASSWORD }),

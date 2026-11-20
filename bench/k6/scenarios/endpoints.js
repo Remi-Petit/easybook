@@ -9,6 +9,7 @@ import { baseOptions } from '../lib/profiles.js';
 import { thresholds } from '../lib/thresholds.js';
 import { discover } from '../lib/library.js';
 import { single } from '../lib/journeys.js';
+import { adopt, login } from '../lib/auth.js';
 
 const ALL_ROUTES = ['health', 'ui_home', 'books', 'book', 'cover', 'page', 'chapter', 'raw'];
 const wanted = str('ENDPOINT_ROUTES', '').split(',').filter(Boolean);
@@ -33,30 +34,40 @@ ROUTES.forEach((route, i) => {
 export const options = { ...baseOptions, scenarios, thresholds: thresholds() };
 
 export function setup() {
-  return discover();
+  const auth = login();
+  adopt(auth);
+  return { ...discover(), ...auth };
 }
 
 export function route_health(data) {
+  adopt(data);
   single.health(data);
 }
 export function route_ui_home(data) {
+  adopt(data);
   single.ui_home(data);
 }
 export function route_books(data) {
+  adopt(data);
   single.books(data);
 }
 export function route_book(data) {
+  adopt(data);
   single.book(data);
 }
 export function route_cover(data) {
+  adopt(data);
   single.cover(data);
 }
 export function route_page(data) {
+  adopt(data);
   single.page(data);
 }
 export function route_chapter(data) {
+  adopt(data);
   single.chapter(data);
 }
 export function route_raw(data) {
+  adopt(data);
   single.raw(data);
 }
