@@ -1682,6 +1682,29 @@ code {
 	font-size: 13px;
 }
 
+/* Pastille d'aide : le détail s'affiche au survol (attribut `title`). */
+.info-dot {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 15px;
+	height: 15px;
+	margin-left: 5px;
+	border: 1px solid var(--line);
+	border-radius: 50%;
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 1;
+	cursor: help;
+	vertical-align: 1px;
+}
+
+.info-dot:hover,
+.info-dot:focus-visible {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
 .chart svg {
 	display: block;
 	width: 100%;

@@ -147,6 +147,7 @@
 	"perf.reading.none": "Aucune lecture en cours.",
 	"perf.reading.released": "Rendu au système depuis le démarrage",
 	"perf.reading.media": "dont cache média (nginx), déjà rendu",
+	"perf.reading.mediaLimit": "Plafonné à 64 Mo (max_size dans docker/nginx.conf) : au-delà, nginx supprime les planches les moins récemment servies, ce qui libère aussi leurs pages mémoire. Le cumul cesse donc de grandir une fois le cache plein.",
 	"perf.reading.mediaCurrent": "Cache média (nginx)",
 	"perf.reading.mediaWait": "après les lectures",
 	"perf.reading.mediaSoon": "≤ {seconds} s",

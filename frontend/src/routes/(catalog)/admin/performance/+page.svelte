@@ -258,53 +258,54 @@
 								{t('perf.reading.title')}
 								<span class="perf-count">{formatNumber(readings.active.length)}</span>
 							</h2>
-							{#if readings.active.length > 0 || readings.mediaBytes > 0}
-								<div class="table-wrap">
-									<table class="perf-table">
-										<thead>
+							<div class="table-wrap">
+								<table class="perf-table">
+									<thead>
+										<tr>
+											<th>{t('perf.col.book')}</th>
+											<th>{t('perf.col.memory')}</th>
+											<th>{t('perf.col.requests')}</th>
+											<th>{t('perf.col.reset')}</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each readings.active as reading (reading.rel)}
 											<tr>
-												<th>{t('perf.col.book')}</th>
-												<th>{t('perf.col.memory')}</th>
-												<th>{t('perf.col.requests')}</th>
-												<th>{t('perf.col.reset')}</th>
+												<td>{bookName(reading.rel)}</td>
+												<td>
+													{formatBytes(reading.cachedBytes ?? 0)}
+													<span class="pid">/ {formatBytes(reading.size)}</span>
+												</td>
+												<td>{formatNumber(reading.requests)}</td>
+												<td>
+													{formatNumber(Math.max(0, readings.idleLimitSecs - reading.idleSecs))} s
+												</td>
 											</tr>
-										</thead>
-										<tbody>
-											{#each readings.active as reading (reading.rel)}
-												<tr>
-													<td>{bookName(reading.rel)}</td>
-													<td>
-														{formatBytes(reading.cachedBytes ?? 0)}
-														<span class="pid">/ {formatBytes(reading.size)}</span>
-													</td>
-													<td>{formatNumber(reading.requests)}</td>
-													<td>
-														{formatNumber(Math.max(0, readings.idleLimitSecs - reading.idleSecs))} s
-													</td>
-												</tr>
-											{/each}
-											<tr>
-												<td>{t('perf.reading.mediaCurrent')}</td>
-												<td>{formatBytes(readings.mediaBytes)}</td>
-												<td>—</td>
-												<td>{mediaReset}</td>
-											</tr>
-										</tbody>
-										<tfoot>
-											<tr>
-												<td>{t('perf.reading.total')}</td>
-												<td>{formatBytes(readingsTotal)}</td>
-												<td></td>
-												<td></td>
-											</tr>
-										</tfoot>
-									</table>
-								</div>
-							{:else}
+										{/each}
+										<tr>
+											<td>{t('perf.reading.mediaCurrent')}</td>
+											<td>{formatBytes(readings.mediaBytes)}</td>
+											<td>—</td>
+											<td>{mediaReset}</td>
+										</tr>
+									</tbody>
+									<tfoot>
+										<tr>
+											<td>{t('perf.reading.total')}</td>
+											<td>{formatBytes(readingsTotal)}</td>
+											<td></td>
+											<td></td>
+										</tr>
+									</tfoot>
+								</table>
+							</div>
+							{#if readings.active.length === 0}
 								<p class="stat-hint">{t('perf.reading.none')}</p>
 							{/if}
 							<p class="stat-line">
-								<span>{t('perf.reading.released')}</span>
+								<span>
+									{t('perf.reading.released')}
+								</span>
 								<span>
 									{formatBytes(readings.releasedBytes)} · {t('perf.books', {
 										count: readings.releasedBooks
@@ -312,7 +313,15 @@
 								</span>
 							</p>
 							<p class="stat-line">
-								<span>{t('perf.reading.media')}</span>
+								<span>
+									{t('perf.reading.media')}
+									<span
+										class="info-dot"
+										role="img"
+										aria-label={t('perf.reading.mediaLimit')}
+										title={t('perf.reading.mediaLimit')}>?</span
+									>
+								</span>
 								<span>{formatBytes(readings.releasedMediaBytes)}</span>
 							</p>
 							<p class="stat-hint">

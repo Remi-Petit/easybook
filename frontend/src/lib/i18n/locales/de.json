@@ -147,6 +147,7 @@
 	"perf.reading.none": "Es wird gerade kein Buch gelesen.",
 	"perf.reading.released": "Seit dem Start an das System zurückgegeben",
 	"perf.reading.media": "davon Medien-Cache (nginx), bereits zurückgegeben",
+	"perf.reading.mediaLimit": "Begrenzt auf 64 MB (max_size in docker/nginx.conf): darüber hinaus entfernt nginx die am längsten nicht mehr bedienten Seiten, was auch deren Speicherseiten freigibt. Die Summe wächst also nicht weiter, sobald der Cache voll ist.",
 	"perf.reading.mediaCurrent": "Medien-Cache (nginx)",
 	"perf.reading.mediaWait": "nach den Lesevorgängen",
 	"perf.reading.mediaSoon": "≤ {seconds} s",
