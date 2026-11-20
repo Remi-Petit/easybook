@@ -2346,9 +2346,36 @@ html:has(.drawer[open]) {
 }
 
 .drawer h3 {
-	margin: 10px 0 0;
+	margin: 0 0 10px;
 	font-size: 14px;
 	font-weight: 600;
+}
+
+.tabs {
+	display: flex;
+	gap: 4px;
+	border-bottom: 1px solid var(--line);
+}
+
+.tabs button {
+	margin-bottom: -1px;
+	padding: 8px 12px;
+	border-bottom: 2px solid transparent;
+	color: var(--muted);
+	font-size: 13.5px;
+}
+
+.tabs button:hover {
+	color: var(--text);
+}
+
+.tabs button[aria-selected='true'] {
+	border-bottom-color: var(--accent);
+	color: var(--accent);
+}
+
+.tab-panel > .stack-form:first-child {
+	margin-top: 0;
 }
 
 .action-row {

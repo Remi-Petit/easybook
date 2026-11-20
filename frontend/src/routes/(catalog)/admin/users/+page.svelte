@@ -205,7 +205,23 @@
 		users = users.map((user) => (user.id === updated.id ? updated : user));
 	}
 
+	// Onglets du tiroir ; SSO n'existe que si OIDC est configuré.
+	type Tab = 'role' | 'password' | 'sso';
+	let tab = $state<Tab>('role');
+	const tabs = $derived<Tab[]>(oidc ? ['role', 'password', 'sso'] : ['role', 'password']);
+	const tabLabel = (id: Tab) =>
+		id === 'role' ? t('users.role') : id === 'password' ? t('auth.password') : t('users.type.sso');
+
+	function tabKeys(event: KeyboardEvent) {
+		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+		if (!step) return;
+		event.preventDefault();
+		tab = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]!;
+		document.getElementById(`tab-${tab}`)?.focus();
+	}
+
 	function select(id: string) {
+		tab = 'role';
 		selectedId = id;
 		resetPassword = subject = '';
 		invitation = null;
@@ -600,6 +616,24 @@
 				</span>
 			</div>
 
+			<div class="tabs" role="tablist" tabindex="-1" onkeydown={tabKeys}>
+				{#each tabs as id (id)}
+					<button
+						type="button"
+						role="tab"
+						id="tab-{id}"
+						aria-selected={tab === id}
+						aria-controls="drawer-panel"
+						tabindex={tab === id ? 0 : -1}
+						onclick={() => (tab = id)}
+					>
+						{tabLabel(id)}
+					</button>
+				{/each}
+			</div>
+
+			<div class="tab-panel" id="drawer-panel" role="tabpanel" aria-labelledby="tab-{tab}">
+			{#if tab === 'role'}
 			<div class="action-row">
 				<button
 					type="button"
@@ -621,7 +655,7 @@
 					</button>
 				{/if}
 			</div>
-
+			{:else if tab === 'password'}
 			<form class="stack-form" method="post" onsubmit={(event) => setPassword(event, selected)}>
 				<label class="field">
 					<span>{t('users.resetPassword')}</span>
@@ -636,8 +670,7 @@
 				<div><button type="submit" class="btn-main">{t('users.resetPasswordSubmit')}</button></div>
 				<p class="panel-hint">{t('users.resetHint')}</p>
 			</form>
-
-			{#if oidc}
+			{:else if tab === 'sso' && oidc}
 				<h3>{t('users.link.title', { provider: oidc.label })}</h3>
 				{#if selected.identities.length > 0}
 					<ul class="identity-list">
@@ -688,9 +721,8 @@
 					</label>
 					<div><button type="submit" class="btn-main">{t('users.link.add')}</button></div>
 				</form>
-			{:else}
-				<p class="panel-hint">{t('users.link.noOidc')}</p>
 			{/if}
+			</div>
 		</div>
 	{/if}
 </dialog>
