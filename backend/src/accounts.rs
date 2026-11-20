@@ -25,7 +25,7 @@ pub const MIN_PASSWORD: usize = 8;
 pub const MAX_PASSWORD: usize = 256;
 
 /// Version du schéma (`PRAGMA user_version`).
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA: &str = "
 CREATE TABLE users (
@@ -60,7 +60,8 @@ CREATE TABLE sessions (
     expires_at INTEGER NOT NULL,
     ip         TEXT,
     user_agent TEXT,
-    method     TEXT
+    method     TEXT,
+    last_seen_at INTEGER
 );
 CREATE INDEX sessions_user ON sessions (user_id);
 
@@ -150,6 +151,14 @@ pub struct SessionInfo {
     pub ip: Option<String>,
     pub user_agent: Option<String>,
     pub method: Option<String>,
+    /// Dernière requête vue (relevée au plus une fois par minute).
+    pub last_seen_at: i64,
+    /// Un onglet de cette session est ouvert (renseigné par l'API, pas par la base).
+    #[serde(default)]
+    pub online: bool,
+    /// C'est la session de celui qui regarde (renseigné par l'API).
+    #[serde(default)]
+    pub current: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -484,6 +493,15 @@ impl Accounts {
             conn.pragma_update(None, "user_version", 4)?;
             version = 4;
         }
+        if version == 4 {
+            // v5 : dernier signe de vie de chaque session.
+            conn.execute_batch(
+                "ALTER TABLE sessions ADD COLUMN last_seen_at INTEGER;
+                 UPDATE sessions SET last_seen_at = created_at;",
+            )?;
+            conn.pragma_update(None, "user_version", 5)?;
+            version = 5;
+        }
         if version != SCHEMA_VERSION {
             return Err(AccountError::Internal(format!(
                 "schéma des comptes en version {version}, {SCHEMA_VERSION} attendue"
@@ -772,8 +790,8 @@ impl Accounts {
         // Ménage opportuniste : pas de tâche de fond pour des sessions échues.
         conn.execute("DELETE FROM sessions WHERE expires_at <= ?1", [created])?;
         conn.execute(
-            "INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at)
+             VALUES (?1, ?2, ?3, ?4, ?3)",
             params![digest(&token), user_id, created, created + ttl_secs],
         )?;
         Ok(token)
@@ -781,17 +799,64 @@ impl Accounts {
 
     /// L'utilisateur d'une session valide (non échue, compte actif).
     pub fn session_user(&self, token: &str) -> Result<Option<User>> {
-        Ok(self
-            .conn()
+        let (hash, at) = (digest(token), now());
+        let conn = self.conn();
+        let user = conn
             .query_row(
                 &format!(
                     "SELECT {USER_COLUMNS} FROM users WHERE disabled = 0 AND id =
                      (SELECT user_id FROM sessions WHERE token_hash = ?1 AND expires_at > ?2)"
                 ),
-                params![digest(token), now()],
+                params![hash, at],
                 user_from,
             )
-            .optional()?)
+            .optional()?;
+        if user.is_some() {
+            // Au plus une écriture par minute et par session : la garde passe ici à chaque requête.
+            conn.execute(
+                "UPDATE sessions SET last_seen_at = ?2
+                 WHERE token_hash = ?1 AND COALESCE(last_seen_at, 0) < ?2 - 60",
+                params![hash, at],
+            )?;
+        }
+        Ok(user)
+    }
+
+    /// Identifiant public d'une session (voir [`SessionInfo::id`]).
+    pub fn session_id(token: &str) -> String {
+        digest(token).chars().take(12).collect()
+    }
+
+    /// Ferme une session et rend son compte, si elle existait.
+    pub fn end_session(&self, token: &str) -> Result<Option<String>> {
+        let conn = self.conn();
+        let hash = digest(token);
+        let user_id: Option<String> = conn
+            .query_row(
+                "SELECT user_id FROM sessions WHERE token_hash = ?1",
+                [&hash],
+                |row| row.get(0),
+            )
+            .optional()?;
+        conn.execute("DELETE FROM sessions WHERE token_hash = ?1", [&hash])?;
+        Ok(user_id)
+    }
+
+    /// Ferme une session d'un compte, par son identifiant public.
+    pub fn delete_session_by_id(&self, user_id: &str, session_id: &str) -> Result<bool> {
+        let removed = self.conn().execute(
+            "DELETE FROM sessions WHERE user_id = ?1 AND substr(token_hash, 1, 12) = ?2",
+            params![user_id, session_id],
+        )?;
+        Ok(removed > 0)
+    }
+
+    /// Ferme les sessions d'un compte, sauf `keep` (identifiant public). Rend leur nombre.
+    pub fn delete_sessions_except(&self, user_id: &str, keep: Option<&str>) -> Result<usize> {
+        Ok(self.conn().execute(
+            "DELETE FROM sessions WHERE user_id = ?1 AND substr(token_hash, 1, 12) != ?2",
+            params![user_id, keep.unwrap_or("")],
+        )?)
     }
 
     pub fn delete_session(&self, token: &str) -> Result<()> {
@@ -854,7 +919,8 @@ impl Accounts {
     pub fn active_sessions(&self, user_id: &str) -> Result<Vec<SessionInfo>> {
         let conn = self.conn();
         let mut statement = conn.prepare(
-            "SELECT substr(token_hash, 1, 12), created_at, expires_at, ip, user_agent, method
+            "SELECT substr(token_hash, 1, 12), created_at, expires_at, ip, user_agent, method,
+                    COALESCE(last_seen_at, created_at)
              FROM sessions WHERE user_id = ?1 AND expires_at > ?2
              ORDER BY created_at DESC",
         )?;
@@ -867,6 +933,9 @@ impl Accounts {
                     ip: row.get(3)?,
                     user_agent: row.get(4)?,
                     method: row.get(5)?,
+                    last_seen_at: row.get(6)?,
+                    online: false,
+                    current: false,
                 })
             })?
             .collect::<rusqlite::Result<_>>()?)
@@ -1566,6 +1635,7 @@ mod tests {
                  ALTER TABLE sessions DROP COLUMN ip;
                  ALTER TABLE sessions DROP COLUMN user_agent;
                  ALTER TABLE sessions DROP COLUMN method;
+                 ALTER TABLE sessions DROP COLUMN last_seen_at;
                  DROP TABLE login_events;
                  DROP INDEX users_email;
                  CREATE INDEX users_email ON users (email);
@@ -1683,6 +1753,59 @@ mod tests {
             store.login_history(&alice.id, 1000).unwrap().len() as i64,
             LOGIN_HISTORY_KEPT
         );
+    }
+
+    #[test]
+    fn sessions_are_closed_one_by_one_or_all_but_one() {
+        let store = Accounts::open_in_memory().unwrap();
+        let alice = user(&store, "alice", Role::User);
+        let bob = user(&store, "bob", Role::User);
+        let tokens: Vec<String> = (0..3)
+            .map(|_| store.create_session(&alice.id, 3600).unwrap())
+            .collect();
+        let bobs = store.create_session(&bob.id, 3600).unwrap();
+
+        // Une session se ferme par son identifiant public, et seulement dans son compte.
+        let target = Accounts::session_id(&tokens[0]);
+        assert!(!store.delete_session_by_id(&bob.id, &target).unwrap());
+        assert!(store.delete_session_by_id(&alice.id, &target).unwrap());
+        assert!(!store.delete_session_by_id(&alice.id, &target).unwrap());
+        assert!(store.session_user(&tokens[0]).unwrap().is_none());
+        assert!(store.session_user(&tokens[1]).unwrap().is_some());
+
+        // Toutes sauf celle de l'appelant.
+        let keep = Accounts::session_id(&tokens[1]);
+        assert_eq!(store.delete_sessions_except(&alice.id, Some(&keep)).unwrap(), 1);
+        assert!(store.session_user(&tokens[1]).unwrap().is_some());
+        assert!(store.session_user(&tokens[2]).unwrap().is_none());
+        assert!(store.session_user(&bobs).unwrap().is_some());
+        assert_eq!(store.delete_sessions_except(&alice.id, None).unwrap(), 1);
+
+        // `end_session` rend le compte, et ne répond rien pour un jeton inconnu.
+        assert_eq!(store.end_session(&bobs).unwrap().as_deref(), Some(bob.id.as_str()));
+        assert_eq!(store.end_session(&bobs).unwrap(), None);
+    }
+
+    #[test]
+    fn the_last_sign_of_life_of_a_session_is_kept_up_to_date() {
+        let store = Accounts::open_in_memory().unwrap();
+        let alice = user(&store, "alice", Role::User);
+        let token = store.create_session(&alice.id, 3600).unwrap();
+        let seen = |store: &Accounts| store.active_sessions(&alice.id).unwrap()[0].last_seen_at;
+
+        let opened = seen(&store);
+        // Moins d'une minute après : pas de nouvelle écriture.
+        store.session_user(&token).unwrap();
+        assert_eq!(seen(&store), opened);
+
+        // Une session inactive depuis un moment est vue à nouveau.
+        store
+            .conn()
+            .execute("UPDATE sessions SET last_seen_at = last_seen_at - 600", [])
+            .unwrap();
+        let stale = seen(&store);
+        store.session_user(&token).unwrap();
+        assert!(seen(&store) > stale);
     }
 
     #[test]

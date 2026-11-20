@@ -311,5 +311,16 @@
 	"users.first": "Prima pagina",
 	"users.last": "Ultima pagina",
 	"users.perPage": "Per pagina",
-	"users.range": "{from}–{to} di {total}"
+	"users.range": "{from}–{to} di {total}",
+	"users.sessions.current": "Questa sessione",
+	"users.sessions.away": "Offline",
+	"users.sessions.seen": "vista {when}",
+	"users.sessions.revoke": "Disconnetti",
+	"users.sessions.revoked": "Sessione chiusa",
+	"users.sessions.revokeAll": "Disconnetti ovunque",
+	"users.sessions.allRevoked": "Sessioni chiuse",
+	"users.sessions.revokeAllTitle": "Chiudere tutte le sessioni?",
+	"users.sessions.revokeAllBody": "Tutte le sessioni di questo account verranno chiuse: la persona dovrà accedere di nuovo.",
+	"users.sessions.revokeAllSelf": "Tutte le altre sessioni di questo account verranno chiuse; questa resta aperta.",
+	"auth.error.cannot_close_current": "Per chiudere la tua sessione, usa «Esci»."
 }

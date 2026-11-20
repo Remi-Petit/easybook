@@ -311,5 +311,16 @@
 	"users.first": "Première page",
 	"users.last": "Dernière page",
 	"users.perPage": "Par page",
-	"users.range": "{from}–{to} sur {total}"
+	"users.range": "{from}–{to} sur {total}",
+	"users.sessions.current": "Cette session",
+	"users.sessions.away": "Hors ligne",
+	"users.sessions.seen": "vue {when}",
+	"users.sessions.revoke": "Déconnecter",
+	"users.sessions.revoked": "Session fermée",
+	"users.sessions.revokeAll": "Tout déconnecter",
+	"users.sessions.allRevoked": "Sessions fermées",
+	"users.sessions.revokeAllTitle": "Fermer toutes les sessions ?",
+	"users.sessions.revokeAllBody": "Toutes les sessions de ce compte seront fermées : la personne devra se reconnecter.",
+	"users.sessions.revokeAllSelf": "Toutes les autres sessions de ce compte seront fermées ; celle-ci reste ouverte.",
+	"auth.error.cannot_close_current": "Pour fermer votre propre session, utilisez « Se déconnecter »."
 }

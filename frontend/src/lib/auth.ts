@@ -42,6 +42,12 @@ export type SessionInfo = {
 	user_agent: string | null;
 	/** `password` ou `sso` ; `null` pour une session ouverte avant l'historique. */
 	method: string | null;
+	/** Dernière requête vue (relevée au plus une fois par minute). */
+	last_seen_at: number;
+	/** Un onglet de cette session est ouvert en ce moment. */
+	online: boolean;
+	/** C'est la session de celui qui regarde. */
+	current: boolean;
 };
 
 export type LoginEvent = {
@@ -207,6 +213,7 @@ export const ERROR_CODES = [
 	'cannot_delete_self',
 	'cannot_demote_self',
 	'cannot_disable_self',
+	'cannot_close_current',
 	'self_link_disabled',
 	'no_account',
 	'account_disabled',

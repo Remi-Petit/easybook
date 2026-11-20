@@ -311,5 +311,16 @@
 	"users.first": "First page",
 	"users.last": "Last page",
 	"users.perPage": "Per page",
-	"users.range": "{from}–{to} of {total}"
+	"users.range": "{from}–{to} of {total}",
+	"users.sessions.current": "This session",
+	"users.sessions.away": "Offline",
+	"users.sessions.seen": "seen {when}",
+	"users.sessions.revoke": "Sign out",
+	"users.sessions.revoked": "Session closed",
+	"users.sessions.revokeAll": "Sign out everywhere",
+	"users.sessions.allRevoked": "Sessions closed",
+	"users.sessions.revokeAllTitle": "Close all sessions?",
+	"users.sessions.revokeAllBody": "All sessions of this account will be closed: the person will have to sign in again.",
+	"users.sessions.revokeAllSelf": "All other sessions of this account will be closed; this one stays open.",
+	"auth.error.cannot_close_current": "To close your own session, use “Sign out”."
 }

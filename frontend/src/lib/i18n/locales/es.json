@@ -311,5 +311,16 @@
 	"users.first": "Primera página",
 	"users.last": "Última página",
 	"users.perPage": "Por página",
-	"users.range": "{from}–{to} de {total}"
+	"users.range": "{from}–{to} de {total}",
+	"users.sessions.current": "Esta sesión",
+	"users.sessions.away": "Sin conexión",
+	"users.sessions.seen": "vista {when}",
+	"users.sessions.revoke": "Cerrar sesión",
+	"users.sessions.revoked": "Sesión cerrada",
+	"users.sessions.revokeAll": "Cerrar todas",
+	"users.sessions.allRevoked": "Sesiones cerradas",
+	"users.sessions.revokeAllTitle": "¿Cerrar todas las sesiones?",
+	"users.sessions.revokeAllBody": "Se cerrarán todas las sesiones de esta cuenta: la persona tendrá que volver a iniciar sesión.",
+	"users.sessions.revokeAllSelf": "Se cerrarán todas las demás sesiones de esta cuenta; esta sigue abierta.",
+	"auth.error.cannot_close_current": "Para cerrar su propia sesión, use «Cerrar sesión»."
 }

@@ -68,23 +68,55 @@ pub struct AuthState {
     dev_logins: Vec<(String, String)>,
     /// Avis d'activité (`{"type":"activity","user_id":…}`), réservés aux administrateurs.
     events: broadcast::Sender<String>,
-    /// Connexions WebSocket ouvertes, par compte : qui est en ligne à cet instant.
-    presence: Mutex<HashMap<String, usize>>,
+    /// Connexions WebSocket ouvertes, par compte puis par session : qui est en ligne
+    /// à cet instant, et avec quelle session.
+    presence: Mutex<HashMap<String, HashMap<String, usize>>>,
+    /// Sessions fermées par un administrateur : leurs WebSocket doivent se couper.
+    revoked: broadcast::Sender<Revoked>,
 }
 
-/// Tant qu'il vit, une connexion WebSocket compte comme une présence du compte.
+/// Ce qui vient d'être fermé.
+#[derive(Debug, Clone)]
+pub enum Revoked {
+    Session(String),
+    /// Toutes les sessions du compte, sauf `keep`.
+    AllBut {
+        user_id: String,
+        keep: Option<String>,
+    },
+}
+
+impl Revoked {
+    /// Ce WebSocket (ce compte, cette session) est-il concerné ?
+    pub fn hits(&self, user_id: &str, session_id: &str) -> bool {
+        match self {
+            Revoked::Session(id) => id == session_id,
+            Revoked::AllBut { user_id: owner, keep } => {
+                owner == user_id && keep.as_deref() != Some(session_id)
+            }
+        }
+    }
+}
+
+/// Tant qu'il vit, une connexion WebSocket compte comme une présence de la session.
 pub struct Presence {
     auth: Arc<AuthState>,
     user_id: String,
+    session_id: String,
 }
 
 impl Drop for Presence {
     fn drop(&mut self) {
         {
             let mut map = self.auth.presence.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(count) = map.get_mut(&self.user_id) {
-                *count -= 1;
-                if *count == 0 {
+            if let Some(sessions) = map.get_mut(&self.user_id) {
+                if let Some(count) = sessions.get_mut(&self.session_id) {
+                    *count -= 1;
+                    if *count == 0 {
+                        sessions.remove(&self.session_id);
+                    }
+                }
+                if sessions.is_empty() {
                     map.remove(&self.user_id);
                 }
             }
@@ -109,6 +141,7 @@ impl AuthState {
             dev_logins: Vec::new(),
             events: broadcast::channel(64).0,
             presence: Mutex::default(),
+            revoked: broadcast::channel(64).0,
         }
     }
 
@@ -123,23 +156,43 @@ impl AuthState {
         self.events.subscribe()
     }
 
-    /// Une connexion WebSocket de plus pour ce compte, jusqu'à la chute du garde.
-    pub fn enter(self: &Arc<Self>, user_id: &str) -> Presence {
+    /// Une connexion WebSocket de plus pour cette session, jusqu'à la chute du garde.
+    pub fn enter(self: &Arc<Self>, user_id: &str, session_id: &str) -> Presence {
         {
             let mut map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
-            *map.entry(user_id.to_string()).or_insert(0) += 1;
+            *map.entry(user_id.to_string())
+                .or_default()
+                .entry(session_id.to_string())
+                .or_insert(0) += 1;
         }
         self.notify(user_id);
         Presence {
             auth: Arc::clone(self),
             user_id: user_id.to_string(),
+            session_id: session_id.to_string(),
         }
     }
 
     /// Connexions WebSocket ouvertes (une par onglet) pour ce compte.
     pub fn online(&self, user_id: &str) -> usize {
         let map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
-        map.get(user_id).copied().unwrap_or(0)
+        map.get(user_id).map_or(0, |sessions| sessions.values().sum())
+    }
+
+    /// Sessions de ce compte qui ont au moins un onglet ouvert.
+    pub fn online_sessions(&self, user_id: &str) -> std::collections::HashSet<String> {
+        let map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
+        map.get(user_id)
+            .map_or_else(Default::default, |sessions| sessions.keys().cloned().collect())
+    }
+
+    /// Coupe les WebSocket des sessions qui viennent d'être fermées.
+    pub fn revoke(&self, what: Revoked) {
+        let _ = self.revoked.send(what);
+    }
+
+    pub fn subscribe_revocations(&self) -> broadcast::Receiver<Revoked> {
+        self.revoked.subscribe()
     }
 
     /// Boutons de connexion rapide : `email:mot_de_passe,email:mot_de_passe`.
@@ -213,6 +266,23 @@ impl<S: Send + Sync> FromRequestParts<S> for MaybeUser {
     }
 }
 
+/// La session de la requête (son identifiant public), posée par [`guard`].
+#[derive(Clone)]
+pub struct CurrentSession(pub String);
+
+/// Extracteur : l'identifiant public de la session, si elle existe.
+pub struct MaybeSession(pub Option<String>);
+
+impl<S: Send + Sync> FromRequestParts<S> for MaybeSession {
+    type Rejection = Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Infallible> {
+        Ok(MaybeSession(
+            parts.extensions.get::<CurrentSession>().map(|c| c.0.clone()),
+        ))
+    }
+}
+
 // ── Garde ────────────────────────────────────────────────────────────────
 
 /// Routes accessibles sans session.
@@ -244,6 +314,7 @@ pub async fn guard(State(state): State<AppState>, mut request: Request, next: Ne
     }
 
     let token = cookie_value(request.headers(), SESSION_COOKIE);
+    let session_id = token.as_deref().map(Accounts::session_id);
     let user = match token {
         Some(token) => auth.accounts.session_user(&token).ok().flatten(),
         None => None,
@@ -256,6 +327,9 @@ pub async fn guard(State(state): State<AppState>, mut request: Request, next: Ne
                 return error(StatusCode::FORBIDDEN, "forbidden");
             }
             request.extensions_mut().insert(CurrentUser(user));
+            if let Some(id) = session_id {
+                request.extensions_mut().insert(CurrentSession(id));
+            }
         }
         None if !is_public(&path) => return error(StatusCode::UNAUTHORIZED, "unauthenticated"),
         None => {}
@@ -475,6 +549,14 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/admin/users/{id}/password", put(admin_set_password))
         .route("/api/admin/users/{id}/activity", get(user_activity))
+        .route(
+            "/api/admin/users/{id}/sessions",
+            axum::routing::delete(close_sessions),
+        )
+        .route(
+            "/api/admin/users/{id}/sessions/{session}",
+            axum::routing::delete(close_session),
+        )
         .route("/api/admin/users/{id}/link-token", post(create_link_token))
         .route(
             "/api/admin/users/{id}/identities",
@@ -627,6 +709,7 @@ async fn sign_in(
         return Err(error(StatusCode::UNAUTHORIZED, "invalid_credentials"));
     };
     auth.throttle.success(&key);
+    replace_previous(auth, headers, &token).await;
     {
         let (token, meta) = (token.clone(), session_meta(headers, method));
         if let Ok(Ok(Some(id))) =
@@ -680,17 +763,29 @@ async fn direct_login(
     }
 }
 
+/// Un navigateur qui se reconnecte laisse derrière lui sa session précédente : on la ferme,
+/// sinon chaque connexion en ajoute une qui ne servira plus.
+async fn replace_previous(auth: &Arc<AuthState>, headers: &HeaderMap, new_token: &str) {
+    let Some(previous) = cookie_value(headers, SESSION_COOKIE).filter(|old| old != new_token) else {
+        return;
+    };
+    let session_id = Accounts::session_id(&previous);
+    let ended = db(auth, move |accounts| accounts.end_session(&previous)).await;
+    if let Ok(Ok(Some(user_id))) = ended {
+        auth.revoke(Revoked::Session(session_id));
+        auth.notify(&user_id);
+    }
+}
+
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
     if let Some(token) = cookie_value(&headers, SESSION_COOKIE) {
-        let user_id = db(&auth, move |accounts| -> Result<Option<String>, AccountError> {
-            let user = accounts.session_user(&token)?;
-            accounts.delete_session(&token)?;
-            Ok(user.map(|user| user.id))
-        })
-        .await?
-        .map_err(account_error)?;
+        let session_id = Accounts::session_id(&token);
+        let user_id = db(&auth, move |accounts| accounts.end_session(&token))
+            .await?
+            .map_err(account_error)?;
         if let Some(id) = user_id {
+            auth.revoke(Revoked::Session(session_id));
             auth.notify(&id);
         }
     }
@@ -725,6 +820,7 @@ async fn change_password(
     }
 
     let id = user.id.clone();
+    let user_id = user.id.clone();
     let meta = session_meta(&headers, "password");
     let result = db(
         &auth,
@@ -751,6 +847,12 @@ async fn change_password(
         return Err(error(StatusCode::FORBIDDEN, "wrong_password"));
     };
     auth.throttle.success(&key);
+    // Les autres sessions du compte sont fermées : leurs onglets aussi.
+    auth.revoke(Revoked::AllBut {
+        user_id: user_id.clone(),
+        keep: Some(Accounts::session_id(&token)),
+    });
+    auth.notify(&user_id);
     Ok((
         StatusCode::NO_CONTENT,
         [(header::SET_COOKIE, session_cookies(&headers, &token, ttl))],
@@ -968,6 +1070,7 @@ async fn oidc_callback(
         session: Some(token),
     }) = &outcome
     {
+        replace_previous(&auth, &headers, token).await;
         let (token, meta) = (token.clone(), session_meta(&headers, "sso"));
         if let Ok(Ok(Some(id))) =
             db(&auth, move |accounts| accounts.log_session_start(&token, &meta)).await
@@ -1192,6 +1295,12 @@ async fn update_user(
     })
     .await?
     .map_err(account_error)?;
+    if updated.user.disabled {
+        auth.revoke(Revoked::AllBut {
+            user_id: notified.clone(),
+            keep: None,
+        });
+    }
     auth.notify(&notified);
     Ok(Json(updated).into_response())
 }
@@ -1242,20 +1351,73 @@ struct ActivityQuery {
 /// et dernières connexions (`?limit=`, 50 par défaut, 200 au plus).
 async fn user_activity(
     State(state): State<AppState>,
+    MaybeSession(current): MaybeSession,
     Path(id): Path<String>,
     Query(query): Query<ActivityQuery>,
 ) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
-    let online = auth.online(&id);
-    let (sessions, history) = db(&auth, move |accounts| -> Result<_, AccountError> {
+    let (online, live) = (auth.online(&id), auth.online_sessions(&id));
+    let (mut sessions, history) = db(&auth, move |accounts| -> Result<_, AccountError> {
         accounts.user(&id)?.ok_or(AccountError::NotFound)?;
         Ok((accounts.active_sessions(&id)?, accounts.login_history(&id, limit)?))
     })
     .await?
     .map_err(account_error)?;
+    for session in &mut sessions {
+        session.online = live.contains(&session.id);
+        session.current = current.as_deref() == Some(session.id.as_str());
+    }
     Ok(Json(serde_json::json!({ "sessions": sessions, "history": history, "online": online }))
         .into_response())
+}
+
+/// `DELETE /api/admin/users/{id}/sessions` — ferme toutes les sessions du compte ;
+/// sur le sien, on garde celle en cours.
+async fn close_sessions(
+    State(state): State<AppState>,
+    SessionUser(actor): SessionUser,
+    MaybeSession(current): MaybeSession,
+    Path(id): Path<String>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let keep = current.filter(|_| actor.id == id);
+    let (target, kept) = (id.clone(), keep.clone());
+    let closed = db(&auth, move |accounts| -> Result<usize, AccountError> {
+        accounts.user(&target)?.ok_or(AccountError::NotFound)?;
+        accounts.delete_sessions_except(&target, kept.as_deref())
+    })
+    .await?
+    .map_err(account_error)?;
+    auth.revoke(Revoked::AllBut {
+        user_id: id.clone(),
+        keep,
+    });
+    auth.notify(&id);
+    Ok(Json(serde_json::json!({ "closed": closed })).into_response())
+}
+
+/// `DELETE /api/admin/users/{id}/sessions/{session}` — ferme une session.
+async fn close_session(
+    State(state): State<AppState>,
+    MaybeSession(current): MaybeSession,
+    Path((id, session)): Path<(String, String)>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    // Fermer la sienne reviendrait à se déconnecter : pour cela, il y a la déconnexion.
+    if current.as_deref() == Some(session.as_str()) {
+        return Err(error(StatusCode::CONFLICT, "cannot_close_current"));
+    }
+    let (target, sid) = (id.clone(), session.clone());
+    let closed = db(&auth, move |accounts| accounts.delete_session_by_id(&target, &sid))
+        .await?
+        .map_err(account_error)?;
+    if !closed {
+        return Err(error(StatusCode::NOT_FOUND, "not_found"));
+    }
+    auth.revoke(Revoked::Session(session));
+    auth.notify(&id);
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 async fn admin_set_password(
@@ -1274,6 +1436,10 @@ async fn admin_set_password(
     })
     .await?
     .map_err(account_error)?;
+    auth.revoke(Revoked::AllBut {
+        user_id: notified.clone(),
+        keep: None,
+    });
     auth.notify(&notified);
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -1372,14 +1538,20 @@ mod tests {
         let mut events = auth.subscribe_events();
 
         assert_eq!(auth.online("u1"), 0);
-        let first = auth.enter("u1");
-        let second = auth.enter("u1");
-        assert_eq!(auth.online("u1"), 2);
+        let first = auth.enter("u1", "s1");
+        let second = auth.enter("u1", "s1");
+        let third = auth.enter("u1", "s2");
+        assert_eq!(auth.online("u1"), 3);
         assert_eq!(auth.online("u2"), 0);
+        // La présence se lit par session : deux onglets de s1, un de s2.
+        let live = auth.online_sessions("u1");
+        assert!(live.contains("s1") && live.contains("s2") && live.len() == 2);
 
         drop(first);
-        assert_eq!(auth.online("u1"), 1);
+        assert!(auth.online_sessions("u1").contains("s1"));
         drop(second);
+        assert!(!auth.online_sessions("u1").contains("s1"));
+        drop(third);
         assert_eq!(auth.online("u1"), 0);
 
         // Chaque entrée et chaque sortie prévient les administrateurs.
@@ -1390,7 +1562,27 @@ mod tests {
             assert_eq!(event["user_id"], "u1");
             warned += 1;
         }
-        assert_eq!(warned, 4);
+        assert_eq!(warned, 6);
+    }
+
+    #[test]
+    fn a_revocation_targets_one_session_or_all_but_one() {
+        let one = Revoked::Session("s1".into());
+        assert!(one.hits("u1", "s1") && !one.hits("u1", "s2"));
+
+        let all = Revoked::AllBut {
+            user_id: "u1".into(),
+            keep: Some("s2".into()),
+        };
+        assert!(all.hits("u1", "s1"));
+        assert!(!all.hits("u1", "s2"));
+        // Un autre compte n'est pas concerné.
+        assert!(!all.hits("u2", "s1"));
+        let everything = Revoked::AllBut {
+            user_id: "u1".into(),
+            keep: None,
+        };
+        assert!(everything.hits("u1", "s2"));
     }
 
     #[test]

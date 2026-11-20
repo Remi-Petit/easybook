@@ -311,5 +311,16 @@
 	"users.first": "Erste Seite",
 	"users.last": "Letzte Seite",
 	"users.perPage": "Pro Seite",
-	"users.range": "{from}–{to} von {total}"
+	"users.range": "{from}–{to} von {total}",
+	"users.sessions.current": "Diese Sitzung",
+	"users.sessions.away": "Offline",
+	"users.sessions.seen": "zuletzt {when}",
+	"users.sessions.revoke": "Abmelden",
+	"users.sessions.revoked": "Sitzung beendet",
+	"users.sessions.revokeAll": "Überall abmelden",
+	"users.sessions.allRevoked": "Sitzungen beendet",
+	"users.sessions.revokeAllTitle": "Alle Sitzungen beenden?",
+	"users.sessions.revokeAllBody": "Alle Sitzungen dieses Kontos werden beendet: Die Person muss sich neu anmelden.",
+	"users.sessions.revokeAllSelf": "Alle anderen Sitzungen dieses Kontos werden beendet; diese bleibt offen.",
+	"auth.error.cannot_close_current": "Um Ihre eigene Sitzung zu beenden, nutzen Sie „Abmelden“."
 }

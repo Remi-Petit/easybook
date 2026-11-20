@@ -17,7 +17,7 @@
 	import { agentLabel } from '$lib/agent';
 	import { formatDateTime } from '$lib/api';
 	import { call, displayName, errorKey, type Activity, type LoginEvent, type User } from '$lib/auth';
-	import InfoTip from '$lib/components/InfoTip.svelte';
+	import SessionList from '$lib/components/SessionList.svelte';
 	import TablePager from '$lib/components/TablePager.svelte';
 	import { t } from '$lib/i18n/state.svelte';
 	import { onActivity } from '$lib/library.svelte';
@@ -29,8 +29,6 @@
 	let user = $state<User | null>(null);
 	let activity = $state<Activity | null>(null);
 	let missing = $state(false);
-	let showAllSessions = $state(false);
-	const SESSIONS_SHOWN = 3;
 
 	const methodLabel = (method: string | null) =>
 		method === 'sso' ? t('users.type.sso') : method === 'password' ? t('auth.password') : null;
@@ -150,39 +148,7 @@
 	{:else}
 		<div class="admin-stack wide">
 			<section class="panel-card">
-				<h3 class="with-tip">
-					{t('users.sessions.title', { count: activity.sessions.length })}
-					<InfoTip label={t('users.tab.sessions')} text={t('users.sessions.hint')} />
-				</h3>
-				{#if activity.sessions.length === 0}
-					<p class="panel-hint">{t('users.sessions.none')}</p>
-				{:else}
-					<ul class="session-list">
-						{#each showAllSessions ? activity.sessions : activity.sessions.slice(0, SESSIONS_SHOWN) as session (session.id)}
-							<li>
-								<strong>{agentLabel(session.user_agent) ?? t('users.sessions.unknown')}</strong>
-								<span class="muted">
-									{[session.ip, methodLabel(session.method)].filter(Boolean).join(' · ')}
-								</span>
-								<span class="muted">
-									{t('users.sessions.opened', { date: formatDateTime(session.created_at) })}
-									· {t('users.sessions.expires', { date: formatDateTime(session.expires_at) })}
-								</span>
-							</li>
-						{/each}
-					</ul>
-					{#if activity.sessions.length > SESSIONS_SHOWN}
-						<button
-							type="button"
-							class="link-more"
-							onclick={() => (showAllSessions = !showAllSessions)}
-						>
-							{showAllSessions
-								? t('users.sessions.less')
-								: t('users.sessions.more', { count: activity.sessions.length - SESSIONS_SHOWN })}
-						</button>
-					{/if}
-				{/if}
+				<SessionList userId={id} sessions={activity.sessions} onchange={() => load(true)} />
 			</section>
 
 			<section class="table-card">

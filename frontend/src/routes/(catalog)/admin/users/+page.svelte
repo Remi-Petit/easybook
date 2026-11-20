@@ -19,6 +19,7 @@
 	import { agentLabel } from '$lib/agent';
 	import PasswordField from '$lib/components/PasswordField.svelte';
 	import InfoTip from '$lib/components/InfoTip.svelte';
+	import SessionList from '$lib/components/SessionList.svelte';
 	import TablePager from '$lib/components/TablePager.svelte';
 	import { savedPageSize } from '$lib/pagesize';
 	import {
@@ -246,15 +247,12 @@
 	// Sessions ouvertes et connexions du compte choisi, relues à chaque ouverture du tiroir.
 	let activity = $state<Activity | null>(null);
 	let activityLoading = $state(false);
-	let showAllSessions = $state(false);
-	const SESSIONS_SHOWN = 3;
 	const HISTORY_SHOWN = 5;
 
 	// `quiet` : relecture après un avis, sans vider ce qui est affiché.
 	async function loadActivity(id: string, quiet = false) {
 		if (!quiet) {
 			activity = null;
-			showAllSessions = false;
 			activityLoading = true;
 		}
 		const result = await call<Activity>('GET', `/api/admin/users/${id}/activity`);
@@ -828,39 +826,11 @@
 				{#if activityLoading || !activity}
 					<p class="panel-hint">{t('status.connecting')}</p>
 				{:else}
-					<h3 class="with-tip">
-						{t('users.sessions.title', { count: activity.sessions.length })}
-						<InfoTip label={t('users.tab.sessions')} text={t('users.sessions.hint')} />
-					</h3>
-					{#if activity.sessions.length === 0}
-						<p class="panel-hint">{t('users.sessions.none')}</p>
-					{:else}
-						<ul class="session-list">
-							{#each showAllSessions ? activity.sessions : activity.sessions.slice(0, SESSIONS_SHOWN) as session (session.id)}
-								<li>
-									<strong>{agentLabel(session.user_agent) ?? t('users.sessions.unknown')}</strong>
-									<span class="muted">
-										{[session.ip, methodLabel(session.method)].filter(Boolean).join(' · ')}
-									</span>
-									<span class="muted">
-										{t('users.sessions.opened', { date: formatDateTime(session.created_at) })}
-										· {t('users.sessions.expires', { date: formatDateTime(session.expires_at) })}
-									</span>
-								</li>
-							{/each}
-						</ul>
-						{#if activity.sessions.length > SESSIONS_SHOWN}
-							<button
-								type="button"
-								class="link-more"
-								onclick={() => (showAllSessions = !showAllSessions)}
-							>
-								{showAllSessions
-									? t('users.sessions.less')
-									: t('users.sessions.more', { count: activity.sessions.length - SESSIONS_SHOWN })}
-							</button>
-						{/if}
-					{/if}
+					<SessionList
+						userId={selected.id}
+						sessions={activity.sessions}
+						onchange={() => loadActivity(selected.id, true)}
+					/>
 
 					<h3>{t('users.history.title')}</h3>
 					{#if activity.history.length === 0}

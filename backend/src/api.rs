@@ -765,11 +765,17 @@ async fn ws_library(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     auth::MaybeUser(user): auth::MaybeUser,
+    auth::MaybeSession(session): auth::MaybeSession,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_ws(socket, state, user))
+    ws.on_upgrade(move |socket| handle_ws(socket, state, user, session))
 }
 
-async fn handle_ws(socket: WebSocket, state: AppState, user: Option<crate::accounts::User>) {
+async fn handle_ws(
+    socket: WebSocket,
+    state: AppState,
+    user: Option<crate::accounts::User>,
+    session: Option<String>,
+) {
     let (mut sink, mut stream) = socket.split();
 
     // Une connexion ouverte vaut une présence ; un administrateur reçoit en plus
@@ -777,7 +783,10 @@ async fn handle_ws(socket: WebSocket, state: AppState, user: Option<crate::accou
     let _presence = state
         .auth()
         .zip(user.as_ref())
-        .map(|(auth, user)| auth.enter(&user.id));
+        .zip(session.as_deref())
+        .map(|((auth, user), session)| auth.enter(&user.id, session));
+    // Une session fermée par un administrateur coupe ses onglets.
+    let mut revoked = state.auth().map(|auth| auth.subscribe_revocations());
     let mut events = state
         .auth()
         .zip(user.as_ref())
@@ -809,6 +818,21 @@ async fn handle_ws(socket: WebSocket, state: AppState, user: Option<crate::accou
                 Some(Ok(Message::Close(_))) | None => break,
                 Some(Ok(_)) => {}
                 Some(Err(_)) => break,
+            },
+            // La session de ce WebSocket vient d'être fermée.
+            closed = async {
+                match revoked.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => if let Ok(what) = closed {
+                let (user_id, session_id) = (
+                    user.as_ref().map_or("", |user| user.id.as_str()),
+                    session.as_deref().unwrap_or(""),
+                );
+                if what.hits(user_id, session_id) {
+                    break;
+                }
             },
             // Activité d'un compte, réservée aux administrateurs.
             event = async {

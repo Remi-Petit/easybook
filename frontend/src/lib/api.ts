@@ -220,3 +220,14 @@ export function formatDateTime(seconds: number | null): string {
 		minute: '2-digit'
 	});
 }
+
+/** « il y a 3 minutes », dans la langue courante (`now` : secondes Unix, pour les tests). */
+export function formatRelative(seconds: number, now: number = Date.now() / 1000): string {
+	const formatter = new Intl.RelativeTimeFormat(intlLocale(), { numeric: 'auto' });
+	const diff = seconds - now;
+	const abs = Math.abs(diff);
+	if (abs < 45) return formatter.format(0, 'second');
+	if (abs < 3600) return formatter.format(Math.round(diff / 60), 'minute');
+	if (abs < 86_400) return formatter.format(Math.round(diff / 3600), 'hour');
+	return formatter.format(Math.round(diff / 86_400), 'day');
+}

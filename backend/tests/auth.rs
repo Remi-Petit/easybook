@@ -852,6 +852,123 @@ async fn an_admin_sees_the_sessions_and_login_history_of_an_account() {
 }
 
 #[tokio::test]
+async fn logging_in_again_in_the_same_browser_replaces_the_previous_session() {
+    let site = site();
+    let admin = site.admin().await;
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    let uri = format!("/api/admin/users/{}/activity", alice.id);
+    let body = || serde_json::json!({ "email": "alice@local.test", "password": PASSWORD });
+
+    let first = site.login("alice", PASSWORD).await;
+    // Le même navigateur se reconnecte : il présente son cookie.
+    let again = site
+        .request("POST", "/api/auth/login", Some(&first), Some(body()), &[])
+        .await;
+    assert_eq!(again.status, StatusCode::OK);
+    let second = again.cookie("easybook_session").unwrap();
+    assert_ne!(first, second);
+    assert_eq!(
+        site.get("/api/books", Some(&first)).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        site.get("/api/books", Some(&second)).await.status,
+        StatusCode::OK
+    );
+    let one = site.get(&uri, Some(&admin)).await.json();
+    assert_eq!(one["sessions"].as_array().unwrap().len(), 1);
+
+    // Un autre navigateur (sans cookie) ouvre une session de plus.
+    site.login("alice", PASSWORD).await;
+    let two = site.get(&uri, Some(&admin)).await.json();
+    assert_eq!(two["sessions"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn an_admin_closes_sessions_one_by_one_or_all_at_once() {
+    let site = site();
+    let admin = site.admin().await;
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    let uri = format!("/api/admin/users/{}", alice.id);
+    let first = site.login("alice", PASSWORD).await;
+    let second = site.login("alice", PASSWORD).await;
+
+    let activity = site.get(&format!("{uri}/activity"), Some(&admin)).await.json();
+    let sessions = activity["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 2);
+    assert!(sessions.iter().all(|s| s["current"] == false && s["online"] == false));
+    assert!(sessions[0]["last_seen_at"].as_i64().unwrap() > 0);
+
+    // Une session, par son identifiant (public : établi depuis le jeton, jamais le jeton).
+    let oldest = easybook::accounts::Accounts::session_id(first.split_once('=').unwrap().1);
+    assert!(sessions.iter().any(|s| s["id"] == oldest.as_str()));
+    let closed = site
+        .request("DELETE", &format!("{uri}/sessions/{oldest}"), Some(&admin), None, &[])
+        .await;
+    assert_eq!(closed.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        site.get("/api/books", Some(&first)).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        site.get("/api/books", Some(&second)).await.status,
+        StatusCode::OK
+    );
+    let unknown = site
+        .request("DELETE", &format!("{uri}/sessions/{oldest}"), Some(&admin), None, &[])
+        .await;
+    assert_eq!(unknown.status, StatusCode::NOT_FOUND);
+
+    // Toutes les sessions du compte.
+    let all = site
+        .request("DELETE", &format!("{uri}/sessions"), Some(&admin), None, &[])
+        .await;
+    assert_eq!(all.status, StatusCode::OK);
+    assert_eq!(all.json()["closed"], 1);
+    assert_eq!(
+        site.get("/api/books", Some(&second)).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Sa propre session : signalée « courante », impossible à fermer ici, et « tout fermer » la garde.
+    let root = site.accounts.user_by_username("root").unwrap().unwrap();
+    let own = format!("/api/admin/users/{}", root.id);
+    let other_browser = site.admin().await;
+    let mine = site.get(&format!("{own}/activity"), Some(&admin)).await.json();
+    let mine = mine["sessions"].as_array().unwrap();
+    let current = mine.iter().find(|s| s["current"] == true).unwrap();
+    let refused = site
+        .request(
+            "DELETE",
+            &format!("{own}/sessions/{}", current["id"].as_str().unwrap()),
+            Some(&admin),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(
+        (refused.status, refused.error().as_deref()),
+        (StatusCode::CONFLICT, Some("cannot_close_current"))
+    );
+    let others = site
+        .request("DELETE", &format!("{own}/sessions"), Some(&admin), None, &[])
+        .await;
+    assert_eq!(others.json()["closed"], mine.len() - 1);
+    assert_eq!(site.get("/api/books", Some(&admin)).await.status, StatusCode::OK);
+    assert_eq!(
+        site.get("/api/books", Some(&other_browser)).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Réservé aux administrateurs.
+    let reader = site.session_for(&alice);
+    let forbidden = site
+        .request("DELETE", &format!("{uri}/sessions"), Some(&reader), None, &[])
+        .await;
+    assert_eq!(forbidden.status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn oidc_routes_do_not_exist_without_a_provider() {
     let site = site();
     let admin = site.admin().await;
