@@ -110,11 +110,17 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # mesuré 31 Mo de RSS au repos au lieu de 12, et 85 Mo au lieu de 36 après
 # 500 onglets WebSocket. `MALLOC_ARENA_MAX` a été essayé aussi : aucun gain de
 # plus, et un pic CPU plus haut sur les rafales — écarté.
+#
+# `NODE_OPTIONS` : le serveur SvelteKit est le plus gros consommateur privé du
+# conteneur (~20 Mo sur 26). Des espaces jeunes plus petits font tomber son tas
+# à ~18 Mo (mesuré), et `max-old-space-size` l'empêche de doubler sous charge.
+# Rien n'y est stocké : l'interface ne garde pas de données, elle rend du HTML.
 ENV API_PORT=8091 \
     API_HOST=127.0.0.1 \
     UI_PORT=3100 \
     UI_HOST=127.0.0.1 \
     NODE_ENV=production \
+    NODE_OPTIONS="--max-semi-space-size=1 --max-old-space-size=128" \
     BOOKS_ROOT=/books \
     EASYBOOK_CONFIG=/app/config.yml \
     EASYBOOK_HOST=127.0.0.1 \
