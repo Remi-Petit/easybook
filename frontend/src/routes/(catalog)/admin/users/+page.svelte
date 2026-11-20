@@ -17,6 +17,7 @@
 	} from '@tanstack/svelte-table';
 	import { formatDate } from '$lib/api';
 	import PasswordField from '$lib/components/PasswordField.svelte';
+	import InfoTip from '$lib/components/InfoTip.svelte';
 	import { call, displayName, errorKey, type Role, type Session, type User } from '$lib/auth';
 	import { t } from '$lib/i18n/state.svelte';
 	import { notify } from '$lib/toasts.svelte';
@@ -724,35 +725,38 @@
 					</ul>
 				{/if}
 
-				<div class="stack-form">
-					<div>
-						<button type="button" class="btn-main" onclick={() => invite(selected)}>
-							{t('users.link.invite')}
-						</button>
-					</div>
-					<p class="panel-hint">
-						{t('users.link.inviteHint', {
-							provider: oidc.label,
-							minutes: invitation ? Math.round(invitation.expires_in / 60) : 15
-						})}
-					</p>
-					{#if invitation}
-						<div class="invite-box">
-							<code>{location.origin + invitation.url}</code>
-							<button type="button" class="btn-plain" onclick={copyInvitation}>
-								{t('users.link.copy')}
+				{#if selected.identities.length === 0}
+					<div class="stack-form">
+						<div class="invite-row">
+							<button type="button" class="btn-main" onclick={() => invite(selected)}>
+								{t('users.link.invite')}
 							</button>
+							<InfoTip
+								label={t('users.link.invite')}
+								text={t('users.link.inviteHint', {
+									provider: oidc.label,
+									minutes: invitation ? Math.round(invitation.expires_in / 60) : 15
+								})}
+							/>
 						</div>
-					{/if}
-				</div>
+						{#if invitation}
+							<div class="invite-box">
+								<code>{location.origin + invitation.url}</code>
+								<button type="button" class="btn-plain" onclick={copyInvitation}>
+									{t('users.link.copy')}
+								</button>
+							</div>
+						{/if}
+					</div>
 
-				<form class="stack-form" method="post" onsubmit={(event) => linkBySubject(event, selected)}>
-					<label class="field">
-						<span>{t('users.link.subject')}</span>
-						<input autocomplete="off" spellcheck="false" required bind:value={subject} />
-					</label>
-					<div><button type="submit" class="btn-main">{t('users.link.add')}</button></div>
-				</form>
+					<form class="stack-form" method="post" onsubmit={(event) => linkBySubject(event, selected)}>
+						<label class="field">
+							<span>{t('users.link.subject')}</span>
+							<input autocomplete="off" spellcheck="false" required bind:value={subject} />
+						</label>
+						<div><button type="submit" class="btn-main">{t('users.link.add')}</button></div>
+					</form>
+				{/if}
 			{/if}
 			</div>
 		</div>
