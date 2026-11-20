@@ -254,5 +254,24 @@
 	"auth.email": "Dirección de correo",
 	"auth.error.email_taken": "Esta dirección de correo ya la usa otra cuenta.",
 	"auth.error.email_required": "El proveedor debe facilitar una dirección de correo verificada para crear una cuenta.",
-	"auth.quick": "Acceso rápido (desarrollo)"
+	"auth.quick": "Acceso rápido (desarrollo)",
+	"users.search": "Buscar por nombre o correo",
+	"users.filter.role": "Todos los roles",
+	"users.filter.status": "Todos los estados",
+	"users.columns": "Columnas",
+	"users.col.created": "Creada",
+	"users.count": { "one": "{count} cuenta", "other": "{count} cuentas" },
+	"users.selected": { "one": "{count} seleccionada", "other": "{count} seleccionadas" },
+	"users.selectAll": "Seleccionar todo",
+	"users.selectRow": "Seleccionar {name}",
+	"users.clearSelection": "Quitar la selección",
+	"users.deleteMany": {
+		"one": "¿Eliminar esta cuenta? Esta acción es definitiva.",
+		"other": "¿Eliminar estas {count} cuentas? Esta acción es definitiva."
+	},
+	"users.empty": "Ninguna cuenta coincide.",
+	"users.page": "Página {page} de {pages}",
+	"users.perPage": "Por página",
+	"users.prev": "Anterior",
+	"users.next": "Siguiente"
 }

@@ -254,5 +254,24 @@
 	"auth.email": "Endereço de e-mail",
 	"auth.error.email_taken": "Este endereço de e-mail já é usado por outra conta.",
 	"auth.error.email_required": "O fornecedor tem de indicar um endereço de e-mail verificado para criar uma conta.",
-	"auth.quick": "Início de sessão rápido (desenvolvimento)"
+	"auth.quick": "Início de sessão rápido (desenvolvimento)",
+	"users.search": "Pesquisar por nome ou e-mail",
+	"users.filter.role": "Todos os papéis",
+	"users.filter.status": "Todos os estados",
+	"users.columns": "Colunas",
+	"users.col.created": "Criada",
+	"users.count": { "one": "{count} conta", "other": "{count} contas" },
+	"users.selected": { "one": "{count} selecionada", "other": "{count} selecionadas" },
+	"users.selectAll": "Selecionar tudo",
+	"users.selectRow": "Selecionar {name}",
+	"users.clearSelection": "Limpar a seleção",
+	"users.deleteMany": {
+		"one": "Eliminar esta conta? Esta ação é definitiva.",
+		"other": "Eliminar estas {count} contas? Esta ação é definitiva."
+	},
+	"users.empty": "Nenhuma conta corresponde.",
+	"users.page": "Página {page} de {pages}",
+	"users.perPage": "Por página",
+	"users.prev": "Anterior",
+	"users.next": "Seguinte"
 }

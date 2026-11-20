@@ -254,5 +254,24 @@
 	"auth.email": "E-mail address",
 	"auth.error.email_taken": "This e-mail address is already used by another account.",
 	"auth.error.email_required": "The provider must supply a verified e-mail address to create an account.",
-	"auth.quick": "Quick sign-in (development)"
+	"auth.quick": "Quick sign-in (development)",
+	"users.search": "Search by name or e-mail",
+	"users.filter.role": "All roles",
+	"users.filter.status": "All statuses",
+	"users.columns": "Columns",
+	"users.col.created": "Created",
+	"users.count": { "one": "{count} account", "other": "{count} accounts" },
+	"users.selected": { "one": "{count} selected", "other": "{count} selected" },
+	"users.selectAll": "Select all",
+	"users.selectRow": "Select {name}",
+	"users.clearSelection": "Clear selection",
+	"users.deleteMany": {
+		"one": "Delete this account? This cannot be undone.",
+		"other": "Delete these {count} accounts? This cannot be undone."
+	},
+	"users.empty": "No matching account.",
+	"users.page": "Page {page} of {pages}",
+	"users.perPage": "Per page",
+	"users.prev": "Previous",
+	"users.next": "Next"
 }

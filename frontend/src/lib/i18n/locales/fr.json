@@ -254,5 +254,24 @@
 	"auth.email": "Adresse e-mail",
 	"auth.error.email_taken": "Cette adresse e-mail est déjà utilisée par un autre compte.",
 	"auth.error.email_required": "Le fournisseur doit transmettre une adresse e-mail vérifiée pour créer un compte.",
-	"auth.quick": "Connexion rapide (développement)"
+	"auth.quick": "Connexion rapide (développement)",
+	"users.search": "Rechercher un nom ou un e-mail",
+	"users.filter.role": "Tous les rôles",
+	"users.filter.status": "Tous les états",
+	"users.columns": "Colonnes",
+	"users.col.created": "Créé le",
+	"users.count": { "one": "{count} compte", "other": "{count} comptes" },
+	"users.selected": { "one": "{count} sélectionné", "other": "{count} sélectionnés" },
+	"users.selectAll": "Tout sélectionner",
+	"users.selectRow": "Sélectionner {name}",
+	"users.clearSelection": "Tout désélectionner",
+	"users.deleteMany": {
+		"one": "Supprimer ce compte ? Cette action est définitive.",
+		"other": "Supprimer ces {count} comptes ? Cette action est définitive."
+	},
+	"users.empty": "Aucun compte ne correspond.",
+	"users.page": "Page {page} sur {pages}",
+	"users.perPage": "Par page",
+	"users.prev": "Précédent",
+	"users.next": "Suivant"
 }

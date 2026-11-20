@@ -1966,18 +1966,381 @@ code {
 	color: var(--muted);
 }
 
-.users-table td,
-.users-table th {
-	text-align: left;
-	white-space: normal;
+/* ── Tableau de données (TanStack Table) ─────────────────────────────────── */
+
+.table-card {
+	min-width: 0;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
 }
 
-.users-table tr[data-selected='true'] td {
+.table-pad {
+	padding: 18px 20px;
+}
+
+.table-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 14px 16px;
+	border-bottom: 1px solid var(--line);
+}
+
+.table-search {
+	flex: 1 1 220px;
+	min-width: 0;
+	padding: 8px 12px;
+	background: var(--bg);
+	border: 1px solid var(--line);
+	border-radius: 9px;
+	color: var(--text);
+	font: inherit;
+	font-size: 14px;
+	outline: none;
+}
+
+.table-search:focus,
+.table-select:focus-visible {
+	border-color: var(--accent);
+}
+
+.table-select {
+	padding: 8px 12px;
+	background: var(--bg);
+	border: 1px solid var(--line);
+	border-radius: 9px;
+	color: var(--text);
+	font: inherit;
+	font-size: 14px;
+	cursor: pointer;
+	outline: none;
+}
+
+.menu {
+	position: relative;
+}
+
+.menu summary {
+	list-style: none;
+	font-weight: 400;
+}
+
+.menu summary::-webkit-details-marker {
+	display: none;
+}
+
+.menu summary::after {
+	content: '▾';
+	margin-left: 8px;
+	color: var(--muted);
+}
+
+.menu-pop {
+	position: absolute;
+	right: 0;
+	z-index: 5;
+	display: grid;
+	gap: 2px;
+	min-width: 190px;
+	margin-top: 6px;
+	padding: 6px;
+	background: var(--panel-2);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.menu-pop label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border-radius: 6px;
+	font-size: 13.5px;
+	cursor: pointer;
+}
+
+.menu-pop label:hover {
 	background: var(--accent-soft);
 }
 
-.users-table tr[data-disabled='true'] td:first-child {
+.bulk-bar {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 10px 16px;
+	background: var(--accent-soft);
+	border-bottom: 1px solid var(--line);
+	font-size: 13.5px;
+}
+
+.bulk-bar .btn-plain {
+	border: 1px solid var(--line);
+	padding: 4px 10px;
+}
+
+.bulk-clear {
+	margin-left: auto;
+}
+
+.table-scroll {
+	overflow-x: auto;
+}
+
+.data-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13.5px;
+}
+
+.data-table th,
+.data-table td {
+	padding: 10px 12px;
+	text-align: left;
+	vertical-align: middle;
+}
+
+.data-table th {
+	color: var(--muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	border-bottom: 1px solid var(--line);
+}
+
+.data-table td {
+	border-bottom: 1px solid rgba(43, 43, 54, 0.5);
+}
+
+.data-table tbody tr {
+	transition: background 100ms ease;
+}
+
+.data-table tbody tr:not(.table-empty) {
+	cursor: pointer;
+}
+
+.data-table tbody tr:hover td {
+	background: rgba(255, 255, 255, 0.025);
+}
+
+.data-table tr[data-checked='true'] td,
+.data-table tr[data-selected='true'] td {
+	background: var(--accent-soft);
+}
+
+.data-table tr[data-disabled='true'] td:not([data-col='actions']):not([data-col='select']) {
 	opacity: 0.55;
+}
+
+.data-table [data-col='select'] {
+	width: 40px;
+	padding-right: 0;
+}
+
+.data-table [data-col='actions'] {
+	text-align: right;
+}
+
+.data-table input[type='checkbox'] {
+	accent-color: var(--accent);
+	cursor: pointer;
+}
+
+.table-empty td {
+	padding: 28px 14px;
+	text-align: center;
+	color: var(--muted);
+}
+
+.sort-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 0;
+	color: inherit;
+	font: inherit;
+	letter-spacing: inherit;
+	text-transform: inherit;
+}
+
+.sort-btn:hover,
+.data-table th[aria-sort] .sort-btn {
+	color: var(--accent);
+}
+
+.sort-mark {
+	font-size: 12px;
+	opacity: 0.7;
+}
+
+.user-cell {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.user-cell > div {
+	display: grid;
+	justify-items: start;
+	min-width: 0;
+}
+
+.user-name {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 2px 0;
+}
+
+.avatar {
+	display: grid;
+	flex: none;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	border-radius: 50%;
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-size: 12.5px;
+	font-weight: 650;
+}
+
+.avatar[data-disabled='true'] {
+	background: var(--panel-2);
+	color: var(--muted);
+}
+
+.pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 10px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.pill[data-tone='accent'] {
+	background: var(--accent-soft);
+	border-color: transparent;
+	color: var(--accent);
+}
+
+.pill[data-tone='ok'] {
+	color: #6fbf8b;
+}
+
+.pill[data-tone='danger'] {
+	color: var(--danger);
+}
+
+.pill .dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.table-foot {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 12px 20px;
+	padding: 12px 16px;
+	border-top: 1px solid var(--line);
+	font-size: 13px;
+}
+
+.per-page {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-left: auto;
+	color: var(--muted);
+}
+
+.per-page .table-select {
+	padding: 4px 8px;
+}
+
+.pager {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.pager .btn-plain {
+	border: 1px solid var(--line);
+	padding: 4px 12px;
+}
+
+.pager .btn-plain:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+/* Tiroir : le compte choisi, collé au bord droit. */
+.drawer {
+	margin: 0 0 0 auto;
+	padding: 0;
+	width: min(480px, 100vw);
+	height: 100dvh;
+	max-width: 100vw;
+	max-height: 100dvh;
+	background: #14141a;
+	color: var(--text);
+	border: 0;
+	border-left: 1px solid var(--line);
+	border-radius: 14px 0 0 14px;
+}
+
+.drawer::backdrop {
+	background: rgba(8, 8, 12, 0.66);
+	backdrop-filter: blur(2px);
+}
+
+.drawer-body {
+	display: grid;
+	align-content: start;
+	gap: 16px;
+	padding: 22px 24px 32px;
+}
+
+.drawer-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.drawer-head > div {
+	display: grid;
+	flex: 1;
+	min-width: 0;
+}
+
+.drawer-head h2 {
+	margin: 0;
+	font-size: 17px;
+	font-weight: 600;
+}
+
+.drawer-pills {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	font-size: 12.5px;
+}
+
+.drawer h3 {
+	margin: 10px 0 0;
+	font-size: 14px;
+	font-weight: 600;
 }
 
 .action-row {

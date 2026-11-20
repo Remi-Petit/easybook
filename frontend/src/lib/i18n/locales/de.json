@@ -254,5 +254,24 @@
 	"auth.email": "E-Mail-Adresse",
 	"auth.error.email_taken": "Diese E-Mail-Adresse wird bereits von einem anderen Konto verwendet.",
 	"auth.error.email_required": "Der Anbieter muss eine verifizierte E-Mail-Adresse liefern, um ein Konto zu erstellen.",
-	"auth.quick": "Schnellanmeldung (Entwicklung)"
+	"auth.quick": "Schnellanmeldung (Entwicklung)",
+	"users.search": "Nach Name oder E-Mail suchen",
+	"users.filter.role": "Alle Rollen",
+	"users.filter.status": "Alle Status",
+	"users.columns": "Spalten",
+	"users.col.created": "Erstellt",
+	"users.count": { "one": "{count} Konto", "other": "{count} Konten" },
+	"users.selected": { "one": "{count} ausgewählt", "other": "{count} ausgewählt" },
+	"users.selectAll": "Alle auswählen",
+	"users.selectRow": "{name} auswählen",
+	"users.clearSelection": "Auswahl aufheben",
+	"users.deleteMany": {
+		"one": "Dieses Konto löschen? Das lässt sich nicht rückgängig machen.",
+		"other": "Diese {count} Konten löschen? Das lässt sich nicht rückgängig machen."
+	},
+	"users.empty": "Kein passendes Konto.",
+	"users.page": "Seite {page} von {pages}",
+	"users.perPage": "Pro Seite",
+	"users.prev": "Zurück",
+	"users.next": "Weiter"
 }

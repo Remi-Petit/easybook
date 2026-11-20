@@ -1,5 +1,21 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import {
+		columnFilteringFeature,
+		columnVisibilityFeature,
+		createFilteredRowModel,
+		createPaginatedRowModel,
+		createSortedRowModel,
+		createTable,
+		filterFns,
+		globalFilteringFeature,
+		rowPaginationFeature,
+		rowSelectionFeature,
+		rowSortingFeature,
+		sortFns,
+		tableFeatures,
+		type ColumnDef
+	} from '@tanstack/svelte-table';
 	import { formatDate } from '$lib/api';
 	import { call, displayName, errorKey, type Role, type Session, type User } from '$lib/auth';
 	import { t } from '$lib/i18n/state.svelte';
@@ -15,13 +31,124 @@
 	let selectedId = $state<string | null>(null);
 	const selected = $derived(users.find((user) => user.id === selectedId) ?? null);
 
+	// Tableau : tri, recherche, filtres, colonnes, pagination et sélection viennent de TanStack Table.
+	const features = tableFeatures({
+		rowSortingFeature,
+		columnFilteringFeature,
+		globalFilteringFeature,
+		columnVisibilityFeature,
+		rowPaginationFeature,
+		rowSelectionFeature,
+		sortedRowModel: createSortedRowModel(),
+		filteredRowModel: createFilteredRowModel(),
+		paginatedRowModel: createPaginatedRowModel(),
+		filterFns,
+		sortFns
+	});
+
+	const COLUMN_LABELS = {
+		user: 'users.col.user',
+		role: 'users.role',
+		status: 'users.col.status',
+		links: 'users.col.links',
+		lastLogin: 'users.col.lastLogin',
+		created: 'users.col.created'
+	} as const;
+	type ColumnId = keyof typeof COLUMN_LABELS;
+	const label = (id: string) => t(COLUMN_LABELS[id as ColumnId]);
+
+	const columns: ColumnDef<typeof features, User>[] = [
+		{ id: 'select', enableSorting: false, enableHiding: false, enableGlobalFilter: false },
+		{
+			id: 'user',
+			accessorFn: (user) => `${displayName(user)} ${user.email ?? ''} ${user.username}`,
+			sortFn: 'text',
+			enableHiding: false
+		},
+		{
+			id: 'role',
+			accessorFn: (user) => user.role,
+			filterFn: 'equalsString',
+			enableGlobalFilter: false
+		},
+		{
+			id: 'status',
+			accessorFn: (user) => (user.disabled ? 'disabled' : 'active'),
+			filterFn: 'equalsString',
+			enableGlobalFilter: false
+		},
+		{
+			id: 'links',
+			accessorFn: (user) => user.identities.length,
+			enableGlobalFilter: false
+		},
+		{
+			id: 'lastLogin',
+			accessorFn: (user) => user.last_login_at ?? 0,
+			sortDescFirst: true,
+			enableGlobalFilter: false
+		},
+		{
+			id: 'created',
+			accessorFn: (user) => user.created_at,
+			sortDescFirst: true,
+			enableGlobalFilter: false
+		},
+		{ id: 'actions', enableSorting: false, enableHiding: false, enableGlobalFilter: false }
+	];
+
+	const table = createTable({
+		features,
+		columns,
+		get data() {
+			return users;
+		},
+		getRowId: (user) => user.id,
+		// Son propre compte ne se supprime ni ne se désactive en lot.
+		enableRowSelection: (row) => row.original.id !== me,
+		globalFilterFn: 'includesString',
+		initialState: {
+			pagination: { pageIndex: 0, pageSize: 10 },
+			columnVisibility: { created: false, links: !!untrack(() => data.session.oidc) }
+		}
+	});
+
+	const pagination = $derived(table.atoms.pagination.get());
+	const filteredCount = $derived(table.getRowCount());
+	const selectedUsers = $derived(table.getSelectedRowModel().rows.map((row) => row.original));
+
+	let search = $state('');
+	let roleFilter = $state('');
+	let statusFilter = $state('');
+	let columnsMenu = $state<HTMLDetailsElement>();
+
+	function setSearch(value: string) {
+		search = value;
+		table.setGlobalFilter(value || undefined);
+	}
+
+	function setFilter(id: 'role' | 'status', value: string) {
+		if (id === 'role') roleFilter = value;
+		else statusFilter = value;
+		table.getColumn(id)?.setFilterValue(value || undefined);
+	}
+
+	const initials = (user: User) =>
+		displayName(user)
+			.split(/[\s._@-]+/)
+			.filter(Boolean)
+			.slice(0, 2)
+			.map((part) => part[0]!.toUpperCase())
+			.join('');
+
 	// Popup « Ajouter un utilisateur ».
 	let addDialog = $state<HTMLDialogElement>();
 	let emailField = $state<HTMLInputElement>();
 	let draft = $state({ display_name: '', email: '', password: '', role: 'user' as Role });
 	let addError = $state<string | null>(null);
 	let adding = $state(false);
-	// Panneau du compte choisi.
+	// Tiroir du compte choisi.
+	let drawer = $state<HTMLDialogElement>();
 	let resetPassword = $state('');
 	let subject = $state('');
 	let invitation = $state<{ url: string; expires_in: number } | null>(null);
@@ -42,9 +169,14 @@
 	}
 
 	function select(id: string) {
-		selectedId = selectedId === id ? null : id;
+		selectedId = id;
 		resetPassword = subject = '';
 		invitation = null;
+		if (!drawer?.open) drawer?.showModal();
+	}
+
+	function closeDrawer() {
+		drawer?.close();
 	}
 
 	function openAdd() {
@@ -74,7 +206,7 @@
 		addDialog?.close();
 		notify(t('users.created', { name: displayName(result.data) }), { tone: 'ok' });
 		await load();
-		selectedId = result.data.id;
+		select(result.data.id);
 	}
 
 	async function patch(user: User, body: Partial<Pick<User, 'role' | 'disabled'>>) {
@@ -88,8 +220,28 @@
 		const result = await call('DELETE', `/api/admin/users/${user.id}`);
 		if (!result.ok) return fail(result.code);
 		notify(t('users.deleted', { name: displayName(user) }), { tone: 'ok' });
-		selectedId = null;
+		closeDrawer();
+		table.resetRowSelection();
 		users = users.filter((entry) => entry.id !== user.id);
+	}
+
+	async function bulk(action: 'enable' | 'disable' | 'delete') {
+		const targets = selectedUsers;
+		if (action === 'delete' && !confirm(t('users.deleteMany', { count: targets.length }))) return;
+		for (const user of targets) {
+			const result =
+				action === 'delete'
+					? await call('DELETE', `/api/admin/users/${user.id}`)
+					: await call<User>('PATCH', `/api/admin/users/${user.id}`, {
+							disabled: action === 'disable'
+						});
+			if (!result.ok) {
+				fail(result.code);
+				break;
+			}
+		}
+		table.resetRowSelection();
+		await load();
 	}
 
 	async function setPassword(event: SubmitEvent, user: User) {
@@ -143,6 +295,29 @@
 	<title>{t('users.title')} · easybook</title>
 </svelte:head>
 
+<svelte:window
+	onclick={(event) => {
+		if (columnsMenu?.open && !columnsMenu.contains(event.target as Node)) columnsMenu.open = false;
+	}}
+/>
+
+{#snippet avatar(user: User)}
+	<span class="avatar" data-disabled={user.disabled} aria-hidden="true">{initials(user)}</span>
+{/snippet}
+
+{#snippet rolePill(role: Role)}
+	<span class="pill" data-tone={role === 'admin' ? 'accent' : 'muted'}>
+		{t(`account.role.${role}`)}
+	</span>
+{/snippet}
+
+{#snippet statusPill(disabled: boolean)}
+	<span class="pill" data-tone={disabled ? 'danger' : 'ok'}>
+		<span class="dot" aria-hidden="true"></span>
+		{disabled ? t('users.status.disabled') : t('users.status.active')}
+	</span>
+{/snippet}
+
 <div class="page">
 	<section class="intro">
 		<div class="intro-head">
@@ -163,145 +338,346 @@
 		</div>
 	</section>
 
-	<div class="admin-stack">
-		<section class="panel-card">
-			{#if !loaded}
-				<p class="panel-hint">{t('status.connecting')}</p>
-			{:else}
-				<table class="perf-table users-table">
+	<section class="table-card">
+		{#if !loaded}
+			<p class="panel-hint table-pad">{t('status.connecting')}</p>
+		{:else}
+			<div class="table-toolbar">
+				<input
+					class="table-search"
+					type="search"
+					autocomplete="off"
+					placeholder={t('users.search')}
+					aria-label={t('users.search')}
+					value={search}
+					oninput={(event) => setSearch(event.currentTarget.value)}
+				/>
+				<select
+					class="table-select"
+					aria-label={t('users.role')}
+					value={roleFilter}
+					onchange={(event) => setFilter('role', event.currentTarget.value)}
+				>
+					<option value="">{t('users.filter.role')}</option>
+					<option value="admin">{t('account.role.admin')}</option>
+					<option value="user">{t('account.role.user')}</option>
+				</select>
+				<select
+					class="table-select"
+					aria-label={t('users.col.status')}
+					value={statusFilter}
+					onchange={(event) => setFilter('status', event.currentTarget.value)}
+				>
+					<option value="">{t('users.filter.status')}</option>
+					<option value="active">{t('users.status.active')}</option>
+					<option value="disabled">{t('users.status.disabled')}</option>
+				</select>
+				<details class="menu" bind:this={columnsMenu}>
+					<summary class="table-select">{t('users.columns')}</summary>
+					<div class="menu-pop">
+						{#each table.getAllLeafColumns().filter((column) => column.getCanHide() && (column.id !== 'links' || oidc)) as column (column.id)}
+							<label>
+								<input
+									type="checkbox"
+									checked={column.getIsVisible()}
+									onchange={column.getToggleVisibilityHandler()}
+								/>
+								{label(column.id)}
+							</label>
+						{/each}
+					</div>
+				</details>
+			</div>
+
+			{#if selectedUsers.length > 0}
+				<div class="bulk-bar" role="toolbar" aria-label={t('users.selected', { count: selectedUsers.length })}>
+					<strong>{t('users.selected', { count: selectedUsers.length })}</strong>
+					<button type="button" class="btn-plain" onclick={() => bulk('enable')}>
+						{t('users.enable')}
+					</button>
+					<button type="button" class="btn-plain" onclick={() => bulk('disable')}>
+						{t('users.disable')}
+					</button>
+					<button type="button" class="btn-plain danger" onclick={() => bulk('delete')}>
+						{t('users.delete')}
+					</button>
+					<button type="button" class="btn-plain bulk-clear" onclick={() => table.resetRowSelection()}>
+						{t('users.clearSelection')}
+					</button>
+				</div>
+			{/if}
+
+			<div class="table-scroll">
+				<table class="data-table">
 					<thead>
-						<tr>
-							<th>{t('users.col.user')}</th>
-							<th>{t('users.role')}</th>
-							<th>{t('users.col.status')}</th>
-							<th>{t('users.col.links')}</th>
-							<th>{t('users.col.lastLogin')}</th>
-							<th></th>
-						</tr>
+						{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
+							<tr>
+								{#each headerGroup.headers as header (header.id)}
+									{@const id = header.column.id}
+									{@const sorted = header.column.getIsSorted()}
+									<th
+										data-col={id}
+										aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined}
+									>
+										{#if id === 'select'}
+											<input
+												type="checkbox"
+												aria-label={t('users.selectAll')}
+												checked={table.getIsAllPageRowsSelected()}
+												indeterminate={table.getIsSomePageRowsSelected()}
+												onchange={(event) => table.toggleAllPageRowsSelected(event.currentTarget.checked)}
+											/>
+										{:else if id === 'actions'}
+											<span class="visually-hidden">{t('users.manage')}</span>
+										{:else if header.column.getCanSort()}
+											<button
+												type="button"
+												class="sort-btn"
+												onclick={header.column.getToggleSortingHandler()}
+											>
+												{label(id)}
+												<span class="sort-mark" aria-hidden="true">
+													{sorted === 'asc' ? '↑' : sorted === 'desc' ? '↓' : '↕'}
+												</span>
+											</button>
+										{:else}
+											{label(id)}
+										{/if}
+									</th>
+								{/each}
+							</tr>
+						{/each}
 					</thead>
 					<tbody>
-						{#each users as user (user.id)}
-							<tr data-selected={user.id === selectedId} data-disabled={user.disabled}>
-								<td>
-									<strong>{displayName(user)}</strong>
-									{#if user.id === me}<span class="badge">{t('users.you')}</span>{/if}
-									<br /><code>{user.email}</code>
-								</td>
-								<td>{t(`account.role.${user.role}`)}</td>
-								<td>{user.disabled ? t('users.status.disabled') : t('users.status.active')}</td>
-								<td>{user.identities.length}</td>
-								<td>{user.last_login_at ? formatDate(user.last_login_at) : t('users.never')}</td>
-								<td>
-									<button type="button" class="btn-plain" onclick={() => select(user.id)}>
-										{t('users.manage')}
-									</button>
+						{#each table.getRowModel().rows as row (row.id)}
+							{@const user = row.original}
+							<!-- Le bouton « Gérer » porte l'accès au clavier ; le clic sur la ligne n'est qu'un raccourci. -->
+							<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+							<tr
+								data-selected={user.id === selectedId}
+								data-checked={row.getIsSelected()}
+								data-disabled={user.disabled}
+								onclick={(event) => {
+									if (!(event.target as HTMLElement).closest('button, input, label')) select(user.id);
+								}}
+							>
+								{#each row.getVisibleCells() as cell (cell.id)}
+									{@const id = cell.column.id}
+									<td data-col={id}>
+										{#if id === 'select'}
+											<input
+												type="checkbox"
+												aria-label={t('users.selectRow', { name: displayName(user) })}
+												checked={row.getIsSelected()}
+												disabled={!row.getCanSelect()}
+												onchange={row.getToggleSelectedHandler()}
+											/>
+										{:else if id === 'user'}
+											<div class="user-cell">
+												{@render avatar(user)}
+												<div>
+													<span class="user-name">
+														<strong>{displayName(user)}</strong>
+														{#if user.id === me}<span class="badge">{t('users.you')}</span>{/if}
+													</span>
+													<code>{user.email}</code>
+												</div>
+											</div>
+										{:else if id === 'role'}
+											{@render rolePill(user.role)}
+										{:else if id === 'status'}
+											{@render statusPill(user.disabled)}
+										{:else if id === 'links'}
+											{user.identities.length}
+										{:else if id === 'lastLogin'}
+											{user.last_login_at ? formatDate(user.last_login_at) : t('users.never')}
+										{:else if id === 'created'}
+											{formatDate(user.created_at)}
+										{:else if id === 'actions'}
+											<button type="button" class="btn-plain" onclick={() => select(user.id)}>
+												{t('users.manage')}
+											</button>
+										{/if}
+									</td>
+								{/each}
+							</tr>
+						{:else}
+							<tr class="table-empty">
+								<td colspan={table.getVisibleLeafColumns().length}>
+									{t('users.empty')}
 								</td>
 							</tr>
 						{/each}
 					</tbody>
 				</table>
-			{/if}
-		</section>
+			</div>
 
-		{#if selected}
-			<section class="panel-card" aria-label={displayName(selected)}>
-				<h2>{displayName(selected)}</h2>
-
-				<div class="action-row">
+			<div class="table-foot">
+				<span class="muted">{t('users.count', { count: filteredCount })}</span>
+				<label class="per-page">
+					<span>{t('users.perPage')}</span>
+					<select
+						class="table-select"
+						value={pagination.pageSize}
+						onchange={(event) => table.setPageSize(Number(event.currentTarget.value))}
+					>
+						{#each [10, 25, 50, 100] as size (size)}
+							<option value={size}>{size}</option>
+						{/each}
+					</select>
+				</label>
+				<div class="pager">
 					<button
 						type="button"
 						class="btn-plain"
-						onclick={() => patch(selected, { role: selected.role === 'admin' ? 'user' : 'admin' })}
+						disabled={!table.getCanPreviousPage()}
+						onclick={() => table.previousPage()}
 					>
-						{selected.role === 'admin' ? t('users.makeUser') : t('users.makeAdmin')}
+						{t('users.prev')}
 					</button>
+					<span class="muted">
+						{t('users.page', {
+							page: pagination.pageIndex + 1,
+							pages: Math.max(table.getPageCount(), 1)
+						})}
+					</span>
 					<button
 						type="button"
 						class="btn-plain"
-						onclick={() => patch(selected, { disabled: !selected.disabled })}
+						disabled={!table.getCanNextPage()}
+						onclick={() => table.nextPage()}
 					>
-						{selected.disabled ? t('users.enable') : t('users.disable')}
+						{t('users.next')}
 					</button>
-					{#if selected.id !== me}
-						<button type="button" class="btn-plain danger" onclick={() => remove(selected)}>
-							{t('users.delete')}
+				</div>
+			</div>
+		{/if}
+	</section>
+</div>
+
+<dialog
+	bind:this={drawer}
+	class="drawer"
+	aria-label={selected ? displayName(selected) : undefined}
+	onclick={(event) => event.target === drawer && closeDrawer()}
+	onclose={() => (selectedId = null)}
+>
+	{#if selected}
+		<div class="drawer-body">
+			<header class="drawer-head">
+				{@render avatar(selected)}
+				<div>
+					<h2>{displayName(selected)}</h2>
+					<code>{selected.email}</code>
+				</div>
+				<button type="button" class="icon-btn" aria-label={t('common.close')} onclick={closeDrawer}>
+					×
+				</button>
+			</header>
+
+			<div class="drawer-pills">
+				{@render rolePill(selected.role)}
+				{@render statusPill(selected.disabled)}
+				<span class="muted">
+					{t('users.col.lastLogin')} :
+					{selected.last_login_at ? formatDate(selected.last_login_at) : t('users.never')}
+				</span>
+			</div>
+
+			<div class="action-row">
+				<button
+					type="button"
+					class="btn-plain"
+					onclick={() => patch(selected, { role: selected.role === 'admin' ? 'user' : 'admin' })}
+				>
+					{selected.role === 'admin' ? t('users.makeUser') : t('users.makeAdmin')}
+				</button>
+				<button
+					type="button"
+					class="btn-plain"
+					onclick={() => patch(selected, { disabled: !selected.disabled })}
+				>
+					{selected.disabled ? t('users.enable') : t('users.disable')}
+				</button>
+				{#if selected.id !== me}
+					<button type="button" class="btn-plain danger" onclick={() => remove(selected)}>
+						{t('users.delete')}
+					</button>
+				{/if}
+			</div>
+
+			<form class="stack-form" method="post" onsubmit={(event) => setPassword(event, selected)}>
+				<label class="field">
+					<span>{t('users.resetPassword')}</span>
+					<input
+						type="password"
+						autocomplete="new-password"
+						minlength="8"
+						required
+						bind:value={resetPassword}
+					/>
+				</label>
+				<div><button type="submit" class="btn-main">{t('users.resetPasswordSubmit')}</button></div>
+				<p class="panel-hint">{t('users.resetHint')}</p>
+			</form>
+
+			{#if oidc}
+				<h3>{t('users.link.title', { provider: oidc.label })}</h3>
+				{#if selected.identities.length > 0}
+					<ul class="identity-list">
+						{#each selected.identities as identity (identity.id)}
+							<li>
+								<div>
+									<strong>{identity.email ?? identity.subject}</strong>
+									<code class="identity-sub">{identity.subject}</code>
+								</div>
+								<button
+									type="button"
+									class="btn-plain"
+									onclick={() => unlink(selected, identity.id)}
+								>
+									{t('account.identities.unlink')}
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+
+				<div class="stack-form">
+					<div>
+						<button type="button" class="btn-main" onclick={() => invite(selected)}>
+							{t('users.link.invite')}
 						</button>
+					</div>
+					<p class="panel-hint">
+						{t('users.link.inviteHint', {
+							provider: oidc.label,
+							minutes: invitation ? Math.round(invitation.expires_in / 60) : 15
+						})}
+					</p>
+					{#if invitation}
+						<div class="invite-box">
+							<code>{location.origin + invitation.url}</code>
+							<button type="button" class="btn-plain" onclick={copyInvitation}>
+								{t('users.link.copy')}
+							</button>
+						</div>
 					{/if}
 				</div>
 
-				<form class="stack-form" method="post" onsubmit={(event) => setPassword(event, selected)}>
+				<form class="stack-form" method="post" onsubmit={(event) => linkBySubject(event, selected)}>
 					<label class="field">
-						<span>{t('users.resetPassword')}</span>
-						<input
-							type="password"
-							autocomplete="new-password"
-							minlength="8"
-							required
-							bind:value={resetPassword}
-						/>
+						<span>{t('users.link.subject')}</span>
+						<input autocomplete="off" spellcheck="false" required bind:value={subject} />
 					</label>
-					<div><button type="submit" class="btn-main">{t('users.resetPasswordSubmit')}</button></div>
-					<p class="panel-hint">{t('users.resetHint')}</p>
+					<div><button type="submit" class="btn-main">{t('users.link.add')}</button></div>
 				</form>
-
-				{#if oidc}
-					<h3>{t('users.link.title', { provider: oidc.label })}</h3>
-					{#if selected.identities.length > 0}
-						<ul class="identity-list">
-							{#each selected.identities as identity (identity.id)}
-								<li>
-									<div>
-										<strong>{identity.email ?? identity.subject}</strong>
-										<code class="identity-sub">{identity.subject}</code>
-									</div>
-									<button
-										type="button"
-										class="btn-plain"
-										onclick={() => unlink(selected, identity.id)}
-									>
-										{t('account.identities.unlink')}
-									</button>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-
-					<div class="stack-form">
-						<div>
-							<button type="button" class="btn-main" onclick={() => invite(selected)}>
-								{t('users.link.invite')}
-							</button>
-						</div>
-						<p class="panel-hint">
-							{t('users.link.inviteHint', {
-								provider: oidc.label,
-								minutes: invitation ? Math.round(invitation.expires_in / 60) : 15
-							})}
-						</p>
-						{#if invitation}
-							<div class="invite-box">
-								<code>{location.origin + invitation.url}</code>
-								<button type="button" class="btn-plain" onclick={copyInvitation}>
-									{t('users.link.copy')}
-								</button>
-							</div>
-						{/if}
-					</div>
-
-					<form class="stack-form" method="post" onsubmit={(event) => linkBySubject(event, selected)}>
-						<label class="field">
-							<span>{t('users.link.subject')}</span>
-							<input autocomplete="off" spellcheck="false" required bind:value={subject} />
-						</label>
-						<div><button type="submit" class="btn-main">{t('users.link.add')}</button></div>
-					</form>
-				{:else}
-					<p class="panel-hint">{t('users.link.noOidc')}</p>
-				{/if}
-			</section>
-		{/if}
-	</div>
-</div>
+			{:else}
+				<p class="panel-hint">{t('users.link.noOidc')}</p>
+			{/if}
+		</div>
+	{/if}
+</dialog>
 
 <dialog
 	bind:this={addDialog}
