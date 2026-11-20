@@ -254,7 +254,7 @@
 	"users.disable": "Disable",
 	"users.delete": "Delete",
 	"users.resetPassword": "New password",
-	"users.resetPasswordSubmit": "Change password",
+	"users.resetPasswordSubmit": "Save",
 	"users.resetHint": "All open sessions of this account are closed.",
 	"users.link.title": "Link to a {provider} account",
 	"users.link.invite": "Create an invitation link",

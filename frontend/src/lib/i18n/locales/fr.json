@@ -254,7 +254,7 @@
 	"users.disable": "Désactiver",
 	"users.delete": "Supprimer",
 	"users.resetPassword": "Nouveau mot de passe",
-	"users.resetPasswordSubmit": "Changer le mot de passe",
+	"users.resetPasswordSubmit": "Enregistrer",
 	"users.resetHint": "Toutes les sessions ouvertes de ce compte sont fermées.",
 	"users.link.title": "Lier à un compte {provider}",
 	"users.link.invite": "Créer un lien d’invitation",

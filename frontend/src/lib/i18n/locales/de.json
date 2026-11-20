@@ -254,7 +254,7 @@
 	"users.disable": "Deaktivieren",
 	"users.delete": "Löschen",
 	"users.resetPassword": "Neues Passwort",
-	"users.resetPasswordSubmit": "Passwort ändern",
+	"users.resetPasswordSubmit": "Speichern",
 	"users.resetHint": "Alle offenen Sitzungen dieses Kontos werden beendet.",
 	"users.link.title": "Mit einem {provider}-Konto verknüpfen",
 	"users.link.invite": "Einladungslink erstellen",

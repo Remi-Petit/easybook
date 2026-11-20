@@ -757,7 +757,11 @@
 					bind:value={resetPassword}
 					bind:temporary={resetTemporary}
 				/>
-				<div><button type="submit" class="btn-main">{t('users.resetPasswordSubmit')}</button></div>
+				<div>
+					<button type="submit" class="btn-main" disabled={resetPassword === ''}>
+						{t('users.resetPasswordSubmit')}
+					</button>
+				</div>
 				<p class="panel-hint">{t('users.resetHint')}</p>
 			</form>
 			{:else if tab === 'sso' && oidc}

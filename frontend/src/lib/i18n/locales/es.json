@@ -254,7 +254,7 @@
 	"users.disable": "Desactivar",
 	"users.delete": "Eliminar",
 	"users.resetPassword": "Nueva contraseña",
-	"users.resetPasswordSubmit": "Cambiar la contraseña",
+	"users.resetPasswordSubmit": "Guardar",
 	"users.resetHint": "Se cierran todas las sesiones abiertas de esta cuenta.",
 	"users.link.title": "Vincular a una cuenta de {provider}",
 	"users.link.invite": "Crear un enlace de invitación",

@@ -254,7 +254,7 @@
 	"users.disable": "Disattiva",
 	"users.delete": "Elimina",
 	"users.resetPassword": "Nuova password",
-	"users.resetPasswordSubmit": "Cambia la password",
+	"users.resetPasswordSubmit": "Salva",
 	"users.resetHint": "Tutte le sessioni aperte di questo account vengono chiuse.",
 	"users.link.title": "Collega a un account {provider}",
 	"users.link.invite": "Crea un link d’invito",
