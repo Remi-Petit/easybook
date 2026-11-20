@@ -53,7 +53,7 @@ memmap2 = "0.9"
 jpeg-decoder = { version = "0.3", default-features = false }
 # Comptes : SQLite embarquée (compilée avec le crate, pas de libsqlite3 système),
 # mots de passe hachés en Argon2id, identifiants en UUID.
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 argon2 = { version = "0.5", features = ["std", "password-hash", "rand"] }
 # Source d'aléa du système (`OsRng`) : sels, jetons de session.
 password-hash = { version = "0.5", features = ["getrandom"] }
