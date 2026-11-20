@@ -66,6 +66,10 @@ export type PerfSnapshot = {
 		releasedBooks: number;
 		/** Pages du cache média de nginx rendues de la même façon. */
 		releasedMediaBytes: number;
+		/** Mémoire que le cache média de nginx occupe en ce moment. */
+		mediaBytes: number;
+		/** Période du balayage du cache média : délai maximal avant restitution. */
+		mediaSweepSecs: number;
 	};
 };
 

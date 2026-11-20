@@ -82,18 +82,24 @@
 	);
 
 	const readings = $derived(snapshot?.readings ?? null);
-	const readingBars = $derived(
-		(readings?.active ?? []).map((reading) => ({
-			key: reading.rel,
-			label: bookName(reading.rel),
-			value: reading.cachedBytes ?? 0,
-			color: colorFor('easybook'),
-			note: t('perf.reading.note', {
-				size: formatBytes(reading.size),
-				requests: t('perf.requests', { count: reading.requests }),
-				idle: formatNumber(reading.idleSecs)
-			})
-		}))
+	/** Ce que les livres ouverts occupent maintenant, cache média de nginx exclu. */
+	const readingsBooks = $derived(
+		(readings?.active ?? []).reduce((total, reading) => total + (reading.cachedBytes ?? 0), 0)
+	);
+	/** Livres ouverts + cache média : la mémoire que la lecture coûte à cet instant. */
+	const readingsTotal = $derived(readingsBooks + (readings?.mediaBytes ?? 0));
+	/**
+	 * Quand le cache média sera rendu : après la dernière lecture, puis au
+	 * balayage suivant — soit au plus le silence d'une lecture plus un tour.
+	 */
+	const mediaReset = $derived(
+		!readings
+			? ''
+			: readings.active.length > 0
+				? t('perf.reading.mediaWait')
+				: t('perf.reading.mediaSoon', {
+						seconds: formatNumber(readings.idleLimitSecs + readings.mediaSweepSecs)
+					})
 	);
 
 	const cpuCapacity = $derived(snapshot ? (snapshot.cpuLimit ?? snapshot.cpus) : 1);
@@ -252,12 +258,48 @@
 								{t('perf.reading.title')}
 								<span class="perf-count">{formatNumber(readings.active.length)}</span>
 							</h2>
-							{#if readingBars.length > 0}
-								<BarList
-									bars={readingBars}
-									format={formatBytes}
-									max={Math.max(1, ...readings.active.map((reading) => reading.size))}
-								/>
+							{#if readings.active.length > 0 || readings.mediaBytes > 0}
+								<div class="table-wrap">
+									<table class="perf-table">
+										<thead>
+											<tr>
+												<th>{t('perf.col.book')}</th>
+												<th>{t('perf.col.memory')}</th>
+												<th>{t('perf.col.requests')}</th>
+												<th>{t('perf.col.reset')}</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each readings.active as reading (reading.rel)}
+												<tr>
+													<td>{bookName(reading.rel)}</td>
+													<td>
+														{formatBytes(reading.cachedBytes ?? 0)}
+														<span class="pid">/ {formatBytes(reading.size)}</span>
+													</td>
+													<td>{formatNumber(reading.requests)}</td>
+													<td>
+														{formatNumber(Math.max(0, readings.idleLimitSecs - reading.idleSecs))} s
+													</td>
+												</tr>
+											{/each}
+											<tr>
+												<td>{t('perf.reading.mediaCurrent')}</td>
+												<td>{formatBytes(readings.mediaBytes)}</td>
+												<td>—</td>
+												<td>{mediaReset}</td>
+											</tr>
+										</tbody>
+										<tfoot>
+											<tr>
+												<td>{t('perf.reading.total')}</td>
+												<td>{formatBytes(readingsTotal)}</td>
+												<td></td>
+												<td></td>
+											</tr>
+										</tfoot>
+									</table>
+								</div>
 							{:else}
 								<p class="stat-hint">{t('perf.reading.none')}</p>
 							{/if}

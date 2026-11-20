@@ -27,8 +27,15 @@ const SWEEP: Duration = Duration::from_secs(5);
 /// Un tour sur douze (5 s × 12) : parcourir l'arborescence du cache média est
 /// plus coûteux que vérifier deux ou trois livres.
 const MEDIA_EVERY: u32 = 12;
+/// Période du balayage du cache média, en secondes : le délai annoncé par
+/// l'interface pour la restitution de ses pages.
+const MEDIA_SWEEP_SECS: u64 = SWEEP.as_secs() * MEDIA_EVERY as u64;
 /// Cache média de nginx (voir `docker/nginx.conf`, `proxy_cache_path`).
 const MEDIA_DIR: &str = "/tmp/nginx-cache";
+/// Le relevé de la mémoire du cache média interroge le noyau fichier par fichier
+/// (`mincore`) : on le refait au plus toutes les [`MEDIA_TTL`], pas à chaque
+/// mesure de la page Performance.
+const MEDIA_TTL: Duration = Duration::from_secs(3);
 
 static RELEASED_BYTES: AtomicU64 = AtomicU64::new(0);
 static RELEASED_BOOKS: AtomicU64 = AtomicU64::new(0);
@@ -171,6 +178,11 @@ pub struct Overview {
     pub released_books: u64,
     /// Pages du cache média de nginx rendues de la même façon.
     pub released_media_bytes: u64,
+    /// Mémoire que le cache média de nginx occupe **en ce moment** (l'inverse
+    /// du compteur cumulé ci-dessus).
+    pub media_bytes: u64,
+    /// Période du balayage du cache média : délai maximal avant restitution.
+    pub media_sweep_secs: u64,
 }
 
 pub fn overview() -> Overview {
@@ -214,6 +226,8 @@ pub fn overview() -> Overview {
         released_bytes: RELEASED_BYTES.load(Ordering::Relaxed),
         released_books: RELEASED_BOOKS.load(Ordering::Relaxed),
         released_media_bytes: RELEASED_MEDIA.load(Ordering::Relaxed),
+        media_bytes: media_resident(),
+        media_sweep_secs: MEDIA_SWEEP_SECS,
     }
 }
 
@@ -272,9 +286,64 @@ fn sweep_media() {
     if reading {
         return;
     }
-    let dir = std::env::var_os("EASYBOOK_MEDIA_CACHE")
-        .map_or_else(|| PathBuf::from(MEDIA_DIR), PathBuf::from);
-    walk_media(&dir, 0);
+    walk_media(&media_dir(), 0);
+    // Les pages viennent de partir : le prochain relevé repart de zéro.
+    if let Ok(mut cache) = media_cache().lock() {
+        *cache = None;
+    }
+}
+
+/// Dossier du cache média, surchargeable par `EASYBOOK_MEDIA_CACHE`.
+fn media_dir() -> PathBuf {
+    std::env::var_os("EASYBOOK_MEDIA_CACHE").map_or_else(|| PathBuf::from(MEDIA_DIR), PathBuf::from)
+}
+
+/// Dernier relevé de la mémoire du cache média : `(instant, octets)`.
+fn media_cache() -> &'static Mutex<Option<(Instant, u64)>> {
+    static CACHE: OnceLock<Mutex<Option<(Instant, u64)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// Mémoire du cache média de nginx en ce moment.
+///
+/// C'est la contrepartie « en cours » de `released_media_bytes` : ce que les
+/// planches et couvertures écrites par nginx occupent maintenant, et non ce
+/// qu'elles ont rendu depuis le démarrage.
+pub fn media_resident() -> u64 {
+    let now = Instant::now();
+    let fresh = media_cache()
+        .lock()
+        .ok()
+        .and_then(|cache| *cache)
+        .filter(|(at, _)| now.duration_since(*at) < MEDIA_TTL);
+    if let Some((_, bytes)) = fresh {
+        return bytes;
+    }
+    let bytes = walk_media_bytes(&media_dir(), 0);
+    if let Ok(mut cache) = media_cache().lock() {
+        *cache = Some((now, bytes));
+    }
+    bytes
+}
+
+/// Somme des pages résidentes des fichiers du cache média.
+fn walk_media_bytes(path: &Path, depth: u32) -> u64 {
+    if depth > 2 {
+        return 0;
+    }
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    let mut total = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        total += if path.is_dir() {
+            walk_media_bytes(&path, depth + 1)
+        } else {
+            resident_bytes(&path).unwrap_or(0)
+        };
+    }
+    total
 }
 
 /// Parcourt le cache média (`levels=1:2` : deux étages, puis les fichiers).
@@ -444,5 +513,31 @@ mod tests {
         assert!(registry.any_active(at(0, origin)));
         assert!(registry.any_active(at(IDLE.as_secs() - 1, origin)));
         assert!(!registry.any_active(at(IDLE.as_secs(), origin)));
+    }
+
+    #[test]
+    fn the_media_cache_memory_adds_up_the_whole_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let deep = dir.path().join("a").join("b");
+        std::fs::create_dir_all(&deep).unwrap();
+        let page = deep.join("planche");
+        let cover = dir.path().join("couverture");
+        std::fs::write(&page, vec![3u8; 1 << 20]).unwrap();
+        std::fs::write(&cover, vec![3u8; 1 << 20]).unwrap();
+        std::fs::read(&page).unwrap();
+        std::fs::read(&cover).unwrap();
+
+        let total = walk_media_bytes(dir.path(), 0);
+        if cfg!(all(target_os = "linux", target_env = "gnu")) {
+            assert!(total > 0, "des pages écrites puis relues sont résidentes");
+        } else {
+            assert_eq!(total, 0);
+        }
+        assert_eq!(walk_media_bytes(&dir.path().join("absent"), 0), 0);
+    }
+
+    #[test]
+    fn the_media_sweep_period_is_announced() {
+        assert_eq!(MEDIA_SWEEP_SECS, 60);
     }
 }

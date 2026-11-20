@@ -183,7 +183,14 @@ fn insert_login_event(
     conn.execute(
         "INSERT INTO login_events (user_id, at, success, method, ip, user_agent)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![user_id, now(), success, meta.method, meta.ip, meta.user_agent],
+        params![
+            user_id,
+            now(),
+            success,
+            meta.method,
+            meta.ip,
+            meta.user_agent
+        ],
     )?;
     conn.execute(
         "DELETE FROM login_events WHERE user_id = ?1 AND id NOT IN
@@ -295,7 +302,10 @@ static HASH_USEC: AtomicU64 = AtomicU64::new(0);
 
 fn note_hash(started: std::time::Instant) {
     HASH_CALLS.fetch_add(1, AtomicOrdering::Relaxed);
-    HASH_USEC.fetch_add(started.elapsed().as_micros() as u64, AtomicOrdering::Relaxed);
+    HASH_USEC.fetch_add(
+        started.elapsed().as_micros() as u64,
+        AtomicOrdering::Relaxed,
+    );
 }
 
 /// (hachages effectués, microsecondes passées à hacher) depuis le démarrage.
@@ -1715,7 +1725,9 @@ mod tests {
         store.clear_must_change_password(&alice.id).unwrap();
         assert!(!store.user(&alice.id).unwrap().unwrap().must_change_password);
 
-        store.set_temporary_password(&alice.id, "temporaire-02").unwrap();
+        store
+            .set_temporary_password(&alice.id, "temporaire-02")
+            .unwrap();
         assert!(store.user(&alice.id).unwrap().unwrap().must_change_password);
         // Un vrai changement lève le drapeau.
         store.set_password(&alice.id, "definitif-01").unwrap();
@@ -1743,12 +1755,18 @@ mod tests {
         };
 
         let first = store.create_session(&alice.id, 3600).unwrap();
-        store.log_session_start(&first, &meta("password", "10.0.0.1")).unwrap();
+        store
+            .log_session_start(&first, &meta("password", "10.0.0.1"))
+            .unwrap();
         let second = store.create_session(&alice.id, 3600).unwrap();
-        store.log_session_start(&second, &meta("sso", "10.0.0.2")).unwrap();
+        store
+            .log_session_start(&second, &meta("sso", "10.0.0.2"))
+            .unwrap();
         // Une session échue ne compte pas.
         let expired = store.create_session(&alice.id, 3600).unwrap();
-        store.tag_session(&expired, &meta("password", "10.0.0.3")).unwrap();
+        store
+            .tag_session(&expired, &meta("password", "10.0.0.3"))
+            .unwrap();
         store
             .conn()
             .execute(
@@ -1779,7 +1797,9 @@ mod tests {
 
         // L'historique est borné.
         for _ in 0..(LOGIN_HISTORY_KEPT + 20) {
-            store.log_failed_login("alice@local.test", &meta("password", "1.1.1.1")).unwrap();
+            store
+                .log_failed_login("alice@local.test", &meta("password", "1.1.1.1"))
+                .unwrap();
         }
         assert_eq!(
             store.login_history(&alice.id, 1000).unwrap().len() as i64,
@@ -1807,14 +1827,22 @@ mod tests {
 
         // Toutes sauf celle de l'appelant.
         let keep = Accounts::session_id(&tokens[1]);
-        assert_eq!(store.delete_sessions_except(&alice.id, Some(&keep)).unwrap(), 1);
+        assert_eq!(
+            store
+                .delete_sessions_except(&alice.id, Some(&keep))
+                .unwrap(),
+            1
+        );
         assert!(store.session_user(&tokens[1]).unwrap().is_some());
         assert!(store.session_user(&tokens[2]).unwrap().is_none());
         assert!(store.session_user(&bobs).unwrap().is_some());
         assert_eq!(store.delete_sessions_except(&alice.id, None).unwrap(), 1);
 
         // `end_session` rend le compte, et ne répond rien pour un jeton inconnu.
-        assert_eq!(store.end_session(&bobs).unwrap().as_deref(), Some(bob.id.as_str()));
+        assert_eq!(
+            store.end_session(&bobs).unwrap().as_deref(),
+            Some(bob.id.as_str())
+        );
         assert_eq!(store.end_session(&bobs).unwrap(), None);
     }
 

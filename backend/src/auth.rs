@@ -95,9 +95,10 @@ impl Revoked {
     pub fn hits(&self, user_id: &str, session_id: &str) -> bool {
         match self {
             Revoked::Session(id) => id == session_id,
-            Revoked::AllBut { user_id: owner, keep } => {
-                owner == user_id && keep.as_deref() != Some(session_id)
-            }
+            Revoked::AllBut {
+                user_id: owner,
+                keep,
+            } => owner == user_id && keep.as_deref() != Some(session_id),
         }
     }
 }
@@ -199,14 +200,16 @@ impl AuthState {
     /// Connexions WebSocket ouvertes (une par onglet) pour ce compte.
     pub fn online(&self, user_id: &str) -> usize {
         let map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
-        map.get(user_id).map_or(0, |sessions| sessions.values().sum())
+        map.get(user_id)
+            .map_or(0, |sessions| sessions.values().sum())
     }
 
     /// Sessions de ce compte qui ont au moins un onglet ouvert.
     pub fn online_sessions(&self, user_id: &str) -> std::collections::HashSet<String> {
         let map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
-        map.get(user_id)
-            .map_or_else(Default::default, |sessions| sessions.keys().cloned().collect())
+        map.get(user_id).map_or_else(Default::default, |sessions| {
+            sessions.keys().cloned().collect()
+        })
     }
 
     /// Coupe les WebSocket des sessions qui viennent d'être fermées.
@@ -301,7 +304,10 @@ impl<S: Send + Sync> FromRequestParts<S> for MaybeSession {
 
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Infallible> {
         Ok(MaybeSession(
-            parts.extensions.get::<CurrentSession>().map(|c| c.0.clone()),
+            parts
+                .extensions
+                .get::<CurrentSession>()
+                .map(|c| c.0.clone()),
         ))
     }
 }
@@ -343,8 +349,10 @@ pub async fn guard(State(state): State<AppState>, mut request: Request, next: Ne
         Some(token) => auth.accounts.session_user(&token).ok().flatten(),
         None => None,
     };
-    auth.guard_usec
-        .fetch_add(started.elapsed().as_micros() as u64, AtomicOrdering::Relaxed);
+    auth.guard_usec.fetch_add(
+        started.elapsed().as_micros() as u64,
+        AtomicOrdering::Relaxed,
+    );
     auth.guard_calls.fetch_add(1, AtomicOrdering::Relaxed);
 
     let path = request.uri().path().to_string();
@@ -739,8 +747,10 @@ async fn sign_in(
     replace_previous(auth, headers, &token).await;
     {
         let (token, meta) = (token.clone(), session_meta(headers, method));
-        if let Ok(Ok(Some(id))) =
-            db(auth, move |accounts| accounts.log_session_start(&token, &meta)).await
+        if let Ok(Ok(Some(id))) = db(auth, move |accounts| {
+            accounts.log_session_start(&token, &meta)
+        })
+        .await
         {
             auth.notify(&id);
         }
@@ -793,7 +803,8 @@ async fn direct_login(
 /// Un navigateur qui se reconnecte laisse derrière lui sa session précédente : on la ferme,
 /// sinon chaque connexion en ajoute une qui ne servira plus.
 async fn replace_previous(auth: &Arc<AuthState>, headers: &HeaderMap, new_token: &str) {
-    let Some(previous) = cookie_value(headers, SESSION_COOKIE).filter(|old| old != new_token) else {
+    let Some(previous) = cookie_value(headers, SESSION_COOKIE).filter(|old| old != new_token)
+    else {
         return;
     };
     let session_id = Accounts::session_id(&previous);
@@ -1099,8 +1110,10 @@ async fn oidc_callback(
     {
         replace_previous(&auth, &headers, token).await;
         let (token, meta) = (token.clone(), session_meta(&headers, "sso"));
-        if let Ok(Ok(Some(id))) =
-            db(&auth, move |accounts| accounts.log_session_start(&token, &meta)).await
+        if let Ok(Ok(Some(id))) = db(&auth, move |accounts| {
+            accounts.log_session_start(&token, &meta)
+        })
+        .await
         {
             auth.notify(&id);
         }
@@ -1387,7 +1400,10 @@ async fn user_activity(
     let (online, live) = (auth.online(&id), auth.online_sessions(&id));
     let (mut sessions, history) = db(&auth, move |accounts| -> Result<_, AccountError> {
         accounts.user(&id)?.ok_or(AccountError::NotFound)?;
-        Ok((accounts.active_sessions(&id)?, accounts.login_history(&id, limit)?))
+        Ok((
+            accounts.active_sessions(&id)?,
+            accounts.login_history(&id, limit)?,
+        ))
     })
     .await?
     .map_err(account_error)?;
@@ -1395,8 +1411,10 @@ async fn user_activity(
         session.online = live.contains(&session.id);
         session.current = current.as_deref() == Some(session.id.as_str());
     }
-    Ok(Json(serde_json::json!({ "sessions": sessions, "history": history, "online": online }))
-        .into_response())
+    Ok(
+        Json(serde_json::json!({ "sessions": sessions, "history": history, "online": online }))
+            .into_response(),
+    )
 }
 
 /// `DELETE /api/admin/users/{id}/sessions` — ferme toutes les sessions du compte ;
@@ -1436,9 +1454,11 @@ async fn close_session(
         return Err(error(StatusCode::CONFLICT, "cannot_close_current"));
     }
     let (target, sid) = (id.clone(), session.clone());
-    let closed = db(&auth, move |accounts| accounts.delete_session_by_id(&target, &sid))
-        .await?
-        .map_err(account_error)?;
+    let closed = db(&auth, move |accounts| {
+        accounts.delete_session_by_id(&target, &sid)
+    })
+    .await?
+    .map_err(account_error)?;
     if !closed {
         return Err(error(StatusCode::NOT_FOUND, "not_found"));
     }

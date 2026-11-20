@@ -28,7 +28,15 @@ function snapshot(atMs: number, processes: PerfSnapshot['processes'], usec: numb
 			hashCalls: 0,
 			hashUsec: 0
 		},
-		readings: { active: [], idleLimitSecs: 60, releasedBytes: 0, releasedBooks: 0, releasedMediaBytes: 0 }
+		readings: {
+			active: [],
+			idleLimitSecs: 60,
+			releasedBytes: 0,
+			releasedBooks: 0,
+			releasedMediaBytes: 0,
+			mediaBytes: 0,
+			mediaSweepSecs: 60
+		}
 	} satisfies PerfSnapshot;
 }
 
