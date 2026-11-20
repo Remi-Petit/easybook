@@ -92,6 +92,7 @@ COPY --from=backend /out/easybook /usr/local/bin/easybook
 COPY backend/config.yml /app/config.yml
 COPY --from=frontend --chown=node:node /build/build /app/build
 COPY docker/nginx.conf /etc/nginx/nginx.conf
+COPY docker/security-headers.conf /etc/nginx/security-headers.conf
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
