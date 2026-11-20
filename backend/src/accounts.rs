@@ -17,6 +17,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -25,7 +26,7 @@ pub const MIN_PASSWORD: usize = 8;
 pub const MAX_PASSWORD: usize = 256;
 
 /// Version du schéma (`PRAGMA user_version`).
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA: &str = "
 CREATE TABLE users (
@@ -37,7 +38,8 @@ CREATE TABLE users (
     role          TEXT NOT NULL CHECK (role IN ('admin', 'user')),
     disabled      INTEGER NOT NULL DEFAULT 0,
     created_at    INTEGER NOT NULL,
-    last_login_at INTEGER
+    last_login_at INTEGER,
+    must_change_password INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX users_email ON users (email);
 
@@ -56,9 +58,24 @@ CREATE TABLE sessions (
     token_hash TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL
+    expires_at INTEGER NOT NULL,
+    ip         TEXT,
+    user_agent TEXT,
+    method     TEXT,
+    last_seen_at INTEGER
 );
 CREATE INDEX sessions_user ON sessions (user_id);
+
+CREATE TABLE login_events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    at         INTEGER NOT NULL,
+    success    INTEGER NOT NULL,
+    method     TEXT NOT NULL,
+    ip         TEXT,
+    user_agent TEXT
+);
+CREATE INDEX login_events_user ON login_events (user_id, at);
 
 CREATE TABLE link_tokens (
     token_hash TEXT PRIMARY KEY,
@@ -103,6 +120,8 @@ pub struct User {
     pub has_password: bool,
     pub created_at: i64,
     pub last_login_at: Option<i64>,
+    /// Mot de passe temporaire : l'interface propose de le changer à la connexion.
+    pub must_change_password: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -115,6 +134,72 @@ pub struct Identity {
     pub created_at: i64,
 }
 
+/// D'où vient une connexion : adresse, navigateur, et par quel moyen.
+#[derive(Debug, Clone, Default)]
+pub struct SessionMeta {
+    pub ip: Option<String>,
+    pub user_agent: Option<String>,
+    /// `password` ou `sso`.
+    pub method: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SessionInfo {
+    /// Début du hash du jeton : identifie la session sans permettre de l'utiliser.
+    pub id: String,
+    pub created_at: i64,
+    pub expires_at: i64,
+    pub ip: Option<String>,
+    pub user_agent: Option<String>,
+    pub method: Option<String>,
+    /// Dernière requête vue (relevée au plus une fois par minute).
+    pub last_seen_at: i64,
+    /// Un onglet de cette session est ouvert (renseigné par l'API, pas par la base).
+    #[serde(default)]
+    pub online: bool,
+    /// C'est la session de celui qui regarde (renseigné par l'API).
+    #[serde(default)]
+    pub current: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LoginEvent {
+    pub at: i64,
+    pub success: bool,
+    pub method: String,
+    pub ip: Option<String>,
+    pub user_agent: Option<String>,
+}
+
+/// Connexions gardées par compte : au-delà, les plus anciennes partent.
+const LOGIN_HISTORY_KEPT: i64 = 200;
+
+fn insert_login_event(
+    conn: &Connection,
+    user_id: &str,
+    success: bool,
+    meta: &SessionMeta,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO login_events (user_id, at, success, method, ip, user_agent)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            user_id,
+            now(),
+            success,
+            meta.method,
+            meta.ip,
+            meta.user_agent
+        ],
+    )?;
+    conn.execute(
+        "DELETE FROM login_events WHERE user_id = ?1 AND id NOT IN
+         (SELECT id FROM login_events WHERE user_id = ?1 ORDER BY at DESC, id DESC LIMIT ?2)",
+        params![user_id, LOGIN_HISTORY_KEPT],
+    )?;
+    Ok(())
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct NewUser {
     pub username: String,
@@ -122,6 +207,8 @@ pub struct NewUser {
     pub email: Option<String>,
     pub password: Option<String>,
     pub role: Option<Role>,
+    /// Le mot de passe donné est temporaire.
+    pub must_change_password: bool,
 }
 
 /// Modification d'un compte : `None` = inchangé, chaîne vide = effacer.
@@ -208,20 +295,47 @@ fn digest(token: &str) -> String {
         .collect()
 }
 
+/// Coût cumulé du hachage Argon2 : la seule partie vraiment chère d'une
+/// connexion (mémoire-hard par construction).
+static HASH_CALLS: AtomicU64 = AtomicU64::new(0);
+static HASH_USEC: AtomicU64 = AtomicU64::new(0);
+
+fn note_hash(started: std::time::Instant) {
+    HASH_CALLS.fetch_add(1, AtomicOrdering::Relaxed);
+    HASH_USEC.fetch_add(
+        started.elapsed().as_micros() as u64,
+        AtomicOrdering::Relaxed,
+    );
+}
+
+/// (hachages effectués, microsecondes passées à hacher) depuis le démarrage.
+pub fn hash_stats() -> (u64, u64) {
+    (
+        HASH_CALLS.load(AtomicOrdering::Relaxed),
+        HASH_USEC.load(AtomicOrdering::Relaxed),
+    )
+}
+
 fn hash_password(password: &str) -> Result<String> {
+    let started = std::time::Instant::now();
     let salt = SaltString::generate(&mut OsRng);
-    Argon2::default()
+    let hashed = Argon2::default()
         .hash_password(password.as_bytes(), &salt)
         .map(|hash| hash.to_string())
-        .map_err(|e| AccountError::Internal(e.to_string()))
+        .map_err(|e| AccountError::Internal(e.to_string()));
+    note_hash(started);
+    hashed
 }
 
 fn verify_password(hash: &str, password: &str) -> bool {
-    PasswordHash::new(hash).is_ok_and(|parsed| {
+    let started = std::time::Instant::now();
+    let verified = PasswordHash::new(hash).is_ok_and(|parsed| {
         Argon2::default()
             .verify_password(password.as_bytes(), &parsed)
             .is_ok()
-    })
+    });
+    note_hash(started);
+    verified
 }
 
 /// Hache d'un mot de passe inconnu : un identifiant absent coûte le même temps
@@ -233,7 +347,8 @@ fn dummy_hash() -> &'static str {
 
 fn check_password(password: &str) -> Result<()> {
     let length = password.chars().count();
-    if (MIN_PASSWORD..=MAX_PASSWORD).contains(&length) {
+    // Huit espaces ne sont pas un mot de passe.
+    if (MIN_PASSWORD..=MAX_PASSWORD).contains(&length) && !password.trim().is_empty() {
         Ok(())
     } else {
         Err(AccountError::WeakPassword)
@@ -282,7 +397,7 @@ fn clean_text(raw: &str) -> Option<String> {
 }
 
 const USER_COLUMNS: &str = "id, username, display_name, email, password_hash IS NOT NULL, role, \
-     disabled, created_at, last_login_at";
+     disabled, created_at, last_login_at, must_change_password";
 
 fn user_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
     Ok(User {
@@ -295,6 +410,7 @@ fn user_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
         disabled: row.get(6)?,
         created_at: row.get(7)?,
         last_login_at: row.get(8)?,
+        must_change_password: row.get(9)?,
     })
 }
 
@@ -373,15 +489,53 @@ impl Accounts {
             conn.execute_batch(SCHEMA)?;
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             version = SCHEMA_VERSION;
-        } else if version == 1 {
+        }
+        if version == 1 {
             // v2 : la connexion se fait par e-mail, unique et obligatoire.
             conn.execute_batch(
                 "UPDATE users SET email = lower(username) || '@easybook.local' WHERE email IS NULL;
                  DROP INDEX IF EXISTS users_email;
                  CREATE UNIQUE INDEX users_email ON users (email);",
             )?;
-            conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-            version = SCHEMA_VERSION;
+            conn.pragma_update(None, "user_version", 2)?;
+            version = 2;
+        }
+        if version == 2 {
+            // v3 : mot de passe temporaire, à changer à la première connexion.
+            conn.execute_batch(
+                "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;",
+            )?;
+            conn.pragma_update(None, "user_version", 3)?;
+            version = 3;
+        }
+        if version == 3 {
+            // v4 : d'où vient chaque session, et l'historique des connexions.
+            conn.execute_batch(
+                "ALTER TABLE sessions ADD COLUMN ip TEXT;
+                 ALTER TABLE sessions ADD COLUMN user_agent TEXT;
+                 ALTER TABLE sessions ADD COLUMN method TEXT;
+                 CREATE TABLE login_events (
+                     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                     user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+                     at         INTEGER NOT NULL,
+                     success    INTEGER NOT NULL,
+                     method     TEXT NOT NULL,
+                     ip         TEXT,
+                     user_agent TEXT
+                 );
+                 CREATE INDEX login_events_user ON login_events (user_id, at);",
+            )?;
+            conn.pragma_update(None, "user_version", 4)?;
+            version = 4;
+        }
+        if version == 4 {
+            // v5 : dernier signe de vie de chaque session.
+            conn.execute_batch(
+                "ALTER TABLE sessions ADD COLUMN last_seen_at INTEGER;
+                 UPDATE sessions SET last_seen_at = created_at;",
+            )?;
+            conn.pragma_update(None, "user_version", 5)?;
+            version = 5;
         }
         if version != SCHEMA_VERSION {
             return Err(AccountError::Internal(format!(
@@ -420,8 +574,8 @@ impl Accounts {
 
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO users (id, username, display_name, email, password_hash, role, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO users (id, username, display_name, email, password_hash, role, created_at, must_change_password)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 id,
                 username,
@@ -429,7 +583,8 @@ impl Accounts {
                 email,
                 hash,
                 role.as_str(),
-                now()
+                now(),
+                new.must_change_password && hash.is_some()
             ],
         )
         .map_err(constraint_error)?;
@@ -515,12 +670,30 @@ impl Accounts {
     /// mot de passe changé parce qu'il a fuité ne doit laisser aucune session
     /// ouverte derrière lui.
     pub fn set_password(&self, id: &str, password: &str) -> Result<()> {
+        self.store_password(id, password, false)
+    }
+
+    /// Comme [`Self::set_password`], mais le compte devra (ou pourra) le changer à sa connexion.
+    pub fn set_temporary_password(&self, id: &str, password: &str) -> Result<()> {
+        self.store_password(id, password, true)
+    }
+
+    /// Renonce à l'invite de changement : le mot de passe actuel est gardé.
+    pub fn clear_must_change_password(&self, id: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE users SET must_change_password = 0 WHERE id = ?1",
+            [id],
+        )?;
+        Ok(())
+    }
+
+    fn store_password(&self, id: &str, password: &str, temporary: bool) -> Result<()> {
         check_password(password)?;
         let hash = hash_password(password)?;
         let conn = self.conn();
         let changed = conn.execute(
-            "UPDATE users SET password_hash = ?2 WHERE id = ?1",
-            params![id, hash],
+            "UPDATE users SET password_hash = ?2, must_change_password = ?3 WHERE id = ?1",
+            params![id, hash, temporary],
         )?;
         if changed == 0 {
             return Err(AccountError::NotFound);
@@ -547,7 +720,7 @@ impl Accounts {
             conn.query_row(
                 &format!("SELECT {USER_COLUMNS}, password_hash FROM users WHERE email = ?1"),
                 [email.trim()],
-                |row| Ok((user_from(row)?, row.get(9)?)),
+                |row| Ok((user_from(row)?, row.get(10)?)),
             )
             .optional()?
         };
@@ -644,6 +817,13 @@ impl Accounts {
 
     // ── Sessions ─────────────────────────────────────────────────────────
 
+    /// Nombre de sessions ouvertes, toutes personnes confondues.
+    pub fn session_count(&self) -> Result<i64> {
+        self.conn()
+            .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
+            .map_err(AccountError::from)
+    }
+
     /// Ouvre une session et rend son jeton (la seule fois où il existe en clair).
     pub fn create_session(&self, user_id: &str, ttl_secs: i64) -> Result<String> {
         let token = random_token(32);
@@ -652,8 +832,8 @@ impl Accounts {
         // Ménage opportuniste : pas de tâche de fond pour des sessions échues.
         conn.execute("DELETE FROM sessions WHERE expires_at <= ?1", [created])?;
         conn.execute(
-            "INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at)
+             VALUES (?1, ?2, ?3, ?4, ?3)",
             params![digest(&token), user_id, created, created + ttl_secs],
         )?;
         Ok(token)
@@ -661,17 +841,64 @@ impl Accounts {
 
     /// L'utilisateur d'une session valide (non échue, compte actif).
     pub fn session_user(&self, token: &str) -> Result<Option<User>> {
-        Ok(self
-            .conn()
+        let (hash, at) = (digest(token), now());
+        let conn = self.conn();
+        let user = conn
             .query_row(
                 &format!(
                     "SELECT {USER_COLUMNS} FROM users WHERE disabled = 0 AND id =
                      (SELECT user_id FROM sessions WHERE token_hash = ?1 AND expires_at > ?2)"
                 ),
-                params![digest(token), now()],
+                params![hash, at],
                 user_from,
             )
-            .optional()?)
+            .optional()?;
+        if user.is_some() {
+            // Au plus une écriture par minute et par session : la garde passe ici à chaque requête.
+            conn.execute(
+                "UPDATE sessions SET last_seen_at = ?2
+                 WHERE token_hash = ?1 AND COALESCE(last_seen_at, 0) < ?2 - 60",
+                params![hash, at],
+            )?;
+        }
+        Ok(user)
+    }
+
+    /// Identifiant public d'une session (voir [`SessionInfo::id`]).
+    pub fn session_id(token: &str) -> String {
+        digest(token).chars().take(12).collect()
+    }
+
+    /// Ferme une session et rend son compte, si elle existait.
+    pub fn end_session(&self, token: &str) -> Result<Option<String>> {
+        let conn = self.conn();
+        let hash = digest(token);
+        let user_id: Option<String> = conn
+            .query_row(
+                "SELECT user_id FROM sessions WHERE token_hash = ?1",
+                [&hash],
+                |row| row.get(0),
+            )
+            .optional()?;
+        conn.execute("DELETE FROM sessions WHERE token_hash = ?1", [&hash])?;
+        Ok(user_id)
+    }
+
+    /// Ferme une session d'un compte, par son identifiant public.
+    pub fn delete_session_by_id(&self, user_id: &str, session_id: &str) -> Result<bool> {
+        let removed = self.conn().execute(
+            "DELETE FROM sessions WHERE user_id = ?1 AND substr(token_hash, 1, 12) = ?2",
+            params![user_id, session_id],
+        )?;
+        Ok(removed > 0)
+    }
+
+    /// Ferme les sessions d'un compte, sauf `keep` (identifiant public). Rend leur nombre.
+    pub fn delete_sessions_except(&self, user_id: &str, keep: Option<&str>) -> Result<usize> {
+        Ok(self.conn().execute(
+            "DELETE FROM sessions WHERE user_id = ?1 AND substr(token_hash, 1, 12) != ?2",
+            params![user_id, keep.unwrap_or("")],
+        )?)
     }
 
     pub fn delete_session(&self, token: &str) -> Result<()> {
@@ -686,6 +913,94 @@ impl Accounts {
         self.conn()
             .execute("DELETE FROM sessions WHERE user_id = ?1", [user_id])?;
         Ok(())
+    }
+
+    /// Note d'où vient une session (adresse, navigateur, mode de connexion).
+    pub fn tag_session(&self, token: &str, meta: &SessionMeta) -> Result<()> {
+        self.conn().execute(
+            "UPDATE sessions SET ip = ?2, user_agent = ?3, method = ?4 WHERE token_hash = ?1",
+            params![digest(token), meta.ip, meta.user_agent, meta.method],
+        )?;
+        Ok(())
+    }
+
+    /// Ouverture réussie d'une session : la décrit, l'inscrit à l'historique, et rend le compte.
+    pub fn log_session_start(&self, token: &str, meta: &SessionMeta) -> Result<Option<String>> {
+        self.tag_session(token, meta)?;
+        let conn = self.conn();
+        let user_id: Option<String> = conn
+            .query_row(
+                "SELECT user_id FROM sessions WHERE token_hash = ?1",
+                [digest(token)],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(user_id) = &user_id {
+            insert_login_event(&conn, user_id, true, meta)?;
+        }
+        Ok(user_id)
+    }
+
+    /// Tentative ratée sur un compte qui existe (un identifiant inconnu n'est pas noté).
+    pub fn log_failed_login(&self, email: &str, meta: &SessionMeta) -> Result<Option<String>> {
+        let conn = self.conn();
+        let user_id: Option<String> = conn
+            .query_row(
+                "SELECT id FROM users WHERE email = ?1",
+                [email.trim()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(user_id) = &user_id {
+            insert_login_event(&conn, user_id, false, meta)?;
+        }
+        Ok(user_id)
+    }
+
+    /// Sessions encore valides d'un compte, la plus récente d'abord.
+    pub fn active_sessions(&self, user_id: &str) -> Result<Vec<SessionInfo>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(
+            "SELECT substr(token_hash, 1, 12), created_at, expires_at, ip, user_agent, method,
+                    COALESCE(last_seen_at, created_at)
+             FROM sessions WHERE user_id = ?1 AND expires_at > ?2
+             ORDER BY created_at DESC",
+        )?;
+        Ok(statement
+            .query_map(params![user_id, now()], |row| {
+                Ok(SessionInfo {
+                    id: row.get(0)?,
+                    created_at: row.get(1)?,
+                    expires_at: row.get(2)?,
+                    ip: row.get(3)?,
+                    user_agent: row.get(4)?,
+                    method: row.get(5)?,
+                    last_seen_at: row.get(6)?,
+                    online: false,
+                    current: false,
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Dernières connexions (réussies ou non) d'un compte, la plus récente d'abord.
+    pub fn login_history(&self, user_id: &str, limit: i64) -> Result<Vec<LoginEvent>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(
+            "SELECT at, success, method, ip, user_agent FROM login_events
+             WHERE user_id = ?1 ORDER BY at DESC, id DESC LIMIT ?2",
+        )?;
+        Ok(statement
+            .query_map(params![user_id, limit], |row| {
+                Ok(LoginEvent {
+                    at: row.get(0)?,
+                    success: row.get(1)?,
+                    method: row.get(2)?,
+                    ip: row.get(3)?,
+                    user_agent: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?)
     }
 
     // ── Identités OIDC ───────────────────────────────────────────────────
@@ -975,6 +1290,17 @@ mod tests {
             }),
             AccountError::WeakPassword
         );
+        // Trop court, ou blanc : refusé.
+        for password in ["court", "        ", "\t\t\t\t\t\t\t\t"] {
+            assert_eq!(
+                bad(NewUser {
+                    password: Some(password.into()),
+                    ..named("bob")
+                }),
+                AccountError::WeakPassword,
+                "{password:?}"
+            );
+        }
         for email in ["pas-une-adresse", "a b@c.d", ""] {
             assert_eq!(
                 bad(with_email("bob", email)),
@@ -1347,7 +1673,13 @@ mod tests {
             let conn = Connection::open(&path).unwrap();
             conn.execute_batch(SCHEMA).unwrap();
             conn.execute_batch(
-                "DROP INDEX users_email;
+                "ALTER TABLE users DROP COLUMN must_change_password;
+                 ALTER TABLE sessions DROP COLUMN ip;
+                 ALTER TABLE sessions DROP COLUMN user_agent;
+                 ALTER TABLE sessions DROP COLUMN method;
+                 ALTER TABLE sessions DROP COLUMN last_seen_at;
+                 DROP TABLE login_events;
+                 DROP INDEX users_email;
                  CREATE INDEX users_email ON users (email);
                  INSERT INTO users (id, username, role, created_at) VALUES ('u1', 'Admin', 'admin', 0);
                  INSERT INTO users (id, username, email, role, created_at)
@@ -1366,6 +1698,8 @@ mod tests {
             store.user("u2").unwrap().unwrap().email.as_deref(),
             Some("bob@x.test")
         );
+        // La colonne de la v3 existe, désactivée.
+        assert!(!store.user("u1").unwrap().unwrap().must_change_password);
         // L'unicité est désormais imposée.
         assert_eq!(
             store
@@ -1373,6 +1707,165 @@ mod tests {
                 .unwrap_err(),
             AccountError::EmailTaken
         );
+    }
+
+    #[test]
+    fn a_temporary_password_is_flagged_until_changed_or_skipped() {
+        let store = Accounts::open_in_memory().unwrap();
+        let alice = store
+            .create_user(NewUser {
+                email: Some("alice@x.test".into()),
+                password: Some("temporaire-01".into()),
+                must_change_password: true,
+                ..NewUser::default()
+            })
+            .unwrap();
+        assert!(alice.must_change_password);
+
+        store.clear_must_change_password(&alice.id).unwrap();
+        assert!(!store.user(&alice.id).unwrap().unwrap().must_change_password);
+
+        store
+            .set_temporary_password(&alice.id, "temporaire-02")
+            .unwrap();
+        assert!(store.user(&alice.id).unwrap().unwrap().must_change_password);
+        // Un vrai changement lève le drapeau.
+        store.set_password(&alice.id, "definitif-01").unwrap();
+        assert!(!store.user(&alice.id).unwrap().unwrap().must_change_password);
+
+        // Sans mot de passe, rien à changer.
+        let carol = store
+            .create_user(NewUser {
+                email: Some("carol@x.test".into()),
+                must_change_password: true,
+                ..NewUser::default()
+            })
+            .unwrap();
+        assert!(!carol.must_change_password);
+    }
+
+    #[test]
+    fn sessions_and_login_history_are_described() {
+        let store = Accounts::open_in_memory().unwrap();
+        let alice = user(&store, "alice", Role::User);
+        let meta = |method: &'static str, ip: &str| SessionMeta {
+            ip: Some(ip.into()),
+            user_agent: Some("Mozilla/5.0 test".into()),
+            method,
+        };
+
+        let first = store.create_session(&alice.id, 3600).unwrap();
+        store
+            .log_session_start(&first, &meta("password", "10.0.0.1"))
+            .unwrap();
+        let second = store.create_session(&alice.id, 3600).unwrap();
+        store
+            .log_session_start(&second, &meta("sso", "10.0.0.2"))
+            .unwrap();
+        // Une session échue ne compte pas.
+        let expired = store.create_session(&alice.id, 3600).unwrap();
+        store
+            .tag_session(&expired, &meta("password", "10.0.0.3"))
+            .unwrap();
+        store
+            .conn()
+            .execute(
+                "UPDATE sessions SET expires_at = 1 WHERE token_hash = ?1",
+                [digest(&expired)],
+            )
+            .unwrap();
+
+        let sessions = store.active_sessions(&alice.id).unwrap();
+        assert_eq!(sessions.len(), 2);
+        assert!(sessions.iter().any(|s| s.method.as_deref() == Some("sso")));
+        assert!(sessions.iter().all(|s| s.id.len() == 12));
+        // L'identifiant ne permet pas de se faire passer pour la session.
+        assert!(sessions.iter().all(|s| s.id != first && s.id != second));
+
+        store
+            .log_failed_login("ALICE@local.test", &meta("password", "10.0.0.9"))
+            .unwrap();
+        // Un identifiant inconnu ne laisse aucune trace.
+        store
+            .log_failed_login("nobody@x.test", &meta("password", "10.0.0.9"))
+            .unwrap();
+        let history = store.login_history(&alice.id, 50).unwrap();
+        assert_eq!(history.len(), 3);
+        assert!(!history[0].success);
+        assert_eq!(history[0].ip.as_deref(), Some("10.0.0.9"));
+        assert_eq!(history.iter().filter(|e| e.success).count(), 2);
+
+        // L'historique est borné.
+        for _ in 0..(LOGIN_HISTORY_KEPT + 20) {
+            store
+                .log_failed_login("alice@local.test", &meta("password", "1.1.1.1"))
+                .unwrap();
+        }
+        assert_eq!(
+            store.login_history(&alice.id, 1000).unwrap().len() as i64,
+            LOGIN_HISTORY_KEPT
+        );
+    }
+
+    #[test]
+    fn sessions_are_closed_one_by_one_or_all_but_one() {
+        let store = Accounts::open_in_memory().unwrap();
+        let alice = user(&store, "alice", Role::User);
+        let bob = user(&store, "bob", Role::User);
+        let tokens: Vec<String> = (0..3)
+            .map(|_| store.create_session(&alice.id, 3600).unwrap())
+            .collect();
+        let bobs = store.create_session(&bob.id, 3600).unwrap();
+
+        // Une session se ferme par son identifiant public, et seulement dans son compte.
+        let target = Accounts::session_id(&tokens[0]);
+        assert!(!store.delete_session_by_id(&bob.id, &target).unwrap());
+        assert!(store.delete_session_by_id(&alice.id, &target).unwrap());
+        assert!(!store.delete_session_by_id(&alice.id, &target).unwrap());
+        assert!(store.session_user(&tokens[0]).unwrap().is_none());
+        assert!(store.session_user(&tokens[1]).unwrap().is_some());
+
+        // Toutes sauf celle de l'appelant.
+        let keep = Accounts::session_id(&tokens[1]);
+        assert_eq!(
+            store
+                .delete_sessions_except(&alice.id, Some(&keep))
+                .unwrap(),
+            1
+        );
+        assert!(store.session_user(&tokens[1]).unwrap().is_some());
+        assert!(store.session_user(&tokens[2]).unwrap().is_none());
+        assert!(store.session_user(&bobs).unwrap().is_some());
+        assert_eq!(store.delete_sessions_except(&alice.id, None).unwrap(), 1);
+
+        // `end_session` rend le compte, et ne répond rien pour un jeton inconnu.
+        assert_eq!(
+            store.end_session(&bobs).unwrap().as_deref(),
+            Some(bob.id.as_str())
+        );
+        assert_eq!(store.end_session(&bobs).unwrap(), None);
+    }
+
+    #[test]
+    fn the_last_sign_of_life_of_a_session_is_kept_up_to_date() {
+        let store = Accounts::open_in_memory().unwrap();
+        let alice = user(&store, "alice", Role::User);
+        let token = store.create_session(&alice.id, 3600).unwrap();
+        let seen = |store: &Accounts| store.active_sessions(&alice.id).unwrap()[0].last_seen_at;
+
+        let opened = seen(&store);
+        // Moins d'une minute après : pas de nouvelle écriture.
+        store.session_user(&token).unwrap();
+        assert_eq!(seen(&store), opened);
+
+        // Une session inactive depuis un moment est vue à nouveau.
+        store
+            .conn()
+            .execute("UPDATE sessions SET last_seen_at = last_seen_at - 600", [])
+            .unwrap();
+        let stale = seen(&store);
+        store.session_user(&token).unwrap();
+        assert!(seen(&store) > stale);
     }
 
     #[test]

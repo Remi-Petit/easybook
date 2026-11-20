@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { formatBytes } from '$lib/api';
 	import BarList from '$lib/components/BarList.svelte';
+	import InfoTip from '$lib/components/InfoTip.svelte';
 	import SegmentBar from '$lib/components/SegmentBar.svelte';
 	import StackedArea from '$lib/components/StackedArea.svelte';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
@@ -82,23 +83,38 @@
 	);
 
 	const readings = $derived(snapshot?.readings ?? null);
-	const readingBars = $derived(
-		(readings?.active ?? []).map((reading) => ({
-			key: reading.rel,
-			label: bookName(reading.rel),
-			value: reading.cachedBytes ?? 0,
-			color: colorFor('easybook'),
-			note: t('perf.reading.note', {
-				size: formatBytes(reading.size),
-				requests: t('perf.requests', { count: reading.requests }),
-				idle: formatNumber(reading.idleSecs)
-			})
-		}))
+	/** Ce que les livres ouverts occupent maintenant, cache média de nginx exclu. */
+	const readingsBooks = $derived(
+		(readings?.active ?? []).reduce((total, reading) => total + (reading.cachedBytes ?? 0), 0)
+	);
+	/** Livres ouverts + cache média : la mémoire que la lecture coûte à cet instant. */
+	const readingsTotal = $derived(readingsBooks + (readings?.mediaBytes ?? 0));
+	/**
+	 * Quand le cache média sera rendu : après la dernière lecture, puis au
+	 * balayage suivant — soit au plus le silence d'une lecture plus un tour.
+	 */
+	const mediaReset = $derived(
+		!readings
+			? ''
+			: readings.active.length > 0
+				? t('perf.reading.mediaWait')
+				: t('perf.reading.mediaSoon', {
+						seconds: formatNumber(readings.idleLimitSecs + readings.mediaSweepSecs)
+					})
 	);
 
 	const cpuCapacity = $derived(snapshot ? (snapshot.cpuLimit ?? snapshot.cpus) : 1);
 	const ticksPerSecond = $derived(snapshot?.clockTicks ?? 100);
 	const minutes = $derived(formatNumber(WINDOW_MS / 60000));
+
+	// Ce que l'API garde pour elle, et ce que ses sessions coûtent en CPU.
+	const app = $derived(snapshot?.app ?? null);
+	const apiGroup = $derived(view?.groups.find((group) => group.name === 'easybook') ?? null);
+	const apiCpuSecs = $derived(apiGroup ? apiGroup.cpuTicks / ticksPerSecond : 0);
+	const guardSecs = $derived((app?.guardUsec ?? 0) / 1e6);
+	const hashSecs = $derived((app?.hashUsec ?? 0) / 1e6);
+	const guardShare = $derived(apiCpuSecs > 0 ? (guardSecs / apiCpuSecs) * 100 : 0);
+	const guardAvgMs = $derived(app && app.guardCalls > 0 ? (guardSecs * 1000) / app.guardCalls : 0);
 </script>
 
 <svelte:head>
@@ -199,28 +215,113 @@
 						</p>
 					</section>
 				</div>
-					{#if readings}
+					<section class="perf-card">
+					<h2>{t('perf.detail.title')}</h2>
+					<div class="table-wrap">
+						<table class="perf-table">
+							<tbody>
+								<tr>
+									<td>{t('perf.detail.heap')}</td>
+									<td>{formatBytes(app?.heapLive ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.heapPeak')}</td>
+									<td>{formatBytes(app?.heapPeak ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.catalog')}</td>
+									<td>{formatBytes(app?.catalogBytes ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.archives')}</td>
+									<td>{formatNumber(app?.openArchives ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.sessions')}</td>
+									<td>{formatNumber(app?.sessions ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.sockets')}</td>
+									<td>{formatNumber(app?.sockets ?? 0)}</td>
+								</tr>
+								<tr>
+									<td>{t('perf.detail.argon2')}</td>
+									<td>{formatBytes(app?.argon2Bytes ?? 0)}</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p class="stat-hint">{t('perf.detail.hint')}</p>
+				</section>
+				{#if readings}
 						<section class="perf-card">
 							<h2>
 								{t('perf.reading.title')}
 								<span class="perf-count">{formatNumber(readings.active.length)}</span>
 							</h2>
-							{#if readingBars.length > 0}
-								<BarList
-									bars={readingBars}
-									format={formatBytes}
-									max={Math.max(1, ...readings.active.map((reading) => reading.size))}
-								/>
-							{:else}
+							<div class="table-wrap">
+								<table class="perf-table">
+									<thead>
+										<tr>
+											<th>{t('perf.col.book')}</th>
+											<th>{t('perf.col.memory')}</th>
+											<th>{t('perf.col.requests')}</th>
+											<th>{t('perf.col.reset')}</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each readings.active as reading (reading.rel)}
+											<tr>
+												<td>{bookName(reading.rel)}</td>
+												<td>
+													{formatBytes(reading.cachedBytes ?? 0)}
+													<span class="pid">/ {formatBytes(reading.size)}</span>
+												</td>
+												<td>{formatNumber(reading.requests)}</td>
+												<td>
+													{formatNumber(Math.max(0, readings.idleLimitSecs - reading.idleSecs))} s
+												</td>
+											</tr>
+										{/each}
+										<tr>
+											<td>{t('perf.reading.mediaCurrent')}</td>
+											<td>{formatBytes(readings.mediaBytes)}</td>
+											<td>—</td>
+											<td>{mediaReset}</td>
+										</tr>
+									</tbody>
+									<tfoot>
+										<tr>
+											<td>{t('perf.reading.total')}</td>
+											<td>{formatBytes(readingsTotal)}</td>
+											<td></td>
+											<td></td>
+										</tr>
+									</tfoot>
+								</table>
+							</div>
+							{#if readings.active.length === 0}
 								<p class="stat-hint">{t('perf.reading.none')}</p>
 							{/if}
 							<p class="stat-line">
-								<span>{t('perf.reading.released')}</span>
+								<span>
+									{t('perf.reading.released')}
+								</span>
 								<span>
 									{formatBytes(readings.releasedBytes)} · {t('perf.books', {
 										count: readings.releasedBooks
 									})}
 								</span>
+							</p>
+							<p class="stat-line">
+								<span>
+									{t('perf.reading.media')}
+									<InfoTip
+										text={t('perf.reading.mediaLimit')}
+										label={t('perf.reading.media')}
+									/>
+								</span>
+								<span>{formatBytes(readings.releasedMediaBytes)}</span>
 							</p>
 							<p class="stat-hint">
 								{t('perf.reading.hint', { seconds: formatNumber(readings.idleLimitSecs) })}
@@ -272,6 +373,27 @@
 						<BarList bars={cpuBars} format={formatPercent} max={Math.max(100, ...cpuBars.map((bar) => bar.value))} />
 					</section>
 				</div>
+
+				<section class="perf-card">
+					<h2>{t('perf.auth.title')}</h2>
+					<p class="stat-line">
+						<span>{t('perf.auth.guard')}</span>
+						<span>{formatNumber(app?.guardCalls ?? 0)} · {formatDuration(guardSecs)}</span>
+					</p>
+					<p class="stat-line">
+						<span>{t('perf.auth.guardAvg')}</span>
+						<span>{formatNumber(guardAvgMs, 2)} ms</span>
+					</p>
+					<p class="stat-line">
+						<span>{t('perf.auth.hash')}</span>
+						<span>{formatNumber(app?.hashCalls ?? 0)} · {formatDuration(hashSecs)}</span>
+					</p>
+					<p class="stat-line">
+						<span>{t('perf.auth.share')}</span>
+						<span>{formatPercent(guardShare)}</span>
+					</p>
+					<p class="stat-hint">{t('perf.auth.hint')}</p>
+				</section>
 
 				<section class="perf-card">
 					<h2>

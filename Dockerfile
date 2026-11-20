@@ -103,15 +103,29 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Tout écoute sur la boucle locale du conteneur, sauf nginx : publier un port
 # (`-p 5100:8080`) ne relaie pas vers `127.0.0.1`, et seul nginx doit être
 # joignable depuis l'extérieur.
+#
+# `MALLOC_TRIM_THRESHOLD_` : Argon2id (hachage des mots de passe) réclame 19 Mio
+# le temps d'un hachage — à la création de l'administrateur, puis à chaque
+# connexion. Sans ce réglage, glibc garde cette arène et ne la rend jamais :
+# mesuré 31 Mo de RSS au repos au lieu de 12, et 85 Mo au lieu de 36 après
+# 500 onglets WebSocket. `MALLOC_ARENA_MAX` a été essayé aussi : aucun gain de
+# plus, et un pic CPU plus haut sur les rafales — écarté.
+#
+# `NODE_OPTIONS` : le serveur SvelteKit est le plus gros consommateur privé du
+# conteneur (~20 Mo sur 26). Des espaces jeunes plus petits font tomber son tas
+# à ~18 Mo (mesuré), et `max-old-space-size` l'empêche de doubler sous charge.
+# Rien n'y est stocké : l'interface ne garde pas de données, elle rend du HTML.
 ENV API_PORT=8091 \
     API_HOST=127.0.0.1 \
     UI_PORT=3100 \
     UI_HOST=127.0.0.1 \
     NODE_ENV=production \
+    NODE_OPTIONS="--max-semi-space-size=1 --max-old-space-size=128" \
     BOOKS_ROOT=/books \
     EASYBOOK_CONFIG=/app/config.yml \
     EASYBOOK_HOST=127.0.0.1 \
-    EASYBOOK_DATA_DIR=/data
+    EASYBOOK_DATA_DIR=/data \
+    MALLOC_TRIM_THRESHOLD_=131072
 
 # `PUBLIC_EASYBOOK_API=/` : l'API est sur la **même origine** que l'interface
 # (nginx). Lue au démarrage par le serveur SvelteKit (`$env/dynamic/public`),

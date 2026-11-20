@@ -72,6 +72,11 @@ impl Drop for Borrowed {
     }
 }
 
+/// Archives actuellement dans le réservoir (ouvertes, prêtes à servir).
+pub fn pooled() -> usize {
+    POOL.lock().unwrap_or_else(|e| e.into_inner()).len()
+}
+
 /// Ouvre une archive en lecture (ou en emprunte une déjà ouverte).
 pub fn open(path: &Path) -> Result<Borrowed, String> {
     let meta = std::fs::metadata(path).map_err(|e| format!("{} : {e}", path.display()))?;

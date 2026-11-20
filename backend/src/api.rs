@@ -26,6 +26,7 @@
 use crate::auth::{self, AuthState};
 use crate::formats::{self, Format};
 use crate::{config, library, readings, resize, rewrite, thumbnail, write};
+use axum::body::Bytes;
 use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -50,6 +51,17 @@ use tower_http::services::ServeFile;
 /// un parcours complet du dossier à chaque fois. Ce n'est pas un sondage : rien
 /// ne tourne en tâche de fond.
 const SNAPSHOT_TTL: Duration = Duration::from_secs(2);
+
+/// Battement de cœur du WebSocket : un `Ping` à cet intervalle, et la connexion est
+/// coupée si plus rien n'est revenu depuis `WS_SILENCE`.
+///
+/// La présence (« en ligne ») ne vaut que si la socket vit encore : sans ce
+/// battement, un onglet gelé par le navigateur ou un réseau coupé laisse la session
+/// faussement présente, et un `Ping` non envoyé ne permet pas non plus de la
+/// réveiller. Le navigateur répond `Pong` tout seul, même quand son JavaScript
+/// dort.
+const WS_HEARTBEAT: Duration = Duration::from_secs(25);
+const WS_SILENCE: Duration = Duration::from_secs(75);
 
 /// Catalogue sérialisé, partagé sans copie entre les requêtes HTTP.
 ///
@@ -199,6 +211,29 @@ impl AppState {
         }
         self.snapshot.read().ok()?.clone()
     }
+
+    /// Ce que l'API seule connaît : catalogue en mémoire, sessions, onglets
+    /// connectés et coût cumulé du garde de session (voir la page Performance).
+    fn detail(&self) -> crate::perf::Detail {
+        let catalog_bytes = self
+            .snapshot
+            .read()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|snapshot| snapshot.text.len() as u64))
+            .unwrap_or(0);
+        let mut detail = crate::perf::Detail {
+            catalog_bytes,
+            ..Default::default()
+        };
+        if let Some(auth) = self.auth.as_ref() {
+            let (calls, usec) = auth.guard_stats();
+            detail.sessions = auth.accounts.session_count().unwrap_or(0).max(0) as u64;
+            detail.sockets = auth.online_total() as u64;
+            detail.guard_calls = calls;
+            detail.guard_usec = usec;
+        }
+        detail
+    }
 }
 
 /// Démarre le serveur et bloque jusqu'à son arrêt.
@@ -252,8 +287,9 @@ async fn health() -> Json<serde_json::Value> {
 ///
 /// L'interface l'interroge à intervalle régulier et calcule les taux CPU à
 /// partir de deux mesures successives (les compteurs sont cumulés).
-async fn get_performance() -> Response {
-    match tokio::task::spawn_blocking(crate::perf::snapshot).await {
+async fn get_performance(State(state): State<AppState>) -> Response {
+    let detail = state.detail();
+    match tokio::task::spawn_blocking(move || crate::perf::snapshot(detail)).await {
         Ok(snapshot) => ([(header::CACHE_CONTROL, "no-store")], Json(snapshot)).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
@@ -761,12 +797,37 @@ async fn get_raw(
 
 /// WebSocket : un avis (`{"etag":"…"}`) à la connexion, puis à chaque changement.
 /// Le client recharge `/api/books` quand l'ETag annoncé n'est plus le sien.
-async fn ws_library(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
-    ws.on_upgrade(move |socket| handle_ws(socket, state))
+async fn ws_library(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    auth::MaybeUser(user): auth::MaybeUser,
+    auth::MaybeSession(session): auth::MaybeSession,
+) -> Response {
+    ws.on_upgrade(move |socket| handle_ws(socket, state, user, session))
 }
 
-async fn handle_ws(socket: WebSocket, state: AppState) {
+async fn handle_ws(
+    socket: WebSocket,
+    state: AppState,
+    user: Option<crate::accounts::User>,
+    session: Option<String>,
+) {
     let (mut sink, mut stream) = socket.split();
+
+    // Une connexion ouverte vaut une présence ; un administrateur reçoit en plus
+    // les avis d'activité des comptes (connexions, sessions, présence).
+    let _presence = state
+        .auth()
+        .zip(user.as_ref())
+        .zip(session.as_deref())
+        .map(|((auth, user), session)| auth.enter(&user.id, session));
+    // Une session fermée par un administrateur coupe ses onglets.
+    let mut revoked = state.auth().map(|auth| auth.subscribe_revocations());
+    let mut events = state
+        .auth()
+        .zip(user.as_ref())
+        .filter(|(_, user)| user.role == crate::accounts::Role::Admin)
+        .map(|(auth, _)| auth.subscribe_events());
 
     // Abonnement **avant** le premier envoi : un changement survenu pendant le
     // scan initial ne doit pas être perdu.
@@ -786,13 +847,62 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
         return;
     }
 
+    // Le premier `Ping` part après un délai plein : la connexion vient d'être
+    // établie, inutile de la sonder tout de suite.
+    let later = tokio::time::Instant::now() + WS_HEARTBEAT;
+    let mut beat = tokio::time::interval_at(later, WS_HEARTBEAT);
+    let mut heard = tokio::time::Instant::now();
+
     loop {
         tokio::select! {
-            // Côté client : seule la fermeture nous intéresse.
+            // Côté client : seule la fermeture nous intéresse (un `Pong` n'est
+            // qu'un signe de vie, il ne réarme que le battement).
             message = stream.next() => match message {
                 Some(Ok(Message::Close(_))) | None => break,
-                Some(Ok(_)) => {}
+                Some(Ok(_)) => heard = tokio::time::Instant::now(),
                 Some(Err(_)) => break,
+            },
+            // Plus personne au bout du fil (onglet tué sans fermeture propre,
+            // proxy qui a coupé, machine en veille) : on rend la présence exacte
+            // en raccrochant nous-mêmes.
+            _ = beat.tick() => {
+                if heard.elapsed() > WS_SILENCE {
+                    break;
+                }
+                if sink.send(Message::Ping(Bytes::new())).await.is_err() {
+                    break;
+                }
+            },
+            // La session de ce WebSocket vient d'être fermée.
+            closed = async {
+                match revoked.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => if let Ok(what) = closed {
+                let (user_id, session_id) = (
+                    user.as_ref().map_or("", |user| user.id.as_str()),
+                    session.as_deref().unwrap_or(""),
+                );
+                if what.hits(user_id, session_id) {
+                    break;
+                }
+            },
+            // Activité d'un compte, réservée aux administrateurs.
+            event = async {
+                match events.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => match event {
+                Ok(json) => {
+                    if sink.send(Message::Text(json.into())).await.is_err() {
+                        break;
+                    }
+                }
+                // Des avis perdus : l'interface relit de toute façon l'état à chaque avis.
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(_) => break,
             },
             // Changement du dossier, poussé par le watcher.
             envelope = rx.recv() => match envelope {

@@ -16,6 +16,7 @@
 //! - [`config`] : configuration (`config.yml`).
 
 pub mod accounts;
+pub mod alloc;
 pub mod api;
 pub mod archive;
 pub mod auth;

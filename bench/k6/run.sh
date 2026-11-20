@@ -7,7 +7,8 @@
 #   BASE_URL=http://localhost:5100 CONTAINER=easybook ./run.sh stress
 #
 # Variables : BASE_URL (http://localhost:5200)  CONTAINER (easybook)
-#             INTERVAL (1 s)  COOLDOWN (30 s, mesure après la charge)
+#             EB_EMAIL / EB_PASSWORD (compte de dev du compose)  INTERVAL (1 s)
+#             COOLDOWN (30 s, mesure après la charge)
 #             K6_IMAGE (grafana/k6:latest, utilisé si `k6` n'est pas installé)
 # Tout le reste est transmis à `k6 run` (-e CLE=valeur, --vus, …).
 set -euo pipefail
@@ -38,7 +39,7 @@ mkdir -p "$out"
   echo "git: $(git rev-parse --short HEAD 2>/dev/null || echo inconnu)"
   echo "hôte: $(nproc) CPU, $(free -m | awk '/^Mem/{print $2}') Mo RAM (k6 tourne sur la même machine sauf si BASE_URL est distant)"
   docker inspect -f 'conteneur: image={{.Config.Image}} limite_cpu_nano={{.HostConfig.NanoCpus}} limite_mem_octets={{.HostConfig.Memory}}' "$CONTAINER"
-  echo "bibliothèque: $(curl -fsS "$BASE_URL/api/books" | grep -o '"total":[0-9]*')"
+  echo "bibliothèque: $(curl -fsS "$BASE_URL/api/books" 2>/dev/null | grep -o '"total":[0-9]*' || echo 'protégée par session')"
 } > "$out/meta.txt"
 
 ./monitor.sh "$out" &
@@ -59,6 +60,11 @@ fi
 # Le smoke vérifie les routes : pas de temps de réflexion (surchargeable par -e).
 defaults=()
 [[ "$scenario" == smoke ]] && defaults=(-e THINK_MIN=0 -e THINK_MAX=0)
+
+# Identifiants de session : passés à k6, jamais écrits dans la ligne de commande
+# si l'on s'en tient aux variables d'environnement (le défaut vit dans lib/auth.js).
+if [[ -n "${EB_EMAIL:-}" ]]; then defaults+=(-e "EB_EMAIL=$EB_EMAIL"); fi
+if [[ -n "${EB_PASSWORD:-}" ]]; then defaults+=(-e "EB_PASSWORD=$EB_PASSWORD"); fi
 
 set +e
 "${k6[@]}" run --quiet -e "BASE_URL=$BASE_URL" "${defaults[@]}" \

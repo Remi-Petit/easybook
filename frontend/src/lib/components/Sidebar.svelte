@@ -107,21 +107,6 @@
 			{/if}
 		</nav>
 
-		{#if user}
-			<div class="sidebar-user">
-				<a
-					class="user-link"
-					href="/account"
-					aria-current={active('/account') ? 'page' : undefined}
-					title={t('nav.account')}
-				>
-					<span class="user-name">{displayName(user)}</span>
-					<span class="user-role">{t(`account.role.${user.role}`)}</span>
-				</a>
-				<button type="button" class="btn-plain" onclick={signOut}>{t('nav.logout')}</button>
-			</div>
-		{/if}
-
 		<div class="sidebar-lang">
 			<label for="easybook-locale">{t('language.label')}</label>
 			<select
@@ -167,5 +152,42 @@
 				</svg>
 			</a>
 		</div>
+
+		{#if user}
+			<div class="sidebar-user">
+				<a
+					class="user-link"
+					href="/account"
+					aria-current={active('/account') ? 'page' : undefined}
+					title={t('nav.account')}
+				>
+					<span class="user-name">{displayName(user)}</span>
+					<span class="user-role">{t(`account.role.${user.role}`)}</span>
+				</a>
+				<button
+					type="button"
+					class="sign-out"
+					onclick={signOut}
+					aria-label={t('nav.logout')}
+					title={t('nav.logout')}
+				>
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+						<path d="M16 17l5-5-5-5" />
+						<path d="M21 12H9" />
+					</svg>
+				</button>
+			</div>
+		{/if}
 	</div>
 </aside>

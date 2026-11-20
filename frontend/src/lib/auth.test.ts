@@ -24,6 +24,7 @@ const user = (role: User['role'] = 'user'): User => ({
 	has_password: true,
 	created_at: 0,
 	last_login_at: null,
+	must_change_password: false,
 	identities: []
 });
 

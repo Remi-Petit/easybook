@@ -368,11 +368,11 @@ async fn an_admin_manages_accounts() {
     let post = |body: Value| site.post("/api/admin/users", Some(&admin), body);
     let code = |reply: &common::http::Reply| (reply.status, reply.error());
     assert_eq!(
-        code(&post(json!({ "username": "ALICE", "email": "autre@example.org" })).await),
+        code(&post(json!({ "username": "ALICE", "email": "autre@example.org", "password": "un-bon-mdp-1" })).await),
         (StatusCode::CONFLICT, Some("username_taken".into()))
     );
     assert_eq!(
-        code(&post(json!({ "email": "ALICE@example.org" })).await),
+        code(&post(json!({ "email": "ALICE@example.org", "password": "un-bon-mdp-1" })).await),
         (StatusCode::CONFLICT, Some("email_taken".into()))
     );
     assert_eq!(
@@ -384,7 +384,12 @@ async fn an_admin_manages_accounts() {
         (StatusCode::BAD_REQUEST, Some("invalid_email".into()))
     );
     assert_eq!(
-        code(&post(json!({ "username": "a\nb", "email": "b@example.org" })).await),
+        code(
+            &post(
+                json!({ "username": "a\nb", "email": "b@example.org", "password": "un-bon-mdp-1" })
+            )
+            .await
+        ),
         (StatusCode::BAD_REQUEST, Some("invalid_username".into()))
     );
     // L'adresse est obligatoire.
@@ -395,8 +400,27 @@ async fn an_admin_manages_accounts() {
             .is_success()
     );
 
+    // Le mot de passe est obligatoire : absent, vide ou blanc, le compte n'est pas créé.
+    for body in [
+        json!({ "email": "sans-mdp@example.org" }),
+        json!({ "email": "sans-mdp@example.org", "password": "" }),
+        json!({ "email": "sans-mdp@example.org", "password": "        " }),
+    ] {
+        assert_eq!(
+            code(&post(body).await),
+            (StatusCode::BAD_REQUEST, Some("weak_password".into()))
+        );
+    }
+    assert!(
+        site.accounts
+            .user_by_email("sans-mdp@example.org")
+            .unwrap()
+            .is_none()
+    );
+
     // Sans identifiant, il est tiré de l'adresse.
-    let derived = post(json!({ "email": "marie.curie@example.org" })).await;
+    let derived =
+        post(json!({ "email": "marie.curie@example.org", "password": "un-bon-mdp-1" })).await;
     assert_eq!(derived.status, StatusCode::CREATED);
     assert_eq!(derived.json()["username"], "marie.curie");
 
@@ -459,11 +483,13 @@ async fn an_admin_manages_accounts() {
 }
 
 #[tokio::test]
-async fn the_last_admin_cannot_be_removed_or_demoted() {
+async fn an_admin_cannot_demote_or_disable_themselves() {
     let site = site();
     let admin = site.admin().await;
     let root = site.accounts.user_by_username("root").unwrap().unwrap();
     let uri = format!("/api/admin/users/{}", root.id);
+    // Même avec d'autres administrateurs : le refus ne dépend pas de leur nombre.
+    site.add_user("second", Role::Admin, Some(PASSWORD));
 
     let demote = site
         .request(
@@ -476,7 +502,7 @@ async fn the_last_admin_cannot_be_removed_or_demoted() {
         .await;
     assert_eq!(
         (demote.status, demote.error().as_deref()),
-        (StatusCode::CONFLICT, Some("last_admin"))
+        (StatusCode::CONFLICT, Some("cannot_demote_self"))
     );
     let disable = site
         .request(
@@ -487,9 +513,22 @@ async fn the_last_admin_cannot_be_removed_or_demoted() {
             &[],
         )
         .await;
-    assert_eq!(disable.status, StatusCode::CONFLICT);
-    // Se supprimer soi-même est refusé, même avec d'autres administrateurs.
-    site.add_user("second", Role::Admin, Some(PASSWORD));
+    assert_eq!(
+        (disable.status, disable.error().as_deref()),
+        (StatusCode::CONFLICT, Some("cannot_disable_self"))
+    );
+    // Modifier autre chose que son rôle ou son état reste permis.
+    let rename = site
+        .request(
+            "PATCH",
+            &uri,
+            Some(&admin),
+            Some(json!({ "display_name": "Moi" })),
+            &[],
+        )
+        .await;
+    assert_eq!(rename.status, StatusCode::OK);
+    // Se supprimer soi-même est refusé aussi.
     let delete = site.request("DELETE", &uri, Some(&admin), None, &[]).await;
     assert_eq!(
         (delete.status, delete.error().as_deref()),
@@ -648,6 +687,328 @@ async fn an_oidc_only_account_can_set_a_first_password() {
         site.login_reply("carol", "premier-mdp-1").await.status,
         StatusCode::OK
     );
+}
+
+#[tokio::test]
+async fn a_temporary_password_can_be_changed_without_the_old_one_or_skipped() {
+    let site = site();
+    let admin = site.admin().await;
+    let flag = |cookie: &str| {
+        let site = &site;
+        let cookie = cookie.to_string();
+        async move {
+            site.get("/api/auth/session", Some(&cookie)).await.json()["user"]["must_change_password"]
+                .as_bool()
+        }
+    };
+
+    let created = site
+        .request(
+            "POST",
+            "/api/admin/users",
+            Some(&admin),
+            Some(json!({ "email": "zoe@example.org", "password": PASSWORD, "temporary": true })),
+            &[],
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    assert_eq!(created.json()["must_change_password"], true);
+    let id = created.json()["id"].as_str().unwrap().to_string();
+
+    // Changer le mot de passe temporaire ne redemande pas l'ancien, et lève l'invite.
+    let first = site
+        .login_reply("zoe@example.org", PASSWORD)
+        .await
+        .cookie("easybook_session")
+        .unwrap();
+    assert_eq!(flag(&first).await, Some(true));
+    let changed = site
+        .post(
+            "/api/auth/password",
+            Some(&first),
+            json!({ "new": "mot-de-passe-perso-1" }),
+        )
+        .await;
+    assert_eq!(changed.status, StatusCode::NO_CONTENT);
+    let renewed = changed.cookie("easybook_session").unwrap();
+    assert_eq!(flag(&renewed).await, Some(false));
+    // Hors mot de passe temporaire, l'ancien reste exigé.
+    let refused = site
+        .post(
+            "/api/auth/password",
+            Some(&renewed),
+            json!({ "new": "encore-un-autre-1" }),
+        )
+        .await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN);
+
+    // L'administrateur en pose un nouveau, temporaire ; la personne le garde en passant.
+    let reset = site
+        .request(
+            "PUT",
+            &format!("/api/admin/users/{id}/password"),
+            Some(&admin),
+            Some(json!({ "password": "temporaire-0001", "temporary": true })),
+            &[],
+        )
+        .await;
+    assert_eq!(reset.status, StatusCode::NO_CONTENT);
+    let second = site
+        .login_reply("zoe@example.org", "temporaire-0001")
+        .await
+        .cookie("easybook_session")
+        .unwrap();
+    assert_eq!(flag(&second).await, Some(true));
+    let skipped = site
+        .post("/api/auth/password/skip", Some(&second), json!({}))
+        .await;
+    assert_eq!(skipped.status, StatusCode::NO_CONTENT);
+    assert_eq!(flag(&second).await, Some(false));
+    assert_eq!(
+        site.login_reply("zoe@example.org", "temporaire-0001")
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    // Un mot de passe posé sans l'option n'invite à rien.
+    site.request(
+        "PUT",
+        &format!("/api/admin/users/{id}/password"),
+        Some(&admin),
+        Some(json!({ "password": "definitif-00001" })),
+        &[],
+    )
+    .await;
+    let third = site
+        .login_reply("zoe@example.org", "definitif-00001")
+        .await
+        .cookie("easybook_session")
+        .unwrap();
+    assert_eq!(flag(&third).await, Some(false));
+}
+
+#[tokio::test]
+async fn an_admin_sees_the_sessions_and_login_history_of_an_account() {
+    let site = site();
+    let admin = site.admin().await;
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    let uri = format!("/api/admin/users/{}/activity", alice.id);
+
+    let quiet = site.get(&uri, Some(&admin)).await.json();
+    assert_eq!(quiet["sessions"].as_array().unwrap().len(), 0);
+    assert_eq!(quiet["history"].as_array().unwrap().len(), 0);
+
+    // Deux connexions en même temps, et un essai raté.
+    assert_eq!(
+        site.login_reply("alice@local.test", PASSWORD).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        site.login_reply("alice@local.test", PASSWORD).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        site.login_reply("alice@local.test", "faux").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+
+    let activity = site.get(&uri, Some(&admin)).await.json();
+    let sessions = activity["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 2);
+    assert!(sessions.iter().all(|s| s["method"] == "password"));
+    let history = activity["history"].as_array().unwrap();
+    assert_eq!(history.len(), 3);
+    assert_eq!(history[0]["success"], false);
+    assert_eq!(history.iter().filter(|e| e["success"] == true).count(), 2);
+    // Aucun WebSocket ouvert : connecté par session, pas en ligne.
+    assert_eq!(activity["online"], 0);
+
+    let limited = site
+        .get(&format!("{uri}?limit=1"), Some(&admin))
+        .await
+        .json();
+    assert_eq!(limited["history"].as_array().unwrap().len(), 1);
+
+    // La fiche du compte, pour la page dédiée.
+    let card = site
+        .get(&format!("/api/admin/users/{}", alice.id), Some(&admin))
+        .await;
+    assert_eq!(card.status, StatusCode::OK);
+    assert_eq!(card.json()["email"], "alice@local.test");
+
+    // Réservé aux administrateurs ; un compte inconnu n'existe pas.
+    let reader = site.session_for(&alice);
+    assert_eq!(
+        site.get(&uri, Some(&reader)).await.status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        site.get("/api/admin/users/inconnu/activity", Some(&admin))
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn logging_in_again_in_the_same_browser_replaces_the_previous_session() {
+    let site = site();
+    let admin = site.admin().await;
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    let uri = format!("/api/admin/users/{}/activity", alice.id);
+    let body = || serde_json::json!({ "email": "alice@local.test", "password": PASSWORD });
+
+    let first = site.login("alice", PASSWORD).await;
+    // Le même navigateur se reconnecte : il présente son cookie.
+    let again = site
+        .request("POST", "/api/auth/login", Some(&first), Some(body()), &[])
+        .await;
+    assert_eq!(again.status, StatusCode::OK);
+    let second = again.cookie("easybook_session").unwrap();
+    assert_ne!(first, second);
+    assert_eq!(
+        site.get("/api/books", Some(&first)).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        site.get("/api/books", Some(&second)).await.status,
+        StatusCode::OK
+    );
+    let one = site.get(&uri, Some(&admin)).await.json();
+    assert_eq!(one["sessions"].as_array().unwrap().len(), 1);
+
+    // Un autre navigateur (sans cookie) ouvre une session de plus.
+    site.login("alice", PASSWORD).await;
+    let two = site.get(&uri, Some(&admin)).await.json();
+    assert_eq!(two["sessions"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn an_admin_closes_sessions_one_by_one_or_all_at_once() {
+    let site = site();
+    let admin = site.admin().await;
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    let uri = format!("/api/admin/users/{}", alice.id);
+    let first = site.login("alice", PASSWORD).await;
+    let second = site.login("alice", PASSWORD).await;
+
+    let activity = site
+        .get(&format!("{uri}/activity"), Some(&admin))
+        .await
+        .json();
+    let sessions = activity["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 2);
+    assert!(
+        sessions
+            .iter()
+            .all(|s| s["current"] == false && s["online"] == false)
+    );
+    assert!(sessions[0]["last_seen_at"].as_i64().unwrap() > 0);
+
+    // Une session, par son identifiant (public : établi depuis le jeton, jamais le jeton).
+    let oldest = easybook::accounts::Accounts::session_id(first.split_once('=').unwrap().1);
+    assert!(sessions.iter().any(|s| s["id"] == oldest.as_str()));
+    let closed = site
+        .request(
+            "DELETE",
+            &format!("{uri}/sessions/{oldest}"),
+            Some(&admin),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(closed.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        site.get("/api/books", Some(&first)).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        site.get("/api/books", Some(&second)).await.status,
+        StatusCode::OK
+    );
+    let unknown = site
+        .request(
+            "DELETE",
+            &format!("{uri}/sessions/{oldest}"),
+            Some(&admin),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(unknown.status, StatusCode::NOT_FOUND);
+
+    // Toutes les sessions du compte.
+    let all = site
+        .request(
+            "DELETE",
+            &format!("{uri}/sessions"),
+            Some(&admin),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(all.status, StatusCode::OK);
+    assert_eq!(all.json()["closed"], 1);
+    assert_eq!(
+        site.get("/api/books", Some(&second)).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Sa propre session : signalée « courante », impossible à fermer ici, et « tout fermer » la garde.
+    let root = site.accounts.user_by_username("root").unwrap().unwrap();
+    let own = format!("/api/admin/users/{}", root.id);
+    let other_browser = site.admin().await;
+    let mine = site
+        .get(&format!("{own}/activity"), Some(&admin))
+        .await
+        .json();
+    let mine = mine["sessions"].as_array().unwrap();
+    let current = mine.iter().find(|s| s["current"] == true).unwrap();
+    let refused = site
+        .request(
+            "DELETE",
+            &format!("{own}/sessions/{}", current["id"].as_str().unwrap()),
+            Some(&admin),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(
+        (refused.status, refused.error().as_deref()),
+        (StatusCode::CONFLICT, Some("cannot_close_current"))
+    );
+    let others = site
+        .request(
+            "DELETE",
+            &format!("{own}/sessions"),
+            Some(&admin),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(others.json()["closed"], mine.len() - 1);
+    assert_eq!(
+        site.get("/api/books", Some(&admin)).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        site.get("/api/books", Some(&other_browser)).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Réservé aux administrateurs.
+    let reader = site.session_for(&alice);
+    let forbidden = site
+        .request(
+            "DELETE",
+            &format!("{uri}/sessions"),
+            Some(&reader),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(forbidden.status, StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

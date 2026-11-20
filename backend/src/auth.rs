@@ -21,7 +21,7 @@
 #![allow(clippy::result_large_err)]
 
 use crate::accounts::{
-    AccountError, Accounts, Identity, NewUser, Role, User, UserPatch, random_token,
+    AccountError, Accounts, Identity, NewUser, Role, SessionMeta, User, UserPatch, random_token,
 };
 use crate::api::AppState;
 use crate::config;
@@ -37,8 +37,10 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::broadcast;
 
 pub const SESSION_COOKIE: &str = "easybook_session";
 /// Retient le `state` de la connexion OIDC en cours : lie le retour du
@@ -65,6 +67,67 @@ pub struct AuthState {
     /// Comptes à un clic de la page de connexion : (e-mail, mot de passe). Le mot
     /// de passe ne quitte jamais le serveur. Développement seulement.
     dev_logins: Vec<(String, String)>,
+    /// Avis d'activité (`{"type":"activity","user_id":…}`), réservés aux administrateurs.
+    events: broadcast::Sender<String>,
+    /// Connexions WebSocket ouvertes, par compte puis par session : qui est en ligne
+    /// à cet instant, et avec quelle session.
+    presence: Mutex<HashMap<String, HashMap<String, usize>>>,
+    /// Sessions fermées par un administrateur : leurs WebSocket doivent se couper.
+    revoked: broadcast::Sender<Revoked>,
+    /// Coût cumulé du garde : (vérifications, microsecondes).
+    guard_calls: AtomicU64,
+    guard_usec: AtomicU64,
+}
+
+/// Ce qui vient d'être fermé.
+#[derive(Debug, Clone)]
+pub enum Revoked {
+    Session(String),
+    /// Toutes les sessions du compte, sauf `keep`.
+    AllBut {
+        user_id: String,
+        keep: Option<String>,
+    },
+}
+
+impl Revoked {
+    /// Ce WebSocket (ce compte, cette session) est-il concerné ?
+    pub fn hits(&self, user_id: &str, session_id: &str) -> bool {
+        match self {
+            Revoked::Session(id) => id == session_id,
+            Revoked::AllBut {
+                user_id: owner,
+                keep,
+            } => owner == user_id && keep.as_deref() != Some(session_id),
+        }
+    }
+}
+
+/// Tant qu'il vit, une connexion WebSocket compte comme une présence de la session.
+pub struct Presence {
+    auth: Arc<AuthState>,
+    user_id: String,
+    session_id: String,
+}
+
+impl Drop for Presence {
+    fn drop(&mut self) {
+        {
+            let mut map = self.auth.presence.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(sessions) = map.get_mut(&self.user_id) {
+                if let Some(count) = sessions.get_mut(&self.session_id) {
+                    *count -= 1;
+                    if *count == 0 {
+                        sessions.remove(&self.session_id);
+                    }
+                }
+                if sessions.is_empty() {
+                    map.remove(&self.user_id);
+                }
+            }
+        }
+        self.auth.notify(&self.user_id);
+    }
 }
 
 impl AuthState {
@@ -81,7 +144,81 @@ impl AuthState {
             session_ttl: i64::from(settings.session_days) * 86_400,
             direct: false,
             dev_logins: Vec::new(),
+            events: broadcast::channel(64).0,
+            presence: Mutex::default(),
+            revoked: broadcast::channel(64).0,
+            guard_calls: AtomicU64::new(0),
+            guard_usec: AtomicU64::new(0),
         }
+    }
+
+    /// (vérifications de session, microsecondes passées à les vérifier) depuis
+    /// le démarrage : de quoi rapporter le coût des sessions au CPU de l'API.
+    pub fn guard_stats(&self) -> (u64, u64) {
+        (
+            self.guard_calls.load(AtomicOrdering::Relaxed),
+            self.guard_usec.load(AtomicOrdering::Relaxed),
+        )
+    }
+
+    /// Onglets WebSocket ouverts, tous comptes confondus.
+    pub fn online_total(&self) -> usize {
+        let map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
+        map.values()
+            .map(|sessions| sessions.values().sum::<usize>())
+            .sum()
+    }
+
+    /// Prévient les administrateurs connectés que l'activité de ce compte a changé.
+    pub fn notify(&self, user_id: &str) {
+        let event = serde_json::json!({ "type": "activity", "user_id": user_id });
+        // Personne n'écoute : tant mieux, rien à faire.
+        let _ = self.events.send(event.to_string());
+    }
+
+    pub fn subscribe_events(&self) -> broadcast::Receiver<String> {
+        self.events.subscribe()
+    }
+
+    /// Une connexion WebSocket de plus pour cette session, jusqu'à la chute du garde.
+    pub fn enter(self: &Arc<Self>, user_id: &str, session_id: &str) -> Presence {
+        {
+            let mut map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
+            *map.entry(user_id.to_string())
+                .or_default()
+                .entry(session_id.to_string())
+                .or_insert(0) += 1;
+        }
+        self.notify(user_id);
+        Presence {
+            auth: Arc::clone(self),
+            user_id: user_id.to_string(),
+            session_id: session_id.to_string(),
+        }
+    }
+
+    /// Connexions WebSocket ouvertes (une par onglet) pour ce compte.
+    pub fn online(&self, user_id: &str) -> usize {
+        let map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
+        map.get(user_id)
+            .map_or(0, |sessions| sessions.values().sum())
+    }
+
+    /// Sessions de ce compte qui ont au moins un onglet ouvert.
+    pub fn online_sessions(&self, user_id: &str) -> std::collections::HashSet<String> {
+        let map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
+        map.get(user_id).map_or_else(Default::default, |sessions| {
+            sessions.keys().cloned().collect()
+        })
+    }
+
+    /// Coupe les WebSocket des sessions qui viennent d'être fermées.
+    pub fn revoke(&self, what: Revoked) {
+        let _ = self.revoked.send(what);
+    }
+
+    pub fn subscribe_revocations(&self) -> broadcast::Receiver<Revoked> {
+        self.revoked.subscribe()
     }
 
     /// Boutons de connexion rapide : `email:mot_de_passe,email:mot_de_passe`.
@@ -155,6 +292,26 @@ impl<S: Send + Sync> FromRequestParts<S> for MaybeUser {
     }
 }
 
+/// La session de la requête (son identifiant public), posée par [`guard`].
+#[derive(Clone)]
+pub struct CurrentSession(pub String);
+
+/// Extracteur : l'identifiant public de la session, si elle existe.
+pub struct MaybeSession(pub Option<String>);
+
+impl<S: Send + Sync> FromRequestParts<S> for MaybeSession {
+    type Rejection = Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Infallible> {
+        Ok(MaybeSession(
+            parts
+                .extensions
+                .get::<CurrentSession>()
+                .map(|c| c.0.clone()),
+        ))
+    }
+}
+
 // ── Garde ────────────────────────────────────────────────────────────────
 
 /// Routes accessibles sans session.
@@ -186,10 +343,17 @@ pub async fn guard(State(state): State<AppState>, mut request: Request, next: Ne
     }
 
     let token = cookie_value(request.headers(), SESSION_COOKIE);
+    let session_id = token.as_deref().map(Accounts::session_id);
+    let started = Instant::now();
     let user = match token {
         Some(token) => auth.accounts.session_user(&token).ok().flatten(),
         None => None,
     };
+    auth.guard_usec.fetch_add(
+        started.elapsed().as_micros() as u64,
+        AtomicOrdering::Relaxed,
+    );
+    auth.guard_calls.fetch_add(1, AtomicOrdering::Relaxed);
 
     let path = request.uri().path().to_string();
     match user {
@@ -198,6 +362,9 @@ pub async fn guard(State(state): State<AppState>, mut request: Request, next: Ne
                 return error(StatusCode::FORBIDDEN, "forbidden");
             }
             request.extensions_mut().insert(CurrentUser(user));
+            if let Some(id) = session_id {
+                request.extensions_mut().insert(CurrentSession(id));
+            }
         }
         None if !is_public(&path) => return error(StatusCode::UNAUTHORIZED, "unauthenticated"),
         None => {}
@@ -381,6 +548,20 @@ fn client_key(headers: &HeaderMap) -> String {
 
 // ── Routes ───────────────────────────────────────────────────────────────
 
+/// D'où vient cette requête, pour la fiche de la session et l'historique.
+fn session_meta(headers: &HeaderMap, method: &'static str) -> SessionMeta {
+    let ip = Some(client_key(headers)).filter(|ip| ip != "-");
+    let user_agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(|ua| ua.chars().take(256).collect());
+    SessionMeta {
+        ip,
+        user_agent,
+        method,
+    }
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/auth/session", get(session))
@@ -389,6 +570,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/auth/dev-login", post(dev_login))
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/password", post(change_password))
+        .route("/api/auth/password/skip", post(skip_password_change))
         .route("/api/auth/oidc/login", get(oidc_login))
         .route("/api/auth/oidc/link", get(oidc_link))
         .route("/api/auth/oidc/callback", get(oidc_callback))
@@ -396,9 +578,20 @@ pub fn routes() -> Router<AppState> {
         .route("/api/admin/users", get(list_users).post(create_user))
         .route(
             "/api/admin/users/{id}",
-            axum::routing::patch(update_user).delete(delete_user),
+            axum::routing::patch(update_user)
+                .delete(delete_user)
+                .get(get_user),
         )
         .route("/api/admin/users/{id}/password", put(admin_set_password))
+        .route("/api/admin/users/{id}/activity", get(user_activity))
+        .route(
+            "/api/admin/users/{id}/sessions",
+            axum::routing::delete(close_sessions),
+        )
+        .route(
+            "/api/admin/users/{id}/sessions/{session}",
+            axum::routing::delete(close_session),
+        )
         .route("/api/admin/users/{id}/link-token", post(create_link_token))
         .route(
             "/api/admin/users/{id}/identities",
@@ -531,15 +724,37 @@ async fn sign_in(
     .map_err(account_error)?;
 
     // Un compte local d'abord ; sinon, en développement, le fournisseur lui-même.
+    let mut method = "password";
     if outcome.is_none() {
         outcome = direct_login(auth, &email, &password).await?;
+        method = "sso";
     }
 
     let Some((user, token)) = outcome else {
         auth.throttle.failure(&key);
+        let (failed_email, meta) = (email.clone(), session_meta(headers, "password"));
+        // Le journal ne doit jamais faire échouer la réponse.
+        let failed = db(auth, move |accounts| {
+            accounts.log_failed_login(&failed_email, &meta)
+        })
+        .await;
+        if let Ok(Ok(Some(id))) = failed {
+            auth.notify(&id);
+        }
         return Err(error(StatusCode::UNAUTHORIZED, "invalid_credentials"));
     };
     auth.throttle.success(&key);
+    replace_previous(auth, headers, &token).await;
+    {
+        let (token, meta) = (token.clone(), session_meta(headers, method));
+        if let Ok(Ok(Some(id))) = db(auth, move |accounts| {
+            accounts.log_session_start(&token, &meta)
+        })
+        .await
+        {
+            auth.notify(&id);
+        }
+    }
 
     let cookie = session_cookies(headers, &token, ttl);
     let user = db(auth, move |accounts| view(accounts, user))
@@ -585,12 +800,32 @@ async fn direct_login(
     }
 }
 
+/// Un navigateur qui se reconnecte laisse derrière lui sa session précédente : on la ferme,
+/// sinon chaque connexion en ajoute une qui ne servira plus.
+async fn replace_previous(auth: &Arc<AuthState>, headers: &HeaderMap, new_token: &str) {
+    let Some(previous) = cookie_value(headers, SESSION_COOKIE).filter(|old| old != new_token)
+    else {
+        return;
+    };
+    let session_id = Accounts::session_id(&previous);
+    let ended = db(auth, move |accounts| accounts.end_session(&previous)).await;
+    if let Ok(Ok(Some(user_id))) = ended {
+        auth.revoke(Revoked::Session(session_id));
+        auth.notify(&user_id);
+    }
+}
+
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
     if let Some(token) = cookie_value(&headers, SESSION_COOKIE) {
-        db(&auth, move |accounts| accounts.delete_session(&token))
+        let session_id = Accounts::session_id(&token);
+        let user_id = db(&auth, move |accounts| accounts.end_session(&token))
             .await?
             .map_err(account_error)?;
+        if let Some(id) = user_id {
+            auth.revoke(Revoked::Session(session_id));
+            auth.notify(&id);
+        }
     }
     let expired = cookie(SESSION_COOKIE, "", 0, "/", is_https(&headers));
     Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, expired)]).into_response())
@@ -623,15 +858,23 @@ async fn change_password(
     }
 
     let id = user.id.clone();
+    let user_id = user.id.clone();
+    let meta = session_meta(&headers, "password");
     let result = db(
         &auth,
         move |accounts| -> Result<Option<String>, AccountError> {
-            // Un compte qui n'a pas encore de mot de passe (OIDC seul) peut en poser un.
-            if user.has_password && !accounts.check_user_password(&id, &body.current)? {
+            // Un compte qui n'a pas encore de mot de passe (OIDC seul) peut en poser un ;
+            // un mot de passe temporaire se change sans le redonner, la personne vient de le saisir.
+            if user.has_password
+                && !user.must_change_password
+                && !accounts.check_user_password(&id, &body.current)?
+            {
                 return Ok(None);
             }
             accounts.set_password(&id, &body.new)?;
-            Ok(Some(accounts.create_session(&id, ttl)?))
+            let token = accounts.create_session(&id, ttl)?;
+            accounts.tag_session(&token, &meta)?;
+            Ok(Some(token))
         },
     )
     .await?
@@ -642,11 +885,30 @@ async fn change_password(
         return Err(error(StatusCode::FORBIDDEN, "wrong_password"));
     };
     auth.throttle.success(&key);
+    // Les autres sessions du compte sont fermées : leurs onglets aussi.
+    auth.revoke(Revoked::AllBut {
+        user_id: user_id.clone(),
+        keep: Some(Accounts::session_id(&token)),
+    });
+    auth.notify(&user_id);
     Ok((
         StatusCode::NO_CONTENT,
         [(header::SET_COOKIE, session_cookies(&headers, &token, ttl))],
     )
         .into_response())
+}
+
+async fn skip_password_change(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    db(&auth, move |accounts| {
+        accounts.clear_must_change_password(&user.id)
+    })
+    .await?
+    .map_err(account_error)?;
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 async fn unlink_own_identity(
@@ -842,6 +1104,21 @@ async fn oidc_callback(
     })
     .await?;
 
+    if let Ok(Resolved {
+        session: Some(token),
+    }) = &outcome
+    {
+        replace_previous(&auth, &headers, token).await;
+        let (token, meta) = (token.clone(), session_meta(&headers, "sso"));
+        if let Ok(Ok(Some(id))) = db(&auth, move |accounts| {
+            accounts.log_session_start(&token, &meta)
+        })
+        .await
+        {
+            auth.notify(&id);
+        }
+    }
+
     Ok(match outcome {
         Ok(Resolved { session }) => {
             let mut cookies = vec![clear_flow];
@@ -965,6 +1242,7 @@ fn resolve(
                         email: Some(email.clone()),
                         password: None,
                         role: Some(Role::User),
+                        must_change_password: false,
                     })
                     .map_err(|e| match e {
                         AccountError::EmailTaken => "email_taken",
@@ -1006,6 +1284,9 @@ struct NewUserBody {
     display_name: Option<String>,
     #[serde(default)]
     role: Option<Role>,
+    /// Le mot de passe est temporaire : l'utilisateur est invité à le changer.
+    #[serde(default)]
+    temporary: bool,
 }
 
 async fn create_user(
@@ -1018,9 +1299,11 @@ async fn create_user(
             username: body.username,
             display_name: body.display_name,
             email: Some(body.email),
-            // Un mot de passe vide : compte réservé à OIDC.
-            password: body.password.filter(|password| !password.is_empty()),
+            // Un compte créé ici a toujours un mot de passe : les comptes OIDC se
+            // créent à la première connexion (`auto_create`), pas par ce formulaire.
+            password: Some(body.password.unwrap_or_default()),
             role: body.role,
+            must_change_password: body.temporary,
         })?;
         view(accounts, user)
     })
@@ -1031,17 +1314,50 @@ async fn create_user(
 
 async fn update_user(
     State(state): State<AppState>,
+    SessionUser(actor): SessionUser,
     Path(id): Path<String>,
     Json(patch): Json<UserPatch>,
 ) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
+    // Sinon un administrateur pourrait se retirer ses droits, ou se verrouiller dehors.
+    if actor.id == id {
+        if patch.role == Some(Role::User) {
+            return Err(error(StatusCode::CONFLICT, "cannot_demote_self"));
+        }
+        if patch.disabled == Some(true) {
+            return Err(error(StatusCode::CONFLICT, "cannot_disable_self"));
+        }
+    }
+    let notified = id.clone();
     let updated = db(&auth, move |accounts| -> Result<UserView, AccountError> {
         let user = accounts.update_user(&id, &patch)?;
         view(accounts, user)
     })
     .await?
     .map_err(account_error)?;
+    if updated.user.disabled {
+        auth.revoke(Revoked::AllBut {
+            user_id: notified.clone(),
+            keep: None,
+        });
+    }
+    auth.notify(&notified);
     Ok(Json(updated).into_response())
+}
+
+/// `GET /api/admin/users/{id}` — la fiche d'un compte.
+async fn get_user(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let found = db(&auth, move |accounts| -> Result<UserView, AccountError> {
+        let user = accounts.user(&id)?.ok_or(AccountError::NotFound)?;
+        view(accounts, user)
+    })
+    .await?
+    .map_err(account_error)?;
+    Ok(Json(found).into_response())
 }
 
 async fn delete_user(
@@ -1062,6 +1378,93 @@ async fn delete_user(
 #[derive(Deserialize)]
 struct SetPasswordBody {
     password: String,
+    #[serde(default)]
+    temporary: bool,
+}
+
+#[derive(Deserialize)]
+struct ActivityQuery {
+    limit: Option<i64>,
+}
+
+/// `GET /api/admin/users/{id}/activity` — sessions ouvertes, connexions en ligne
+/// et dernières connexions (`?limit=`, 50 par défaut, 200 au plus).
+async fn user_activity(
+    State(state): State<AppState>,
+    MaybeSession(current): MaybeSession,
+    Path(id): Path<String>,
+    Query(query): Query<ActivityQuery>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let (online, live) = (auth.online(&id), auth.online_sessions(&id));
+    let (mut sessions, history) = db(&auth, move |accounts| -> Result<_, AccountError> {
+        accounts.user(&id)?.ok_or(AccountError::NotFound)?;
+        Ok((
+            accounts.active_sessions(&id)?,
+            accounts.login_history(&id, limit)?,
+        ))
+    })
+    .await?
+    .map_err(account_error)?;
+    for session in &mut sessions {
+        session.online = live.contains(&session.id);
+        session.current = current.as_deref() == Some(session.id.as_str());
+    }
+    Ok(
+        Json(serde_json::json!({ "sessions": sessions, "history": history, "online": online }))
+            .into_response(),
+    )
+}
+
+/// `DELETE /api/admin/users/{id}/sessions` — ferme toutes les sessions du compte ;
+/// sur le sien, on garde celle en cours.
+async fn close_sessions(
+    State(state): State<AppState>,
+    SessionUser(actor): SessionUser,
+    MaybeSession(current): MaybeSession,
+    Path(id): Path<String>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let keep = current.filter(|_| actor.id == id);
+    let (target, kept) = (id.clone(), keep.clone());
+    let closed = db(&auth, move |accounts| -> Result<usize, AccountError> {
+        accounts.user(&target)?.ok_or(AccountError::NotFound)?;
+        accounts.delete_sessions_except(&target, kept.as_deref())
+    })
+    .await?
+    .map_err(account_error)?;
+    auth.revoke(Revoked::AllBut {
+        user_id: id.clone(),
+        keep,
+    });
+    auth.notify(&id);
+    Ok(Json(serde_json::json!({ "closed": closed })).into_response())
+}
+
+/// `DELETE /api/admin/users/{id}/sessions/{session}` — ferme une session.
+async fn close_session(
+    State(state): State<AppState>,
+    MaybeSession(current): MaybeSession,
+    Path((id, session)): Path<(String, String)>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    // Fermer la sienne reviendrait à se déconnecter : pour cela, il y a la déconnexion.
+    if current.as_deref() == Some(session.as_str()) {
+        return Err(error(StatusCode::CONFLICT, "cannot_close_current"));
+    }
+    let (target, sid) = (id.clone(), session.clone());
+    let closed = db(&auth, move |accounts| {
+        accounts.delete_session_by_id(&target, &sid)
+    })
+    .await?
+    .map_err(account_error)?;
+    if !closed {
+        return Err(error(StatusCode::NOT_FOUND, "not_found"));
+    }
+    auth.revoke(Revoked::Session(session));
+    auth.notify(&id);
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 async fn admin_set_password(
@@ -1070,11 +1473,21 @@ async fn admin_set_password(
     Json(body): Json<SetPasswordBody>,
 ) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
+    let notified = id.clone();
     db(&auth, move |accounts| {
-        accounts.set_password(&id, &body.password)
+        if body.temporary {
+            accounts.set_temporary_password(&id, &body.password)
+        } else {
+            accounts.set_password(&id, &body.password)
+        }
     })
     .await?
     .map_err(account_error)?;
+    auth.revoke(Revoked::AllBut {
+        user_id: notified.clone(),
+        keep: None,
+    });
+    auth.notify(&notified);
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -1163,6 +1576,60 @@ mod tests {
             );
         }
         map
+    }
+
+    #[test]
+    fn open_websockets_count_as_presence_and_warn_the_admins() {
+        let accounts = Arc::new(Accounts::open_in_memory().unwrap());
+        let auth = Arc::new(AuthState::new(accounts, config::Auth::default()));
+        let mut events = auth.subscribe_events();
+
+        assert_eq!(auth.online("u1"), 0);
+        let first = auth.enter("u1", "s1");
+        let second = auth.enter("u1", "s1");
+        let third = auth.enter("u1", "s2");
+        assert_eq!(auth.online("u1"), 3);
+        assert_eq!(auth.online("u2"), 0);
+        // La présence se lit par session : deux onglets de s1, un de s2.
+        let live = auth.online_sessions("u1");
+        assert!(live.contains("s1") && live.contains("s2") && live.len() == 2);
+
+        drop(first);
+        assert!(auth.online_sessions("u1").contains("s1"));
+        drop(second);
+        assert!(!auth.online_sessions("u1").contains("s1"));
+        drop(third);
+        assert_eq!(auth.online("u1"), 0);
+
+        // Chaque entrée et chaque sortie prévient les administrateurs.
+        let mut warned = 0;
+        while let Ok(event) = events.try_recv() {
+            let event: serde_json::Value = serde_json::from_str(&event).unwrap();
+            assert_eq!(event["type"], "activity");
+            assert_eq!(event["user_id"], "u1");
+            warned += 1;
+        }
+        assert_eq!(warned, 6);
+    }
+
+    #[test]
+    fn a_revocation_targets_one_session_or_all_but_one() {
+        let one = Revoked::Session("s1".into());
+        assert!(one.hits("u1", "s1") && !one.hits("u1", "s2"));
+
+        let all = Revoked::AllBut {
+            user_id: "u1".into(),
+            keep: Some("s2".into()),
+        };
+        assert!(all.hits("u1", "s1"));
+        assert!(!all.hits("u1", "s2"));
+        // Un autre compte n'est pas concerné.
+        assert!(!all.hits("u2", "s1"));
+        let everything = Revoked::AllBut {
+            user_id: "u1".into(),
+            keep: None,
+        };
+        assert!(everything.hits("u1", "s2"));
     }
 
     #[test]

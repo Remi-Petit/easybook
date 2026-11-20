@@ -28,7 +28,41 @@ export type User = {
 	has_password: boolean;
 	created_at: number;
 	last_login_at: number | null;
+	/** Mot de passe temporaire : la personne est invitée à le changer (elle peut le garder). */
+	must_change_password: boolean;
 	identities: Identity[];
+};
+
+/** Une session encore valide d'un compte (`GET /api/admin/users/{id}/activity`). */
+export type SessionInfo = {
+	id: string;
+	created_at: number;
+	expires_at: number;
+	ip: string | null;
+	user_agent: string | null;
+	/** `password` ou `sso` ; `null` pour une session ouverte avant l'historique. */
+	method: string | null;
+	/** Dernière requête vue (relevée au plus une fois par minute). */
+	last_seen_at: number;
+	/** Un onglet de cette session est ouvert en ce moment. */
+	online: boolean;
+	/** C'est la session de celui qui regarde. */
+	current: boolean;
+};
+
+export type LoginEvent = {
+	at: number;
+	success: boolean;
+	method: string;
+	ip: string | null;
+	user_agent: string | null;
+};
+
+export type Activity = {
+	sessions: SessionInfo[];
+	history: LoginEvent[];
+	/** Onglets ouverts en ce moment : le compte est en ligne s'il y en a. */
+	online: number;
 };
 
 export type Session = {
@@ -177,6 +211,9 @@ export const ERROR_CODES = [
 	'last_admin',
 	'last_credential',
 	'cannot_delete_self',
+	'cannot_demote_self',
+	'cannot_disable_self',
+	'cannot_close_current',
 	'self_link_disabled',
 	'no_account',
 	'account_disabled',

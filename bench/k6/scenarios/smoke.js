@@ -8,6 +8,7 @@ import { baseOptions } from '../lib/profiles.js';
 import { discover } from '../lib/library.js';
 import { browse, readComic, readEpub, readPdf, single } from '../lib/journeys.js';
 import { holdSocket } from '../lib/sockets.js';
+import { adopt, login } from '../lib/auth.js';
 
 export const options = {
   ...baseOptions,
@@ -17,10 +18,13 @@ export const options = {
 };
 
 export function setup() {
-  return discover();
+  const auth = login();
+  adopt(auth);
+  return { ...discover(), ...auth };
 }
 
 export default function (data) {
+  adopt(data);
   console.log(
     `bibliothèque : ${data.total} livres (cbz ${data.comic.length}, epub ${data.epub.length}, pdf ${data.pdf.length})`,
   );
@@ -38,5 +42,5 @@ export default function (data) {
   });
   check(res, { 'traversée refusée (404)': (r) => r.status === 404 });
 
-  holdSocket(2);
+  holdSocket(2, data);
 }

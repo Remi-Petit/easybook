@@ -11,8 +11,32 @@ function snapshot(atMs: number, processes: PerfSnapshot['processes'], usec: numb
 		memory: { current: 1000, limit: null, anon: 600, file: 300, kernel: 50, shmem: 0 },
 		cpuUsageUsec: usec,
 		processes,
-		app: { coverCacheBytes: 0, coverCacheBudget: 1, coverCacheEntries: 0, pageCacheEntries: 0 },
-		readings: { active: [], idleLimitSecs: 60, releasedBytes: 0, releasedBooks: 0 }
+		app: {
+			coverCacheBytes: 0,
+			coverCacheBudget: 1,
+			coverCacheEntries: 0,
+			pageCacheEntries: 0,
+			heapLive: 0,
+			heapPeak: 0,
+			catalogBytes: 0,
+			openArchives: 0,
+			sessions: 0,
+			sockets: 0,
+			argon2Bytes: 0,
+			guardCalls: 0,
+			guardUsec: 0,
+			hashCalls: 0,
+			hashUsec: 0
+		},
+		readings: {
+			active: [],
+			idleLimitSecs: 60,
+			releasedBytes: 0,
+			releasedBooks: 0,
+			releasedMediaBytes: 0,
+			mediaBytes: 0,
+			mediaSweepSecs: 60
+		}
 	} satisfies PerfSnapshot;
 }
 
