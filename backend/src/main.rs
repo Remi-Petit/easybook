@@ -5,10 +5,11 @@
 //! ajouté, renommé ou supprimé est poussé aux navigateurs par WebSocket, sans
 //! rechargement de page et sans sondage.
 
-use easybook::{api, config, formats, pages, readings, thumbnail, watcher};
+use easybook::{accounts, api, auth, config, formats, pages, readings, thumbnail, watcher};
 use notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, new_debouncer};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -64,6 +65,8 @@ async fn run(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
         Ok(dir) if !dir.trim().is_empty() => state.with_cache_dir(dir),
         _ => state,
     };
+
+    let state = enable_accounts(state, &root)?;
 
     // Les comptages de pages survivent au redémarrage (sinon chaque PDF est
     // relu en entier au premier scan).
@@ -122,6 +125,69 @@ async fn run(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
 
     server.await?;
     Ok(())
+}
+
+/// Ouvre la base des comptes et exige une connexion (`auth.enabled`).
+///
+/// La base vit dans `EASYBOOK_DATA_DIR` (à monter en volume : sans lui, les
+/// comptes disparaissent avec le conteneur), sinon dans `books/.easybook/`.
+/// Au premier démarrage, un administrateur est créé : `EASYBOOK_ADMIN_EMAIL`
+/// (défaut `admin@easybook.local`) et `EASYBOOK_ADMIN_PASSWORD` — sans mot de passe imposé, il
+/// est tiré au hasard et affiché **une seule fois** ici.
+fn enable_accounts(
+    state: api::AppState,
+    root: &std::path::Path,
+) -> Result<api::AppState, Box<dyn std::error::Error>> {
+    let settings = config::auth();
+    if !settings.enabled {
+        println!("⚠️  Authentification désactivée (auth.enabled: false) : l'API est ouverte.");
+        return Ok(state);
+    }
+
+    let dir = match std::env::var("EASYBOOK_DATA_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
+        _ => root.join(".easybook"),
+    };
+    let path = dir.join("accounts.db");
+    let accounts = accounts::Accounts::open(&path)?;
+    println!("Comptes   : {}", path.display());
+
+    let nonblank = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+    let email =
+        nonblank("EASYBOOK_ADMIN_EMAIL").unwrap_or_else(|| "admin@easybook.local".to_string());
+    if let Some(boot) = accounts.bootstrap_admin(&email, nonblank("EASYBOOK_ADMIN_PASSWORD"))? {
+        match boot.generated_password {
+            Some(password) => {
+                println!(
+                    "Administrateur créé : {}, mot de passe : {password}",
+                    boot.user.email.as_deref().unwrap_or_default()
+                );
+                println!("  (affiché une seule fois : changez-le dès la première connexion)");
+            }
+            None => println!(
+                "Administrateur créé : {}",
+                boot.user.email.as_deref().unwrap_or_default()
+            ),
+        }
+    }
+    if settings.oidc.is_enabled() {
+        println!("OIDC      : {}", settings.oidc.issuer);
+    }
+    let mut auth = auth::AuthState::new(Arc::new(accounts), settings);
+    if config::dev_mode() {
+        println!("⚠️  EASYBOOK_MODE=dev : outils de développement actifs.");
+        auth = auth.with_direct_login();
+        if let Ok(logins) = std::env::var("EASYBOOK_DEV_LOGINS") {
+            auth = auth.with_dev_logins(&logins);
+            println!("  - connexion rapide : boutons de la page de connexion");
+        }
+        if auth.direct_login() {
+            println!(
+                "  - connexion directe à OIDC depuis le formulaire (mot de passe vu par easybook)"
+            );
+        }
+    }
+    Ok(state.with_auth(auth))
 }
 
 /// Chemin canonique, sans le préfixe « verbatim » de Windows (`\\?\C:\…`).

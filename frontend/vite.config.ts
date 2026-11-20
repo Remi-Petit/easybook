@@ -12,6 +12,12 @@ export default defineConfig({
 		// `localhost` résout `::1` en premier sur certaines machines, où IPv6
 		// loopback est bloqué : on écoute explicitement sur IPv4.
 		host: '127.0.0.1',
-		port: 5100
+		port: 5100,
+		// La session est un cookie : le navigateur doit parler à l'API **par la même
+		// origine** que l'interface (lancer avec `PUBLIC_EASYBOOK_API=/`).
+		proxy: {
+			'/api': 'http://127.0.0.1:8091',
+			'/ws': { target: 'ws://127.0.0.1:8091', ws: true }
+		}
 	}
 });

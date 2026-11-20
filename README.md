@@ -1,6 +1,7 @@
 # easybook
 
 [![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
+[![sécurité](https://github.com/Remi-Petit/easybook/actions/workflows/security.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/security.yml)
 [![license](https://img.shields.io/github/license/Remi-Petit/easybook)](LICENSE)
 [![image](https://img.shields.io/badge/image-ghcr.io%2Fremi--petit%2Feasybook-blue)](https://github.com/Remi-Petit/easybook/pkgs/container/easybook)
 <!-- couverture:start -->
@@ -183,11 +184,17 @@ bun install
 bun run dev
 ```
 
-L'interface vise `http://<hôte>:8091` par défaut. Pour une autre adresse :
+Les comptes passent par un cookie de session : le navigateur doit parler à
+l'API **par la même origine** que l'interface. Le serveur de développement
+relaie donc `/api` et `/ws` vers `127.0.0.1:8091` ; lancer l'interface avec :
 
 ```bash
-PUBLIC_EASYBOOK_API=http://192.168.1.10:8091 bun run dev
+PUBLIC_EASYBOOK_API=/ bun run dev
 ```
+
+Au premier démarrage de l'API, l'administrateur créé est annoncé dans la console
+(voir [Comptes](#comptes-et-connexion)). Pour travailler sans connexion :
+`auth: { enabled: false }` dans `backend/config.yml`.
 
 ## Docker
 
@@ -230,11 +237,12 @@ sources C++ avec le projet.
 
 | Route | Rôle |
 |---|---|
-| `GET /api/health` | état du serveur |
+| `GET /api/health` | état du serveur (public) |
+| `/api/auth/…`, `/api/admin/users…` | connexion, comptes, OIDC — voir [Comptes](#comptes-et-connexion) |
 | `GET /api/books` | catalogue complet (JSON) |
 | `GET /api/book?path=` | fiche d'un livre (titre, chapitres ou nombre de pages) |
 | `GET /api/cover?path=&v=` | couverture, en vignette JPEG (`v` = date de modification, pour le cache) |
-| `GET /api/admin/performance` | mémoire et CPU du conteneur, process par process (page *Administration → Performances*) |
+| `GET /api/admin/performance` | mémoire et CPU du conteneur, process par process (page *Administration → Performances*, administrateurs) |
 | `GET /api/chapter?path=&index=` | document d'un chapitre (HTML, URL réécrites) |
 | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 | `GET /api/page?path=&index=` | page d'une bande dessinée |
@@ -242,6 +250,9 @@ sources C++ avec le projet.
 | `POST /api/folder` | crée une catégorie (`parent: ""`) ou une série |
 | `PUT /api/book?folder=&name=` | dépose un livre (le corps **est** le fichier) |
 | `GET /ws` | catalogue poussé à chaque changement de `books/` |
+
+Tout `/api` et `/ws` exige une session, sauf `/api/health` et les routes de
+connexion.
 
 `path` est toujours **relatif à `books/`** (`Chainsaw Man/T01.cbz`) et rejeté
 s'il contient `..`, un chemin absolu ou s'il sort de la racine une fois
@@ -257,8 +268,11 @@ puis à chaque changement.
 ## Tests
 
 ```bash
-cd backend  && cargo test        # 64 unitaires + 15 d'intégration
-cd frontend && bun run test      # catalogue, langues, URL, dépôts (43 tests Vitest)
+cd backend  && cargo test        # unitaires + intégration (api, auth, oidc)
+cd frontend && bun run test      # catalogue, langues, URL, dépôts, connexion (Vitest)
+
+# contre un vrai Keycloak (docker compose up -d keycloak)
+cd backend  && cargo test --test keycloak -- --ignored
 ```
 
 - **Unitaires (backend)** — un module par sujet : tri naturel et détection de
@@ -273,7 +287,18 @@ cd frontend && bun run test      # catalogue, langues, URL, dépôts (43 tests V
   HTTP : catalogue (dont le nombre de pages annoncé pour chaque livre), fiches,
   couvertures des quatre formats, chapitres, ressources, pages, cache, fichiers
   bruts, réponses d'erreur (404 / 422), refus de traversée.
-- **Frontend** — `catalog.ts` : parent, enfants, `level()` (les sous-dossiers
+- **Comptes (backend)** — `tests/auth.rs` : API fermée sans session, cookie
+  `HttpOnly`, essais limités, déconnexion, requêtes inter-sites refusées,
+  administration (dernier administrateur protégé, sessions fermées à un
+  changement de mot de passe). `tests/oidc.rs` joue le navigateur face à un
+  **faux fournisseur** sur un vrai port (PKCE, secret, JWKS) : création, liaison
+  par invitation, par identifiant, par e-mail, de son propre compte, et chaque
+  faute qu'un jeton peut commettre (audience, émetteur, `nonce`, échéance,
+  signature, HS256). `tests/direct.rs` : la connexion directe du mode dev
+  (désactivée par défaut, politique de liaison, jetons invalides). `tests/keycloak.rs` refait le parcours contre le **vrai
+  Keycloak** du compose.
+- **Frontend** — `auth.ts` : garde des pages, redirections sûres, appels de
+  l'API, messages d'erreur. `catalog.ts` : parent, enfants, `level()` (les sous-dossiers
   apparaissent comme des séries, à chaque niveau, sans mélange entre
   catégories), `previewBook()` (premier livre **direct**, repli récursif sur la
   première sous-série), fil d'Ariane, URL. `i18n.test.ts` : mêmes clés dans
@@ -305,6 +330,39 @@ touche que le README ne lance rien.
 
 L'image est construite sans être publiée, avec un cache GHA : la CI vérifie ce
 que l'utilisateur lance vraiment, pas seulement les lockfiles.
+
+### Sécurité
+
+`.github/workflows/security.yml` regarde **tout le dépôt** (pas de filtre `paths`) :
+à chaque push sur `master`, chaque pull request, et chaque lundi.
+
+| Job | Ce qu'il vérifie |
+|---|---|
+| `gitleaks` | secrets (clés, jetons, mots de passe) dans le code **et l'historique** ; exceptions documentées dans `.gitleaks.toml` (clés RSA jetables des tests) |
+| `semgrep` | motifs de code dangereux (`p/security-audit`, `p/secrets`, `p/typescript`, `p/dockerfile`) — bloquant |
+
+Les deux tournent depuis leur image officielle, version épinglée. `p/rust` n'est
+pas activé : il signale chaque `unsafe`, que ce code justifie (`mmap`, `libc`).
+En local :
+
+```bash
+docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 detect --source /repo --config /repo/.gitleaks.toml --redact
+docker run --rm -v "$PWD:/src" semgrep/semgrep:1.186.0 semgrep scan --config p/security-audit --config p/secrets --metrics=off
+```
+
+**OWASP ZAP** (développement) : le `docker-compose.yml` embarque un service `zap`
+qui ne démarre jamais seul. Il se connecte en administrateur, explore l'interface
+et l'API en **passif** (il observe, il n'attaque pas) et écrit un rapport :
+
+```bash
+docker compose --env-file .env.dev run --rm zap
+# → zap-reports/zap-report.html (et .json, ignorés par git)
+```
+
+Les avertissements restants sont connus : pas de `default-src` / `script-src`
+(le rendu des EPUB et pdf.js en demanderaient une très large), et « pas de jeton
+anti-CSRF » — la protection est le cookie `SameSite=Lax` plus le contrôle de
+l'en-tête `Origin` côté API. Ne scanner que ses propres serveurs.
 
 Les badges de couverture ne sont **jamais** saisis à la main : le job les
 réécrit, et ne commite que s'ils ont bougé (`README.md` n'est pas dans les
@@ -357,9 +415,105 @@ Variables d'environnement :
 | `EASYBOOK_HOST` | `127.0.0.1` | interface d'écoute de l'API (`0.0.0.0` en conteneur) |
 | `PORT` | `8091` | port de l'API |
 | `PUBLIC_EASYBOOK_API` (frontend) | `http://<hôte>:8091` | adresse de l'API vue par le navigateur — `/` quand c'est le **même serveur** qui sert les deux (cas de l'image Docker) |
+| `EASYBOOK_MODE` | `prod` | `dev` : connexion directe à Keycloak depuis le formulaire (développement uniquement) |
+| `EASYBOOK_DATA_DIR` | `<books>/.easybook` | dossier de la base des comptes (`accounts.db`) — **à monter en volume** (`/data` dans l'image) |
+| `EASYBOOK_ADMIN_EMAIL`, `EASYBOOK_ADMIN_PASSWORD` | `admin@easybook.local`, aléatoire | administrateur créé au premier démarrage |
 
-⚠️ L'API n'a **aucune authentification** : elle écoute sur la boucle locale par
-défaut. Publier un port, c'est décider d'exposer la bibliothèque.
+## Comptes et connexion
+
+Toute l'application exige une connexion. Les comptes vivent dans une base
+**SQLite** (`accounts.db`, dans `EASYBOOK_DATA_DIR`) : identifiants en **UUID**,
+connexion par **adresse e-mail** (unique) et mot de passe — jamais par nom —,
+mots de passe en Argon2id, sessions par cookie `HttpOnly` / `SameSite=Lax` (dont
+seule l'empreinte est stockée).
+
+**Premier démarrage** : sans aucun compte, un administrateur est créé
+(`EASYBOOK_ADMIN_EMAIL`, `admin@easybook.local` par défaut). Sans `EASYBOOK_ADMIN_PASSWORD`, son
+mot de passe est tiré au hasard et affiché **une seule fois** dans les journaux
+(`docker logs easybook`).
+
+La page *Administration → Comptes* crée, désactive, supprime et rétrograde des
+comptes, réinitialise un mot de passe (ce qui ferme les sessions du compte) et
+gère la liaison OIDC. Le dernier administrateur actif ne peut être ni supprimé
+ni rétrogradé. Quelques essais ratés bloquent la connexion pour quelques
+minutes.
+
+### OpenID Connect
+
+N'importe quel fournisseur OIDC (Keycloak, Authentik, Google…) : flux
+*authorization code* avec **PKCE**, jeton d'identité vérifié (signature,
+émetteur, audience, expiration, `nonce`). Le bouton apparaît dès que `issuer` et
+`client_id` sont renseignés — dans `config.yml` ou par variables
+`EASYBOOK_OIDC_*` (les variables gagnent) :
+
+```yaml
+auth:
+  enabled: true          # false : plus de connexion, API ouverte (déconseillé)
+  session_days: 30
+  oidc:
+    issuer: https://sso.example.org/realms/maison   # = `iss` des jetons
+    discovery_url: ""    # où lire /.well-known/openid-configuration (conteneurs)
+    client_id: easybook
+    client_secret: ""    # préférer EASYBOOK_OIDC_CLIENT_SECRET
+    redirect_url: ""     # vide : déduite de l'adresse du navigateur
+    label: Single sign-on
+    auto_create: false   # un compte OIDC inconnu crée un compte local
+    link_by_email: false # …ou se lie au compte local de même e-mail vérifié
+    self_link: false     # chacun peut lier son propre compte
+```
+
+À déclarer chez le fournisseur : l'URL de retour
+`https://<votre-hôte>/api/auth/oidc/callback`.
+
+**Lier un compte local à un compte OIDC.** Par défaut, un compte OIDC inconnu
+est **refusé** : c'est l'administrateur qui décide. Il a trois façons de lier :
+
+1. **lien d'invitation** (page *Comptes* → *Créer un lien d'invitation*) : à
+   remettre à la personne, qui s'authentifie chez le fournisseur et arrive
+   connectée **à son compte local** — le lien vaut 15 minutes, une seule fois ;
+2. **par identifiant** (`sub` du fournisseur), s'il le connaît ;
+3. **en laissant faire** : `link_by_email` (e-mail certifié par le fournisseur,
+   et un seul compte local porteur de cette adresse), `self_link` (chacun lie
+   son compte depuis *Mon compte*) ou `auto_create`.
+
+Un compte lié se connecte des deux façons ; on ne peut pas délier la seule
+façon de se connecter d'un compte.
+
+### Production par défaut, développement avec `.env.dev`
+
+Le `docker-compose.yml` est en **production** tant qu'on ne lui dit pas
+autrement : pas de Keycloak, pas de connexion directe, OIDC désactivé tant que
+`EASYBOOK_OIDC_*` est vide, administrateur au mot de passe aléatoire. Tout se
+règle par variables d'environnement ; le développement tient dans `.env.dev` :
+
+```bash
+docker compose up -d --build                         # production
+docker compose --env-file .env.dev up -d --build     # développement
+```
+
+`.env.dev` lance un Keycloak **réservé aux tests** (profil `dev`, console sur
+<http://localhost:8180>, `admin` / `admin`), avec le realm `easybook` importé
+(`docker/keycloak/easybook-realm.json`) et ses utilisateurs `alice@example.org`,
+`bob@example.org` (e-mail vérifié) et `carol@example.org` (non vérifié) — mot de
+passe = prénom en minuscules. L'administrateur est `admin@easybook.local` /
+`admin-dev-1234`.
+
+**Connexion rapide** : en développement, la page de connexion affiche un bouton
+par compte de `EASYBOOK_DEV_LOGINS` (`admin@easybook.local`, `alice@…`, `bob@…`,
+`carol@…`) — un clic suffit. Les mots de passe restent dans le serveur ; sans
+`EASYBOOK_MODE=dev`, la liste est ignorée et la route n'existe pas.
+
+**Connexion « directe »** (`EASYBOOK_MODE=dev` seulement) : le formulaire de
+connexion accepte aussi l'e-mail et le mot de passe d'un compte Keycloak, sans
+redirection (*direct access grant* : easybook les transmet à Keycloak et vérifie
+le jeton). La même politique de liaison s'applique — compte déjà lié,
+`link_by_email`, `auto_create` (activé dans `.env.dev`), sinon refus. En
+production le mode est ignoré : ce flux fait passer le mot de passe par
+easybook, ce que la redirection évite.
+
+```bash
+cd backend && cargo test --test keycloak -- --ignored   # contre le vrai Keycloak
+```
 
 ## Notes
 

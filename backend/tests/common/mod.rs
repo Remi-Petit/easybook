@@ -6,6 +6,9 @@
 
 #![allow(dead_code)]
 
+pub mod http;
+pub mod idp;
+
 use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};

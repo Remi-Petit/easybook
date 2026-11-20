@@ -14,3 +14,7 @@ bench/k6/results/
 # Le dossier lui-même est conservé (`.gitkeep`).
 /books/*
 !/books/.gitkeep
+
+# Rapports OWASP ZAP (voir docker-compose.yml, service `zap`).
+/zap-reports/*
+!/zap-reports/.gitkeep

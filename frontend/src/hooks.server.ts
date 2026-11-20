@@ -1,4 +1,5 @@
-import type { Handle } from '@sveltejs/kit';
+import { redirect, type Handle } from '@sveltejs/kit';
+import { guardRedirect, loadSession } from '$lib/auth';
 import { LOCALE_COOKIE, negotiate } from '$lib/i18n/messages';
 
 /**
@@ -15,6 +16,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.request.headers.get('accept-language')
 	);
 	event.locals.locale = locale;
+
+	// Sans session, aucune page ne s'affiche (sauf la connexion) : l'API refuse de
+	// toute façon, mais l'interface ne doit pas peindre une coquille vide.
+	const session = await loadSession(event.request.headers.get('cookie'));
+	event.locals.session = session;
+	const target = guardRedirect(event.url, session);
+	if (target) redirect(303, target);
 
 	return resolve(event, {
 		transformPageChunk: ({ html }) => html.replace('%easybook.lang%', locale)

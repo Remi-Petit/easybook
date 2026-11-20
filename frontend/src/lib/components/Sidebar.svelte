@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { afterNavigate } from '$app/navigation';
 	import { childFolders, folderUrl } from '$lib/catalog';
+	import { call, displayName, type Session } from '$lib/auth';
 	import { library } from '$lib/library.svelte';
 	import { LOCALES, chooseLocale, locale, t } from '$lib/i18n/state.svelte';
 
@@ -11,6 +12,16 @@
 	const categories = $derived(childFolders(library.folders, ''));
 
 	const path = $derived(decodeURIComponent(page.url.pathname));
+
+	const session = $derived(page.data.session as Session | undefined);
+	const user = $derived(session?.user ?? null);
+	// Sans comptes (`auth.enabled: false`), l'administration reste ouverte à tous.
+	const isAdmin = $derived(!session?.enabled || user?.role === 'admin');
+
+	async function signOut() {
+		await call('POST', '/api/auth/logout');
+		location.assign('/login');
+	}
 
 	/** Menu ouvert (écrans étroits : la barre latérale devient un bandeau + un menu). */
 	let open = $state(false);
@@ -75,15 +86,41 @@
 				<p class="nav-empty">{t('nav.empty')}</p>
 			{/if}
 
-			<p class="nav-section">{t('nav.admin')}</p>
-			<a
-				class="nav-item"
-				href="/admin/performance"
-				aria-current={active('/admin/performance') ? 'page' : undefined}
-			>
-				<span class="name">{t('nav.performance')}</span>
-			</a>
+			{#if isAdmin}
+				<p class="nav-section">{t('nav.admin')}</p>
+				{#if user}
+					<a
+						class="nav-item"
+						href="/admin/users"
+						aria-current={active('/admin/users') ? 'page' : undefined}
+					>
+						<span class="name">{t('nav.users')}</span>
+					</a>
+				{/if}
+				<a
+					class="nav-item"
+					href="/admin/performance"
+					aria-current={active('/admin/performance') ? 'page' : undefined}
+				>
+					<span class="name">{t('nav.performance')}</span>
+				</a>
+			{/if}
 		</nav>
+
+		{#if user}
+			<div class="sidebar-user">
+				<a
+					class="user-link"
+					href="/account"
+					aria-current={active('/account') ? 'page' : undefined}
+					title={t('nav.account')}
+				>
+					<span class="user-name">{displayName(user)}</span>
+					<span class="user-role">{t(`account.role.${user.role}`)}</span>
+				</a>
+				<button type="button" class="btn-plain" onclick={signOut}>{t('nav.logout')}</button>
+			</div>
+		{/if}
 
 		<div class="sidebar-lang">
 			<label for="easybook-locale">{t('language.label')}</label>

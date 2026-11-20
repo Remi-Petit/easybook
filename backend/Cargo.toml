@@ -51,6 +51,18 @@ hayro = "0.9"
 # PDF : compter les pages sans lire le fichier en entier (voir `formats::pdf`).
 memmap2 = "0.9"
 jpeg-decoder = { version = "0.3", default-features = false }
+# Comptes : SQLite embarquée (compilée avec le crate, pas de libsqlite3 système),
+# mots de passe hachés en Argon2id, identifiants en UUID.
+rusqlite = { version = "0.43", features = ["bundled"] }
+argon2 = { version = "0.5", features = ["std", "password-hash", "rand"] }
+# Source d'aléa du système (`OsRng`) : sels, jetons de session.
+password-hash = { version = "0.5", features = ["getrandom"] }
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+base64 = "0.22"
+# OIDC : découverte, échange du code (PKCE) et validation de l'ID token (JWKS).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+jsonwebtoken = "9"
 
 # Rendre à l'OS la mémoire libérée après le décodage d'une image (`malloc_trim`).
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
@@ -62,6 +74,8 @@ tempfile = "3"
 weezl = "0.2"
 # Tests d'intégration : monter le routeur et l'appeler sans ouvrir de socket.
 http-body-util = "0.1"
+# Tests Keycloak : le navigateur simulé garde les cookies du fournisseur.
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "rustls-tls"] }
 
 [profile.dev]
 debug = "line-tables-only"

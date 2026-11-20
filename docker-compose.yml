@@ -1,6 +1,7 @@
 # easybook — **un** conteneur, **un** port.
 #
-#   docker compose up --build
+#   docker compose up --build                          # configuration de production
+#   docker compose --env-file .env.dev up --build      # + Keycloak et connexion directe
 #   → interface + API : http://localhost:5200
 #
 # L'image (`Dockerfile`, racine) contient les trois pièces : nginx, l'interface
@@ -8,7 +9,9 @@
 # fichiers compilés du frontend, relaie `/api` et `/ws` vers l'API, et le reste
 # vers le serveur SvelteKit.
 #
-# Ce fichier est celui du **développement** : le backend est compilé en profil
+# Ce fichier construit le backend en profil **dev** (rapide) ; la **configuration**,
+# elle, est celle de la production tant qu'on ne passe pas `--env-file .env.dev`
+# (voir plus bas, `EASYBOOK_MODE`). Le backend est compilé en profil
 # `dev` (incrémental, binaire non optimisé) — la première construction compile
 # les dépendances, les suivantes ne recompilent que ce qui a changé. Pour tester
 # l'image de production (compilation `release`, longue), voir
@@ -29,8 +32,7 @@ services:
     restart: unless-stopped
     ports:
       # Seul port publié : nginx. L'API et le serveur SvelteKit écoutent sur la
-      # boucle locale du conteneur et ne sont pas joignables de l'extérieur
-      # (l'API n'a pas d'authentification).
+      # boucle locale du conteneur et ne sont pas joignables de l'extérieur.
       - "5200:8080"
     volumes:
       # La bibliothèque : lue **et écrite** (création de catégories, dépôt de
@@ -41,3 +43,114 @@ services:
       # toute seule quand un livre est ajouté **depuis l'hôte** (les ajouts faits
       # dans l'interface, eux, sont diffusés directement).
       - ./books:/books
+      # Les comptes (SQLite) : à garder entre deux conteneurs, sinon les
+      # utilisateurs et les liaisons OIDC disparaissent avec lui.
+      - easybook-data:/data
+    environment:
+      # PRODUCTION par défaut. Tout ce qui suit se règle par variable
+      # d'environnement ; pour le développement, tout est dans `.env.dev` :
+      #
+      #   docker compose up -d --build                         # production
+      #   docker compose --env-file .env.dev up -d --build     # développement
+      #
+      # `dev` active la connexion directe à Keycloak depuis le formulaire (le mot
+      # de passe passe alors par easybook : jamais en production).
+      EASYBOOK_MODE: ${EASYBOOK_MODE:-prod}
+      # Boutons de connexion rapide (`email:mdp,…`) : ignorés hors du mode `dev`.
+      EASYBOOK_DEV_LOGINS: ${EASYBOOK_DEV_LOGINS:-}
+      # Administrateur créé au premier démarrage (base vide). Sans mot de passe,
+      # il est tiré au hasard et affiché une fois dans `docker logs easybook`.
+      EASYBOOK_ADMIN_EMAIL: ${EASYBOOK_ADMIN_EMAIL:-admin@easybook.local}
+      EASYBOOK_ADMIN_PASSWORD: ${EASYBOOK_ADMIN_PASSWORD:-}
+      # Connexion OpenID Connect : vide = désactivée. L'émetteur est l'adresse que
+      # voit le **navigateur** ; `DISCOVERY_URL` est celle que joint easybook (vide :
+      # l'émetteur).
+      EASYBOOK_OIDC_ISSUER: ${EASYBOOK_OIDC_ISSUER:-}
+      EASYBOOK_OIDC_DISCOVERY_URL: ${EASYBOOK_OIDC_DISCOVERY_URL:-}
+      EASYBOOK_OIDC_CLIENT_ID: ${EASYBOOK_OIDC_CLIENT_ID:-}
+      EASYBOOK_OIDC_CLIENT_SECRET: ${EASYBOOK_OIDC_CLIENT_SECRET:-}
+      EASYBOOK_OIDC_LABEL: ${EASYBOOK_OIDC_LABEL:-Single sign-on}
+      # Politique de liaison, fermée par défaut : un compte OIDC inconnu est
+      # refusé tant qu'un administrateur ne l'a pas lié (page Comptes).
+      EASYBOOK_OIDC_AUTO_CREATE: ${EASYBOOK_OIDC_AUTO_CREATE:-false}
+      EASYBOOK_OIDC_LINK_BY_EMAIL: ${EASYBOOK_OIDC_LINK_BY_EMAIL:-false}
+      EASYBOOK_OIDC_SELF_LINK: ${EASYBOOK_OIDC_SELF_LINK:-false}
+      # Un proxy d'entreprise injecté dans les conteneurs (variables HTTP_PROXY du
+      # démon Docker) intercepterait l'appel vers `keycloak` : on l'en écarte.
+      NO_PROXY: localhost,127.0.0.1,keycloak
+      no_proxy: localhost,127.0.0.1,keycloak
+    depends_on:
+      keycloak:
+        condition: service_healthy
+        # Absent en production (profil `dev`) : easybook démarre sans lui.
+        required: false
+
+  # Fournisseur OpenID Connect **réservé au développement** (profil `dev`, activé
+  # par `.env.dev`) : un realm `easybook` est
+  # importé au démarrage (`docker/keycloak/easybook-realm.json`) avec trois
+  # utilisateurs — alice, bob (e-mail vérifié) et carol (e-mail non vérifié) —
+  # dont le mot de passe est le nom. Console d'administration : http://localhost:8180
+  # (admin / admin). Ne jamais l'exposer : mots de passe publics, mode `start-dev`.
+  keycloak:
+    profiles: ["dev"]
+    image: quay.io/keycloak/keycloak:26.4
+    container_name: easybook-keycloak
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Adresse publique (celle du navigateur, donc l'`iss` des jetons)…
+      KC_HOSTNAME: http://localhost:8180
+      # …tandis que les points d'accès serveur à serveur (jeton, clés) restent
+      # joignables par le nom du conteneur.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./docker/keycloak/easybook-realm.json:/opt/keycloak/data/import/easybook-realm.json:ro
+    healthcheck:
+      # L'image n'a ni curl ni wget : on ouvre la socket du port de gestion à la main.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"status": "UP"' <&3
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+
+  # Scanner de sécurité **OWASP ZAP** (passif), pour le développement :
+  #
+  #   docker compose --env-file .env.dev run --rm zap
+  #
+  # Il se connecte en administrateur à `easybook`, explore l'interface et l'API,
+  # puis écrit `zap-reports/zap-report.html` (et `.json`). Ne démarre jamais tout
+  # seul : profil `zap`, donc ignoré par `docker compose up`. Ne jamais le diriger
+  # vers un serveur qui n'est pas le vôtre.
+  zap:
+    profiles: ["zap"]
+    image: ghcr.io/zaproxy/zaproxy:stable
+    container_name: easybook-zap
+    depends_on:
+      easybook:
+        condition: service_healthy
+    environment:
+      ZAP_TARGET: http://easybook:8080
+      ZAP_EMAIL: ${EASYBOOK_ADMIN_EMAIL:-admin@easybook.local}
+      ZAP_PASSWORD: ${EASYBOOK_ADMIN_PASSWORD:-}
+      # Voir `easybook` : le proxy d'entreprise injecté dans les conteneurs ne doit pas
+      # intercepter le trafic vers un autre conteneur.
+      NO_PROXY: localhost,127.0.0.1,easybook
+      no_proxy: localhost,127.0.0.1,easybook
+    volumes:
+      - ./docker/zap/scan.py:/zap/scan.py:ro
+      - ./zap-reports:/zap/wrk:rw
+    command: ["python3", "/zap/scan.py"]
+
+volumes:
+  easybook-data:

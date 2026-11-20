@@ -26,3 +26,8 @@ services:
       - "5300:8080"
     volumes:
       - ./books:/books
+      # Les comptes (SQLite) : à garder entre deux conteneurs.
+      - easybook-release-data:/data
+
+volumes:
+  easybook-release-data:

@@ -21,3 +21,17 @@ limits:
   # Comptages de pages gardés en mémoire (et sur disque). À garder au moins égal
   # au nombre de livres : au-delà, chaque scan rouvre les livres en trop.
   page_counts: 50000
+
+# Comptes et connexion (voir le README, « Comptes et connexion »).
+auth:
+  # false : aucune connexion, l'API est ouverte à qui l'atteint.
+  enabled: true
+  # Durée d'une session, en jours.
+  session_days: 30
+  # OpenID Connect : actif dès que `issuer` et `client_id` sont renseignés. Chaque
+  # clé se pose aussi par variable (`EASYBOOK_OIDC_ISSUER`, `_CLIENT_ID`,
+  # `_CLIENT_SECRET`, `_DISCOVERY_URL`, `_REDIRECT_URL`, `_LABEL`, `_AUTO_CREATE`,
+  # `_LINK_BY_EMAIL`, `_SELF_LINK`), qui gagne sur ce fichier.
+  oidc:
+    issuer: ""
+    client_id: ""

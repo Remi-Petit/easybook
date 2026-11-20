@@ -1,0 +1,57 @@
+name: Sécurité
+
+# Deux contrôles qui regardent **tout le dépôt**, pas un dossier : un secret peut se
+# glisser dans un README, une action de CI ou un fichier d'exemple. D'où un
+# workflow à part de `ci.yml`, dont les filtres `paths` ignoreraient ces fichiers.
+#
+#   - gitleaks : secrets (clés, jetons, mots de passe) dans le code **et l'historique** ;
+#   - Semgrep  : motifs de code dangereux (injection, crypto faible, XSS…).
+#
+# Les audits de dépendances (RustSec) et de l'image (Trivy) restent dans `ci.yml`.
+#
+# Un passage hebdomadaire : de nouvelles règles apparaissent sans qu'un commit
+# ne change.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Les deux outils tournent depuis leur **image officielle**, version épinglée,
+# comme Trivy dans `ci.yml` : aucune action tierce de plus à faire confiance.
+jobs:
+  gitleaks:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Tout l'historique : un secret supprimé dans un commit suivant est
+          # toujours compromis.
+          fetch-depth: 0
+      # `.gitleaks.toml` : règles par défaut + les clés RSA jetables des tests.
+      - name: Chercher des secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 detect \
+            --source /repo --config /repo/.gitleaks.toml --redact --no-banner
+
+  semgrep:
+    name: Code (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Règles du registre public, sans compte ni télémétrie. `--error` : une
+      # trouvaille fait échouer le run (aucune à ce jour : la base est propre).
+      # Pas de `p/rust` : il signale chaque `unsafe`, or ce code en a besoin
+      # (`mmap`, `libc`) et le justifie là où il l'écrit.
+      - name: Analyser le code
+        run: |
+          docker run --rm -v "$PWD:/src" semgrep/semgrep:1.186.0 semgrep scan \
+            --config p/security-audit --config p/secrets \
+            --config p/typescript --config p/dockerfile \
+            --metrics=off --error
