@@ -21,7 +21,7 @@
 #![allow(clippy::result_large_err)]
 
 use crate::accounts::{
-    AccountError, Accounts, Identity, NewUser, Role, User, UserPatch, random_token,
+    AccountError, Accounts, Identity, NewUser, Role, SessionMeta, User, UserPatch, random_token,
 };
 use crate::api::AppState;
 use crate::config;
@@ -381,6 +381,20 @@ fn client_key(headers: &HeaderMap) -> String {
 
 // ── Routes ───────────────────────────────────────────────────────────────
 
+/// D'où vient cette requête, pour la fiche de la session et l'historique.
+fn session_meta(headers: &HeaderMap, method: &'static str) -> SessionMeta {
+    let ip = Some(client_key(headers)).filter(|ip| ip != "-");
+    let user_agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(|ua| ua.chars().take(256).collect());
+    SessionMeta {
+        ip,
+        user_agent,
+        method,
+    }
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/auth/session", get(session))
@@ -400,6 +414,7 @@ pub fn routes() -> Router<AppState> {
             axum::routing::patch(update_user).delete(delete_user),
         )
         .route("/api/admin/users/{id}/password", put(admin_set_password))
+        .route("/api/admin/users/{id}/activity", get(user_activity))
         .route("/api/admin/users/{id}/link-token", post(create_link_token))
         .route(
             "/api/admin/users/{id}/identities",
@@ -532,15 +547,27 @@ async fn sign_in(
     .map_err(account_error)?;
 
     // Un compte local d'abord ; sinon, en développement, le fournisseur lui-même.
+    let mut method = "password";
     if outcome.is_none() {
         outcome = direct_login(auth, &email, &password).await?;
+        method = "sso";
     }
 
     let Some((user, token)) = outcome else {
         auth.throttle.failure(&key);
+        let (failed_email, meta) = (email.clone(), session_meta(headers, "password"));
+        // Le journal ne doit jamais faire échouer la réponse.
+        let _ = db(auth, move |accounts| {
+            accounts.log_failed_login(&failed_email, &meta)
+        })
+        .await;
         return Err(error(StatusCode::UNAUTHORIZED, "invalid_credentials"));
     };
     auth.throttle.success(&key);
+    {
+        let (token, meta) = (token.clone(), session_meta(headers, method));
+        let _ = db(auth, move |accounts| accounts.log_session_start(&token, &meta)).await;
+    }
 
     let cookie = session_cookies(headers, &token, ttl);
     let user = db(auth, move |accounts| view(accounts, user))
@@ -624,6 +651,7 @@ async fn change_password(
     }
 
     let id = user.id.clone();
+    let meta = session_meta(&headers, "password");
     let result = db(
         &auth,
         move |accounts| -> Result<Option<String>, AccountError> {
@@ -636,7 +664,9 @@ async fn change_password(
                 return Ok(None);
             }
             accounts.set_password(&id, &body.new)?;
-            Ok(Some(accounts.create_session(&id, ttl)?))
+            let token = accounts.create_session(&id, ttl)?;
+            accounts.tag_session(&token, &meta)?;
+            Ok(Some(token))
         },
     )
     .await?
@@ -859,6 +889,14 @@ async fn oidc_callback(
         resolve(accounts, &settings, &intent, current.as_ref(), &claims, ttl)
     })
     .await?;
+
+    if let Ok(Resolved {
+        session: Some(token),
+    }) = &outcome
+    {
+        let (token, meta) = (token.clone(), session_meta(&headers, "sso"));
+        let _ = db(&auth, move |accounts| accounts.log_session_start(&token, &meta)).await;
+    }
 
     Ok(match outcome {
         Ok(Resolved { session }) => {
@@ -1098,6 +1136,21 @@ struct SetPasswordBody {
     password: String,
     #[serde(default)]
     temporary: bool,
+}
+
+/// `GET /api/admin/users/{id}/activity` — sessions ouvertes et dernières connexions.
+async fn user_activity(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let (sessions, history) = db(&auth, move |accounts| -> Result<_, AccountError> {
+        accounts.user(&id)?.ok_or(AccountError::NotFound)?;
+        Ok((accounts.active_sessions(&id)?, accounts.login_history(&id, 50)?))
+    })
+    .await?
+    .map_err(account_error)?;
+    Ok(Json(serde_json::json!({ "sessions": sessions, "history": history })).into_response())
 }
 
 async fn admin_set_password(

@@ -16,9 +16,18 @@
 		type ColumnDef
 	} from '@tanstack/svelte-table';
 	import { formatDateTime } from '$lib/api';
+	import { agentLabel } from '$lib/agent';
 	import PasswordField from '$lib/components/PasswordField.svelte';
 	import InfoTip from '$lib/components/InfoTip.svelte';
-	import { call, displayName, errorKey, type Role, type Session, type User } from '$lib/auth';
+	import {
+		call,
+		displayName,
+		errorKey,
+		type Activity,
+		type Role,
+		type Session,
+		type User
+	} from '$lib/auth';
 	import { t } from '$lib/i18n/state.svelte';
 	import { notify } from '$lib/toasts.svelte';
 
@@ -224,11 +233,41 @@
 	}
 
 	// Onglets du tiroir ; SSO n'existe que si OIDC est configuré.
-	type Tab = 'role' | 'password' | 'sso';
+	type Tab = 'role' | 'password' | 'sso' | 'sessions';
 	let tab = $state<Tab>('role');
-	const tabs = $derived<Tab[]>(oidc ? ['role', 'password', 'sso'] : ['role', 'password']);
+	const tabs = $derived<Tab[]>(
+		oidc ? ['role', 'password', 'sso', 'sessions'] : ['role', 'password', 'sessions']
+	);
 	const tabLabel = (id: Tab) =>
-		id === 'role' ? t('users.role') : id === 'password' ? t('auth.password') : t('users.type.sso');
+		id === 'role'
+			? t('users.role')
+			: id === 'password'
+				? t('auth.password')
+				: id === 'sso'
+					? t('users.type.sso')
+					: t('users.tab.sessions');
+	const methodLabel = (method: string | null) =>
+		method === 'sso' ? t('users.type.sso') : method === 'password' ? t('auth.password') : null;
+
+	// Sessions ouvertes et connexions du compte choisi, relues à chaque ouverture du tiroir.
+	let activity = $state<Activity | null>(null);
+	let activityLoading = $state(false);
+	let showAllSessions = $state(false);
+	const SESSIONS_SHOWN = 3;
+
+	$effect(() => {
+		const id = selectedId;
+		if (!id) return;
+		activity = null;
+		showAllSessions = false;
+		activityLoading = true;
+		void call<Activity>('GET', `/api/admin/users/${id}/activity`).then((result) => {
+			if (selectedId !== id) return;
+			activityLoading = false;
+			if (result.ok) activity = result.data;
+			else fail(result.code);
+		});
+	});
 
 	function tabKeys(event: KeyboardEvent) {
 		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -702,6 +741,12 @@
 				{#if selected.must_change_password}
 					<span class="pill" data-tone="accent">{t('users.password.temporary')}</span>
 				{/if}
+				{#if activity}
+					<span class="pill" data-tone={activity.sessions.length > 0 ? 'ok' : 'muted'}>
+						<span class="dot" aria-hidden="true"></span>
+						{activity.sessions.length > 0 ? t('users.sessions.online') : t('users.sessions.offline')}
+					</span>
+				{/if}
 				<span class="muted">
 					{t('users.col.lastLogin')} :
 					{selected.last_login_at ? formatDateTime(selected.last_login_at) : t('users.never')}
@@ -817,6 +862,69 @@
 						</label>
 						<div><button type="submit" class="btn-main">{t('users.link.add')}</button></div>
 					</form>
+				{/if}
+			{:else if tab === 'sessions'}
+				{#if activityLoading || !activity}
+					<p class="panel-hint">{t('status.connecting')}</p>
+				{:else}
+					<h3>{t('users.sessions.title', { count: activity.sessions.length })}</h3>
+					{#if activity.sessions.length === 0}
+						<p class="panel-hint">{t('users.sessions.none')}</p>
+					{:else}
+						<ul class="session-list">
+							{#each showAllSessions ? activity.sessions : activity.sessions.slice(0, SESSIONS_SHOWN) as session (session.id)}
+								<li>
+									<strong>{agentLabel(session.user_agent) ?? t('users.sessions.unknown')}</strong>
+									<span class="muted">
+										{[session.ip, methodLabel(session.method)].filter(Boolean).join(' · ')}
+									</span>
+									<span class="muted">
+										{t('users.sessions.opened', { date: formatDateTime(session.created_at) })}
+										· {t('users.sessions.expires', { date: formatDateTime(session.expires_at) })}
+									</span>
+								</li>
+							{/each}
+						</ul>
+						{#if activity.sessions.length > SESSIONS_SHOWN}
+							<button
+								type="button"
+								class="link-more"
+								onclick={() => (showAllSessions = !showAllSessions)}
+							>
+								{showAllSessions
+									? t('users.sessions.less')
+									: t('users.sessions.more', { count: activity.sessions.length - SESSIONS_SHOWN })}
+							</button>
+						{/if}
+					{/if}
+
+					<h3>{t('users.history.title')}</h3>
+					{#if activity.history.length === 0}
+						<p class="panel-hint">{t('users.history.empty')}</p>
+					{:else}
+						<ul class="history-list">
+							{#each activity.history as event, index (index)}
+								<li data-failed={!event.success}>
+									<span class="pill" data-tone={event.success ? 'ok' : 'danger'}>
+										<span class="dot" aria-hidden="true"></span>
+										{event.success ? t('users.history.ok') : t('users.history.failed')}
+									</span>
+									<div>
+										<strong>{formatDateTime(event.at)}</strong>
+										<span class="muted">
+											{[
+												agentLabel(event.user_agent) ?? t('users.sessions.unknown'),
+												event.ip,
+												methodLabel(event.method)
+											]
+												.filter(Boolean)
+												.join(' · ')}
+										</span>
+									</div>
+								</li>
+							{/each}
+						</ul>
+					{/if}
 				{/if}
 			{/if}
 			</div>

@@ -25,7 +25,7 @@ pub const MIN_PASSWORD: usize = 8;
 pub const MAX_PASSWORD: usize = 256;
 
 /// Version du schéma (`PRAGMA user_version`).
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA: &str = "
 CREATE TABLE users (
@@ -57,9 +57,23 @@ CREATE TABLE sessions (
     token_hash TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL
+    expires_at INTEGER NOT NULL,
+    ip         TEXT,
+    user_agent TEXT,
+    method     TEXT
 );
 CREATE INDEX sessions_user ON sessions (user_id);
+
+CREATE TABLE login_events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    at         INTEGER NOT NULL,
+    success    INTEGER NOT NULL,
+    method     TEXT NOT NULL,
+    ip         TEXT,
+    user_agent TEXT
+);
+CREATE INDEX login_events_user ON login_events (user_id, at);
 
 CREATE TABLE link_tokens (
     token_hash TEXT PRIMARY KEY,
@@ -116,6 +130,57 @@ pub struct Identity {
     pub subject: String,
     pub email: Option<String>,
     pub created_at: i64,
+}
+
+/// D'où vient une connexion : adresse, navigateur, et par quel moyen.
+#[derive(Debug, Clone, Default)]
+pub struct SessionMeta {
+    pub ip: Option<String>,
+    pub user_agent: Option<String>,
+    /// `password` ou `sso`.
+    pub method: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SessionInfo {
+    /// Début du hash du jeton : identifie la session sans permettre de l'utiliser.
+    pub id: String,
+    pub created_at: i64,
+    pub expires_at: i64,
+    pub ip: Option<String>,
+    pub user_agent: Option<String>,
+    pub method: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LoginEvent {
+    pub at: i64,
+    pub success: bool,
+    pub method: String,
+    pub ip: Option<String>,
+    pub user_agent: Option<String>,
+}
+
+/// Connexions gardées par compte : au-delà, les plus anciennes partent.
+const LOGIN_HISTORY_KEPT: i64 = 200;
+
+fn insert_login_event(
+    conn: &Connection,
+    user_id: &str,
+    success: bool,
+    meta: &SessionMeta,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO login_events (user_id, at, success, method, ip, user_agent)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![user_id, now(), success, meta.method, meta.ip, meta.user_agent],
+    )?;
+    conn.execute(
+        "DELETE FROM login_events WHERE user_id = ?1 AND id NOT IN
+         (SELECT id FROM login_events WHERE user_id = ?1 ORDER BY at DESC, id DESC LIMIT ?2)",
+        params![user_id, LOGIN_HISTORY_KEPT],
+    )?;
+    Ok(())
 }
 
 #[derive(Debug, Default, Clone)]
@@ -398,6 +463,26 @@ impl Accounts {
             )?;
             conn.pragma_update(None, "user_version", 3)?;
             version = 3;
+        }
+        if version == 3 {
+            // v4 : d'où vient chaque session, et l'historique des connexions.
+            conn.execute_batch(
+                "ALTER TABLE sessions ADD COLUMN ip TEXT;
+                 ALTER TABLE sessions ADD COLUMN user_agent TEXT;
+                 ALTER TABLE sessions ADD COLUMN method TEXT;
+                 CREATE TABLE login_events (
+                     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                     user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+                     at         INTEGER NOT NULL,
+                     success    INTEGER NOT NULL,
+                     method     TEXT NOT NULL,
+                     ip         TEXT,
+                     user_agent TEXT
+                 );
+                 CREATE INDEX login_events_user ON login_events (user_id, at);",
+            )?;
+            conn.pragma_update(None, "user_version", 4)?;
+            version = 4;
         }
         if version != SCHEMA_VERSION {
             return Err(AccountError::Internal(format!(
@@ -721,6 +806,90 @@ impl Accounts {
         self.conn()
             .execute("DELETE FROM sessions WHERE user_id = ?1", [user_id])?;
         Ok(())
+    }
+
+    /// Note d'où vient une session (adresse, navigateur, mode de connexion).
+    pub fn tag_session(&self, token: &str, meta: &SessionMeta) -> Result<()> {
+        self.conn().execute(
+            "UPDATE sessions SET ip = ?2, user_agent = ?3, method = ?4 WHERE token_hash = ?1",
+            params![digest(token), meta.ip, meta.user_agent, meta.method],
+        )?;
+        Ok(())
+    }
+
+    /// Ouverture réussie d'une session : la décrit, et l'inscrit à l'historique.
+    pub fn log_session_start(&self, token: &str, meta: &SessionMeta) -> Result<()> {
+        self.tag_session(token, meta)?;
+        let conn = self.conn();
+        let user_id: Option<String> = conn
+            .query_row(
+                "SELECT user_id FROM sessions WHERE token_hash = ?1",
+                [digest(token)],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(user_id) = user_id {
+            insert_login_event(&conn, &user_id, true, meta)?;
+        }
+        Ok(())
+    }
+
+    /// Tentative ratée sur un compte qui existe (un identifiant inconnu n'est pas noté).
+    pub fn log_failed_login(&self, email: &str, meta: &SessionMeta) -> Result<()> {
+        let conn = self.conn();
+        let user_id: Option<String> = conn
+            .query_row(
+                "SELECT id FROM users WHERE email = ?1",
+                [email.trim()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(user_id) = user_id {
+            insert_login_event(&conn, &user_id, false, meta)?;
+        }
+        Ok(())
+    }
+
+    /// Sessions encore valides d'un compte, la plus récente d'abord.
+    pub fn active_sessions(&self, user_id: &str) -> Result<Vec<SessionInfo>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(
+            "SELECT substr(token_hash, 1, 12), created_at, expires_at, ip, user_agent, method
+             FROM sessions WHERE user_id = ?1 AND expires_at > ?2
+             ORDER BY created_at DESC",
+        )?;
+        Ok(statement
+            .query_map(params![user_id, now()], |row| {
+                Ok(SessionInfo {
+                    id: row.get(0)?,
+                    created_at: row.get(1)?,
+                    expires_at: row.get(2)?,
+                    ip: row.get(3)?,
+                    user_agent: row.get(4)?,
+                    method: row.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Dernières connexions (réussies ou non) d'un compte, la plus récente d'abord.
+    pub fn login_history(&self, user_id: &str, limit: i64) -> Result<Vec<LoginEvent>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(
+            "SELECT at, success, method, ip, user_agent FROM login_events
+             WHERE user_id = ?1 ORDER BY at DESC, id DESC LIMIT ?2",
+        )?;
+        Ok(statement
+            .query_map(params![user_id, limit], |row| {
+                Ok(LoginEvent {
+                    at: row.get(0)?,
+                    success: row.get(1)?,
+                    method: row.get(2)?,
+                    ip: row.get(3)?,
+                    user_agent: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?)
     }
 
     // ── Identités OIDC ───────────────────────────────────────────────────
@@ -1394,6 +1563,10 @@ mod tests {
             conn.execute_batch(SCHEMA).unwrap();
             conn.execute_batch(
                 "ALTER TABLE users DROP COLUMN must_change_password;
+                 ALTER TABLE sessions DROP COLUMN ip;
+                 ALTER TABLE sessions DROP COLUMN user_agent;
+                 ALTER TABLE sessions DROP COLUMN method;
+                 DROP TABLE login_events;
                  DROP INDEX users_email;
                  CREATE INDEX users_email ON users (email);
                  INSERT INTO users (id, username, role, created_at) VALUES ('u1', 'Admin', 'admin', 0);
@@ -1455,6 +1628,61 @@ mod tests {
             })
             .unwrap();
         assert!(!carol.must_change_password);
+    }
+
+    #[test]
+    fn sessions_and_login_history_are_described() {
+        let store = Accounts::open_in_memory().unwrap();
+        let alice = user(&store, "alice", Role::User);
+        let meta = |method: &'static str, ip: &str| SessionMeta {
+            ip: Some(ip.into()),
+            user_agent: Some("Mozilla/5.0 test".into()),
+            method,
+        };
+
+        let first = store.create_session(&alice.id, 3600).unwrap();
+        store.log_session_start(&first, &meta("password", "10.0.0.1")).unwrap();
+        let second = store.create_session(&alice.id, 3600).unwrap();
+        store.log_session_start(&second, &meta("sso", "10.0.0.2")).unwrap();
+        // Une session échue ne compte pas.
+        let expired = store.create_session(&alice.id, 3600).unwrap();
+        store.tag_session(&expired, &meta("password", "10.0.0.3")).unwrap();
+        store
+            .conn()
+            .execute(
+                "UPDATE sessions SET expires_at = 1 WHERE token_hash = ?1",
+                [digest(&expired)],
+            )
+            .unwrap();
+
+        let sessions = store.active_sessions(&alice.id).unwrap();
+        assert_eq!(sessions.len(), 2);
+        assert!(sessions.iter().any(|s| s.method.as_deref() == Some("sso")));
+        assert!(sessions.iter().all(|s| s.id.len() == 12));
+        // L'identifiant ne permet pas de se faire passer pour la session.
+        assert!(sessions.iter().all(|s| s.id != first && s.id != second));
+
+        store
+            .log_failed_login("ALICE@local.test", &meta("password", "10.0.0.9"))
+            .unwrap();
+        // Un identifiant inconnu ne laisse aucune trace.
+        store
+            .log_failed_login("nobody@x.test", &meta("password", "10.0.0.9"))
+            .unwrap();
+        let history = store.login_history(&alice.id, 50).unwrap();
+        assert_eq!(history.len(), 3);
+        assert!(!history[0].success);
+        assert_eq!(history[0].ip.as_deref(), Some("10.0.0.9"));
+        assert_eq!(history.iter().filter(|e| e.success).count(), 2);
+
+        // L'historique est borné.
+        for _ in 0..(LOGIN_HISTORY_KEPT + 20) {
+            store.log_failed_login("alice@local.test", &meta("password", "1.1.1.1")).unwrap();
+        }
+        assert_eq!(
+            store.login_history(&alice.id, 1000).unwrap().len() as i64,
+            LOGIN_HISTORY_KEPT
+        );
     }
 
     #[test]

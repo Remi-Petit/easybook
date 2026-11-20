@@ -789,6 +789,54 @@ async fn a_temporary_password_can_be_changed_without_the_old_one_or_skipped() {
 }
 
 #[tokio::test]
+async fn an_admin_sees_the_sessions_and_login_history_of_an_account() {
+    let site = site();
+    let admin = site.admin().await;
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    let uri = format!("/api/admin/users/{}/activity", alice.id);
+
+    let quiet = site.get(&uri, Some(&admin)).await.json();
+    assert_eq!(quiet["sessions"].as_array().unwrap().len(), 0);
+    assert_eq!(quiet["history"].as_array().unwrap().len(), 0);
+
+    // Deux connexions en m\u00eame temps, et un essai raté.
+    assert_eq!(
+        site.login_reply("alice@local.test", PASSWORD).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        site.login_reply("alice@local.test", PASSWORD).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        site.login_reply("alice@local.test", "faux").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+
+    let activity = site.get(&uri, Some(&admin)).await.json();
+    let sessions = activity["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 2);
+    assert!(sessions.iter().all(|s| s["method"] == "password"));
+    let history = activity["history"].as_array().unwrap();
+    assert_eq!(history.len(), 3);
+    assert_eq!(history[0]["success"], false);
+    assert_eq!(history.iter().filter(|e| e["success"] == true).count(), 2);
+
+    // Réservé aux administrateurs ; un compte inconnu n'existe pas.
+    let reader = site.session_for(&alice);
+    assert_eq!(
+        site.get(&uri, Some(&reader)).await.status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        site.get("/api/admin/users/inconnu/activity", Some(&admin))
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
 async fn oidc_routes_do_not_exist_without_a_provider() {
     let site = site();
     let admin = site.admin().await;

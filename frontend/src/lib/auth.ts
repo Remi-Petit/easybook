@@ -33,6 +33,27 @@ export type User = {
 	identities: Identity[];
 };
 
+/** Une session encore valide d'un compte (`GET /api/admin/users/{id}/activity`). */
+export type SessionInfo = {
+	id: string;
+	created_at: number;
+	expires_at: number;
+	ip: string | null;
+	user_agent: string | null;
+	/** `password` ou `sso` ; `null` pour une session ouverte avant l'historique. */
+	method: string | null;
+};
+
+export type LoginEvent = {
+	at: number;
+	success: boolean;
+	method: string;
+	ip: string | null;
+	user_agent: string | null;
+};
+
+export type Activity = { sessions: SessionInfo[]; history: LoginEvent[] };
+
 export type Session = {
 	/** `false` : le serveur n'exige aucune connexion. */
 	enabled: boolean;
