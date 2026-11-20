@@ -30,6 +30,18 @@ let known = '';
 
 const bare = (etag: string | null): string => (etag ?? '').replace(/^W\//, '').replace(/"/g, '');
 
+type ActivityListener = (userId: string) => void;
+const activityListeners = new Set<ActivityListener>();
+
+/**
+ * Avis d'activité d'un compte (connexion, déconnexion, présence…) : le serveur ne les
+ * envoie qu'aux administrateurs. Rend la fonction qui se désabonne.
+ */
+export function onActivity(listener: ActivityListener): () => void {
+	activityListeners.add(listener);
+	return () => activityListeners.delete(listener);
+}
+
 /** Démarre le chargement initial et la connexion temps réel (une seule fois). */
 export function start(): void {
 	if (started) return;
@@ -75,7 +87,15 @@ function connect(): void {
 
 	ws.onmessage = (event) => {
 		try {
-			const notice = JSON.parse(event.data as string) as { etag?: string };
+			const notice = JSON.parse(event.data as string) as {
+				etag?: string;
+				type?: string;
+				user_id?: string;
+			};
+			if (notice.type === 'activity' && notice.user_id) {
+				for (const listener of activityListeners) listener(notice.user_id);
+				return;
+			}
 			// Déjà à jour (le catalogue de départ vient d'être chargé) : rien à faire.
 			if (notice.etag && notice.etag !== known) void refresh();
 		} catch {

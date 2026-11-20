@@ -19,6 +19,8 @@
 	import { agentLabel } from '$lib/agent';
 	import PasswordField from '$lib/components/PasswordField.svelte';
 	import InfoTip from '$lib/components/InfoTip.svelte';
+	import TablePager from '$lib/components/TablePager.svelte';
+	import { savedPageSize } from '$lib/pagesize';
 	import {
 		call,
 		displayName,
@@ -29,6 +31,7 @@
 		type User
 	} from '$lib/auth';
 	import { t } from '$lib/i18n/state.svelte';
+	import { onActivity } from '$lib/library.svelte';
 	import { notify } from '$lib/toasts.svelte';
 
 	let { data }: { data: { session: Session } } = $props();
@@ -56,17 +59,7 @@
 		sortFns
 	});
 
-	const PAGE_SIZES = [5, 10, 25, 50, 100];
 	const PAGE_SIZE_KEY = 'easybook.users.pageSize';
-
-	function savedPageSize(): number {
-		try {
-			const saved = Number(localStorage.getItem(PAGE_SIZE_KEY));
-			return PAGE_SIZES.includes(saved) ? saved : 10;
-		} catch {
-			return 10;
-		}
-	}
 
 	const COLUMN_LABELS = {
 		user: 'users.col.user',
@@ -134,7 +127,7 @@
 		getRowId: (user) => user.id,
 		globalFilterFn: 'includesString',
 		initialState: {
-			pagination: { pageIndex: 0, pageSize: savedPageSize() },
+			pagination: { pageIndex: 0, pageSize: savedPageSize(PAGE_SIZE_KEY) },
 			columnVisibility: {
 				created: false,
 				type: !!untrack(() => data.session.oidc),
@@ -142,21 +135,6 @@
 			}
 		}
 	});
-
-	const pagination = $derived(table.atoms.pagination.get());
-	const totalRows = $derived(table.getPrePaginatedRowModel().rows.length);
-	const pageCount = $derived(Math.max(table.getPageCount(), 1));
-	const rangeFrom = $derived(totalRows === 0 ? 0 : pagination.pageIndex * pagination.pageSize + 1);
-	const rangeTo = $derived(Math.min(totalRows, (pagination.pageIndex + 1) * pagination.pageSize));
-
-	function setPageSize(size: number) {
-		table.setPageSize(size);
-		try {
-			localStorage.setItem(PAGE_SIZE_KEY, String(size));
-		} catch {
-			// Stockage refusé : le choix vaut pour cette visite seulement.
-		}
-	}
 
 	let search = $state('');
 	let roleFilter = $state('');
@@ -226,7 +204,23 @@
 		loaded = true;
 	}
 
-	onMount(load);
+	onMount(() => {
+		void load();
+		// Un avis d'activité (connexion, déconnexion, onglet ouvert ou fermé) relit la liste,
+		// et le détail du compte ouvert dans le tiroir.
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const off = onActivity((userId) => {
+			clearTimeout(timer);
+			timer = setTimeout(() => {
+				void load();
+				if (selectedId === userId) void loadActivity(userId, true);
+			}, 150);
+		});
+		return () => {
+			clearTimeout(timer);
+			off();
+		};
+	});
 
 	function replace(updated: User) {
 		users = users.map((user) => (user.id === updated.id ? updated : user));
@@ -254,19 +248,25 @@
 	let activityLoading = $state(false);
 	let showAllSessions = $state(false);
 	const SESSIONS_SHOWN = 3;
+	const HISTORY_SHOWN = 5;
+
+	// `quiet` : relecture après un avis, sans vider ce qui est affiché.
+	async function loadActivity(id: string, quiet = false) {
+		if (!quiet) {
+			activity = null;
+			showAllSessions = false;
+			activityLoading = true;
+		}
+		const result = await call<Activity>('GET', `/api/admin/users/${id}/activity`);
+		if (selectedId !== id) return;
+		activityLoading = false;
+		if (result.ok) activity = result.data;
+		else fail(result.code);
+	}
 
 	$effect(() => {
 		const id = selectedId;
-		if (!id) return;
-		activity = null;
-		showAllSessions = false;
-		activityLoading = true;
-		void call<Activity>('GET', `/api/admin/users/${id}/activity`).then((result) => {
-			if (selectedId !== id) return;
-			activityLoading = false;
-			if (result.ok) activity = result.data;
-			else fail(result.code);
-		});
+		if (id) void loadActivity(id);
 	});
 
 	function tabKeys(event: KeyboardEvent) {
@@ -664,53 +664,7 @@
 				</table>
 			</div>
 
-			<div class="table-pages">
-				<label class="page-size">
-					<span>{t('users.perPage')}</span>
-					<select value={pagination.pageSize} onchange={(event) => setPageSize(Number(event.currentTarget.value))}>
-						{#each PAGE_SIZES as size (size)}
-							<option value={size}>{size}</option>
-						{/each}
-					</select>
-				</label>
-				<span class="page-range">
-					{t('users.range', { from: rangeFrom, to: rangeTo, total: totalRows })}
-				</span>
-				<nav aria-label={t('users.page', { page: pagination.pageIndex + 1, pages: pageCount })}>
-					<button
-						type="button"
-						aria-label={t('users.first')}
-						disabled={!table.getCanPreviousPage()}
-						onclick={() => table.setPageIndex(0)}
-					>
-						«
-					</button>
-					<button
-						type="button"
-						aria-label={t('users.prev')}
-						disabled={!table.getCanPreviousPage()}
-						onclick={() => table.previousPage()}
-					>
-						‹
-					</button>
-					<button
-						type="button"
-						aria-label={t('users.next')}
-						disabled={!table.getCanNextPage()}
-						onclick={() => table.nextPage()}
-					>
-						›
-					</button>
-					<button
-						type="button"
-						aria-label={t('users.last')}
-						disabled={!table.getCanNextPage()}
-						onclick={() => table.setPageIndex(pageCount - 1)}
-					>
-						»
-					</button>
-				</nav>
-			</div>
+			<TablePager {table} storageKey={PAGE_SIZE_KEY} />
 		{/if}
 	</section>
 </div>
@@ -742,9 +696,16 @@
 					<span class="pill" data-tone="accent">{t('users.password.temporary')}</span>
 				{/if}
 				{#if activity}
-					<span class="pill" data-tone={activity.sessions.length > 0 ? 'ok' : 'muted'}>
+					<span
+						class="pill"
+						data-tone={activity.online > 0 ? 'ok' : activity.sessions.length > 0 ? 'accent' : 'muted'}
+					>
 						<span class="dot" aria-hidden="true"></span>
-						{activity.sessions.length > 0 ? t('users.sessions.online') : t('users.sessions.offline')}
+						{activity.online > 0
+							? t('users.sessions.online')
+							: activity.sessions.length > 0
+								? t('users.sessions.open')
+								: t('users.sessions.offline')}
 					</span>
 				{/if}
 				<span class="muted">
@@ -867,7 +828,10 @@
 				{#if activityLoading || !activity}
 					<p class="panel-hint">{t('status.connecting')}</p>
 				{:else}
-					<h3>{t('users.sessions.title', { count: activity.sessions.length })}</h3>
+					<h3 class="with-tip">
+						{t('users.sessions.title', { count: activity.sessions.length })}
+						<InfoTip label={t('users.tab.sessions')} text={t('users.sessions.hint')} />
+					</h3>
 					{#if activity.sessions.length === 0}
 						<p class="panel-hint">{t('users.sessions.none')}</p>
 					{:else}
@@ -903,7 +867,7 @@
 						<p class="panel-hint">{t('users.history.empty')}</p>
 					{:else}
 						<ul class="history-list">
-							{#each activity.history as event, index (index)}
+							{#each activity.history.slice(0, HISTORY_SHOWN) as event, index (index)}
 								<li data-failed={!event.success}>
 									<span class="pill" data-tone={event.success ? 'ok' : 'danger'}>
 										<span class="dot" aria-hidden="true"></span>
@@ -924,6 +888,11 @@
 								</li>
 							{/each}
 						</ul>
+						{#if activity.history.length > HISTORY_SHOWN}
+							<a class="link-more" href="/admin/users/{selected.id}/sessions">
+								{t('users.history.more')}
+							</a>
+						{/if}
 					{/if}
 				{/if}
 			{/if}

@@ -761,12 +761,28 @@ async fn get_raw(
 
 /// WebSocket : un avis (`{"etag":"…"}`) à la connexion, puis à chaque changement.
 /// Le client recharge `/api/books` quand l'ETag annoncé n'est plus le sien.
-async fn ws_library(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
-    ws.on_upgrade(move |socket| handle_ws(socket, state))
+async fn ws_library(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    auth::MaybeUser(user): auth::MaybeUser,
+) -> Response {
+    ws.on_upgrade(move |socket| handle_ws(socket, state, user))
 }
 
-async fn handle_ws(socket: WebSocket, state: AppState) {
+async fn handle_ws(socket: WebSocket, state: AppState, user: Option<crate::accounts::User>) {
     let (mut sink, mut stream) = socket.split();
+
+    // Une connexion ouverte vaut une présence ; un administrateur reçoit en plus
+    // les avis d'activité des comptes (connexions, sessions, présence).
+    let _presence = state
+        .auth()
+        .zip(user.as_ref())
+        .map(|(auth, user)| auth.enter(&user.id));
+    let mut events = state
+        .auth()
+        .zip(user.as_ref())
+        .filter(|(_, user)| user.role == crate::accounts::Role::Admin)
+        .map(|(auth, _)| auth.subscribe_events());
 
     // Abonnement **avant** le premier envoi : un changement survenu pendant le
     // scan initial ne doit pas être perdu.
@@ -793,6 +809,22 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
                 Some(Ok(Message::Close(_))) | None => break,
                 Some(Ok(_)) => {}
                 Some(Err(_)) => break,
+            },
+            // Activité d'un compte, réservée aux administrateurs.
+            event = async {
+                match events.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => match event {
+                Ok(json) => {
+                    if sink.send(Message::Text(json.into())).await.is_err() {
+                        break;
+                    }
+                }
+                // Des avis perdus : l'interface relit de toute façon l'état à chaque avis.
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(_) => break,
             },
             // Changement du dossier, poussé par le watcher.
             envelope = rx.recv() => match envelope {

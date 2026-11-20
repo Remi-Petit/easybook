@@ -817,8 +817,8 @@ impl Accounts {
         Ok(())
     }
 
-    /// Ouverture réussie d'une session : la décrit, et l'inscrit à l'historique.
-    pub fn log_session_start(&self, token: &str, meta: &SessionMeta) -> Result<()> {
+    /// Ouverture réussie d'une session : la décrit, l'inscrit à l'historique, et rend le compte.
+    pub fn log_session_start(&self, token: &str, meta: &SessionMeta) -> Result<Option<String>> {
         self.tag_session(token, meta)?;
         let conn = self.conn();
         let user_id: Option<String> = conn
@@ -828,14 +828,14 @@ impl Accounts {
                 |row| row.get(0),
             )
             .optional()?;
-        if let Some(user_id) = user_id {
-            insert_login_event(&conn, &user_id, true, meta)?;
+        if let Some(user_id) = &user_id {
+            insert_login_event(&conn, user_id, true, meta)?;
         }
-        Ok(())
+        Ok(user_id)
     }
 
     /// Tentative ratée sur un compte qui existe (un identifiant inconnu n'est pas noté).
-    pub fn log_failed_login(&self, email: &str, meta: &SessionMeta) -> Result<()> {
+    pub fn log_failed_login(&self, email: &str, meta: &SessionMeta) -> Result<Option<String>> {
         let conn = self.conn();
         let user_id: Option<String> = conn
             .query_row(
@@ -844,10 +844,10 @@ impl Accounts {
                 |row| row.get(0),
             )
             .optional()?;
-        if let Some(user_id) = user_id {
-            insert_login_event(&conn, &user_id, false, meta)?;
+        if let Some(user_id) = &user_id {
+            insert_login_event(&conn, user_id, false, meta)?;
         }
-        Ok(())
+        Ok(user_id)
     }
 
     /// Sessions encore valides d'un compte, la plus récente d'abord.

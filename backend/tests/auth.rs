@@ -799,7 +799,7 @@ async fn an_admin_sees_the_sessions_and_login_history_of_an_account() {
     assert_eq!(quiet["sessions"].as_array().unwrap().len(), 0);
     assert_eq!(quiet["history"].as_array().unwrap().len(), 0);
 
-    // Deux connexions en m\u00eame temps, et un essai raté.
+    // Deux connexions en même temps, et un essai raté.
     assert_eq!(
         site.login_reply("alice@local.test", PASSWORD).await.status,
         StatusCode::OK
@@ -821,6 +821,21 @@ async fn an_admin_sees_the_sessions_and_login_history_of_an_account() {
     assert_eq!(history.len(), 3);
     assert_eq!(history[0]["success"], false);
     assert_eq!(history.iter().filter(|e| e["success"] == true).count(), 2);
+    // Aucun WebSocket ouvert : connecté par session, pas en ligne.
+    assert_eq!(activity["online"], 0);
+
+    let limited = site
+        .get(&format!("{uri}?limit=1"), Some(&admin))
+        .await
+        .json();
+    assert_eq!(limited["history"].as_array().unwrap().len(), 1);
+
+    // La fiche du compte, pour la page dédiée.
+    let card = site
+        .get(&format!("/api/admin/users/{}", alice.id), Some(&admin))
+        .await;
+    assert_eq!(card.status, StatusCode::OK);
+    assert_eq!(card.json()["email"], "alice@local.test");
 
     // Réservé aux administrateurs ; un compte inconnu n'existe pas.
     let reader = site.session_for(&alice);

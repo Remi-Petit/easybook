@@ -39,6 +39,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::broadcast;
 
 pub const SESSION_COOKIE: &str = "easybook_session";
 /// Retient le `state` de la connexion OIDC en cours : lie le retour du
@@ -65,6 +66,31 @@ pub struct AuthState {
     /// Comptes à un clic de la page de connexion : (e-mail, mot de passe). Le mot
     /// de passe ne quitte jamais le serveur. Développement seulement.
     dev_logins: Vec<(String, String)>,
+    /// Avis d'activité (`{"type":"activity","user_id":…}`), réservés aux administrateurs.
+    events: broadcast::Sender<String>,
+    /// Connexions WebSocket ouvertes, par compte : qui est en ligne à cet instant.
+    presence: Mutex<HashMap<String, usize>>,
+}
+
+/// Tant qu'il vit, une connexion WebSocket compte comme une présence du compte.
+pub struct Presence {
+    auth: Arc<AuthState>,
+    user_id: String,
+}
+
+impl Drop for Presence {
+    fn drop(&mut self) {
+        {
+            let mut map = self.auth.presence.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(count) = map.get_mut(&self.user_id) {
+                *count -= 1;
+                if *count == 0 {
+                    map.remove(&self.user_id);
+                }
+            }
+        }
+        self.auth.notify(&self.user_id);
+    }
 }
 
 impl AuthState {
@@ -81,7 +107,39 @@ impl AuthState {
             session_ttl: i64::from(settings.session_days) * 86_400,
             direct: false,
             dev_logins: Vec::new(),
+            events: broadcast::channel(64).0,
+            presence: Mutex::default(),
         }
+    }
+
+    /// Prévient les administrateurs connectés que l'activité de ce compte a changé.
+    pub fn notify(&self, user_id: &str) {
+        let event = serde_json::json!({ "type": "activity", "user_id": user_id });
+        // Personne n'écoute : tant mieux, rien à faire.
+        let _ = self.events.send(event.to_string());
+    }
+
+    pub fn subscribe_events(&self) -> broadcast::Receiver<String> {
+        self.events.subscribe()
+    }
+
+    /// Une connexion WebSocket de plus pour ce compte, jusqu'à la chute du garde.
+    pub fn enter(self: &Arc<Self>, user_id: &str) -> Presence {
+        {
+            let mut map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
+            *map.entry(user_id.to_string()).or_insert(0) += 1;
+        }
+        self.notify(user_id);
+        Presence {
+            auth: Arc::clone(self),
+            user_id: user_id.to_string(),
+        }
+    }
+
+    /// Connexions WebSocket ouvertes (une par onglet) pour ce compte.
+    pub fn online(&self, user_id: &str) -> usize {
+        let map = self.presence.lock().unwrap_or_else(|e| e.into_inner());
+        map.get(user_id).copied().unwrap_or(0)
     }
 
     /// Boutons de connexion rapide : `email:mot_de_passe,email:mot_de_passe`.
@@ -411,7 +469,9 @@ pub fn routes() -> Router<AppState> {
         .route("/api/admin/users", get(list_users).post(create_user))
         .route(
             "/api/admin/users/{id}",
-            axum::routing::patch(update_user).delete(delete_user),
+            axum::routing::patch(update_user)
+                .delete(delete_user)
+                .get(get_user),
         )
         .route("/api/admin/users/{id}/password", put(admin_set_password))
         .route("/api/admin/users/{id}/activity", get(user_activity))
@@ -557,16 +617,23 @@ async fn sign_in(
         auth.throttle.failure(&key);
         let (failed_email, meta) = (email.clone(), session_meta(headers, "password"));
         // Le journal ne doit jamais faire échouer la réponse.
-        let _ = db(auth, move |accounts| {
+        let failed = db(auth, move |accounts| {
             accounts.log_failed_login(&failed_email, &meta)
         })
         .await;
+        if let Ok(Ok(Some(id))) = failed {
+            auth.notify(&id);
+        }
         return Err(error(StatusCode::UNAUTHORIZED, "invalid_credentials"));
     };
     auth.throttle.success(&key);
     {
         let (token, meta) = (token.clone(), session_meta(headers, method));
-        let _ = db(auth, move |accounts| accounts.log_session_start(&token, &meta)).await;
+        if let Ok(Ok(Some(id))) =
+            db(auth, move |accounts| accounts.log_session_start(&token, &meta)).await
+        {
+            auth.notify(&id);
+        }
     }
 
     let cookie = session_cookies(headers, &token, ttl);
@@ -616,9 +683,16 @@ async fn direct_login(
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
     if let Some(token) = cookie_value(&headers, SESSION_COOKIE) {
-        db(&auth, move |accounts| accounts.delete_session(&token))
-            .await?
-            .map_err(account_error)?;
+        let user_id = db(&auth, move |accounts| -> Result<Option<String>, AccountError> {
+            let user = accounts.session_user(&token)?;
+            accounts.delete_session(&token)?;
+            Ok(user.map(|user| user.id))
+        })
+        .await?
+        .map_err(account_error)?;
+        if let Some(id) = user_id {
+            auth.notify(&id);
+        }
     }
     let expired = cookie(SESSION_COOKIE, "", 0, "/", is_https(&headers));
     Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, expired)]).into_response())
@@ -895,7 +969,11 @@ async fn oidc_callback(
     }) = &outcome
     {
         let (token, meta) = (token.clone(), session_meta(&headers, "sso"));
-        let _ = db(&auth, move |accounts| accounts.log_session_start(&token, &meta)).await;
+        if let Ok(Ok(Some(id))) =
+            db(&auth, move |accounts| accounts.log_session_start(&token, &meta)).await
+        {
+            auth.notify(&id);
+        }
     }
 
     Ok(match outcome {
@@ -1107,13 +1185,30 @@ async fn update_user(
             return Err(error(StatusCode::CONFLICT, "cannot_disable_self"));
         }
     }
+    let notified = id.clone();
     let updated = db(&auth, move |accounts| -> Result<UserView, AccountError> {
         let user = accounts.update_user(&id, &patch)?;
         view(accounts, user)
     })
     .await?
     .map_err(account_error)?;
+    auth.notify(&notified);
     Ok(Json(updated).into_response())
+}
+
+/// `GET /api/admin/users/{id}` — la fiche d'un compte.
+async fn get_user(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let found = db(&auth, move |accounts| -> Result<UserView, AccountError> {
+        let user = accounts.user(&id)?.ok_or(AccountError::NotFound)?;
+        view(accounts, user)
+    })
+    .await?
+    .map_err(account_error)?;
+    Ok(Json(found).into_response())
 }
 
 async fn delete_user(
@@ -1138,19 +1233,29 @@ struct SetPasswordBody {
     temporary: bool,
 }
 
-/// `GET /api/admin/users/{id}/activity` — sessions ouvertes et dernières connexions.
+#[derive(Deserialize)]
+struct ActivityQuery {
+    limit: Option<i64>,
+}
+
+/// `GET /api/admin/users/{id}/activity` — sessions ouvertes, connexions en ligne
+/// et dernières connexions (`?limit=`, 50 par défaut, 200 au plus).
 async fn user_activity(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<ActivityQuery>,
 ) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let online = auth.online(&id);
     let (sessions, history) = db(&auth, move |accounts| -> Result<_, AccountError> {
         accounts.user(&id)?.ok_or(AccountError::NotFound)?;
-        Ok((accounts.active_sessions(&id)?, accounts.login_history(&id, 50)?))
+        Ok((accounts.active_sessions(&id)?, accounts.login_history(&id, limit)?))
     })
     .await?
     .map_err(account_error)?;
-    Ok(Json(serde_json::json!({ "sessions": sessions, "history": history })).into_response())
+    Ok(Json(serde_json::json!({ "sessions": sessions, "history": history, "online": online }))
+        .into_response())
 }
 
 async fn admin_set_password(
@@ -1159,6 +1264,7 @@ async fn admin_set_password(
     Json(body): Json<SetPasswordBody>,
 ) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
+    let notified = id.clone();
     db(&auth, move |accounts| {
         if body.temporary {
             accounts.set_temporary_password(&id, &body.password)
@@ -1168,6 +1274,7 @@ async fn admin_set_password(
     })
     .await?
     .map_err(account_error)?;
+    auth.notify(&notified);
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -1256,6 +1363,34 @@ mod tests {
             );
         }
         map
+    }
+
+    #[test]
+    fn open_websockets_count_as_presence_and_warn_the_admins() {
+        let accounts = Arc::new(Accounts::open_in_memory().unwrap());
+        let auth = Arc::new(AuthState::new(accounts, config::Auth::default()));
+        let mut events = auth.subscribe_events();
+
+        assert_eq!(auth.online("u1"), 0);
+        let first = auth.enter("u1");
+        let second = auth.enter("u1");
+        assert_eq!(auth.online("u1"), 2);
+        assert_eq!(auth.online("u2"), 0);
+
+        drop(first);
+        assert_eq!(auth.online("u1"), 1);
+        drop(second);
+        assert_eq!(auth.online("u1"), 0);
+
+        // Chaque entrée et chaque sortie prévient les administrateurs.
+        let mut warned = 0;
+        while let Ok(event) = events.try_recv() {
+            let event: serde_json::Value = serde_json::from_str(&event).unwrap();
+            assert_eq!(event["type"], "activity");
+            assert_eq!(event["user_id"], "u1");
+            warned += 1;
+        }
+        assert_eq!(warned, 4);
     }
 
     #[test]

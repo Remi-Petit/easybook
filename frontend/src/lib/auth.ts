@@ -52,7 +52,12 @@ export type LoginEvent = {
 	user_agent: string | null;
 };
 
-export type Activity = { sessions: SessionInfo[]; history: LoginEvent[] };
+export type Activity = {
+	sessions: SessionInfo[];
+	history: LoginEvent[];
+	/** Onglets ouverts en ce moment : le compte est en ligne s'il y en a. */
+	online: number;
+};
 
 export type Session = {
 	/** `false` : le serveur n'exige aucune connexion. */
