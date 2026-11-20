@@ -248,6 +248,12 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'docs: badges de couverture' README.md
+          # La mesure prend plusieurs minutes : entre le `checkout` et ici, la
+          # branche a pu avancer (une release poussée à la main, par exemple) et
+          # un `git push` direct serait refusé comme non fast-forward. On se
+          # replace sur la pointe avant de pousser ; les badges ne portent que
+          # sur les lignes `badge/…` du README, un rebase ne peut pas les perdre.
+          git pull --rebase
           git push
 
   # Sécurité de **l'image** (Trivy) : ce qui part chez l'utilisateur est le
