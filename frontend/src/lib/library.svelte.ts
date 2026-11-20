@@ -48,6 +48,24 @@ export function start(): void {
 	started = true;
 	void refresh();
 	connect();
+
+	// Un onglet en arrière-plan est gelé (ou ses minuteries freinées) par le
+	// navigateur : la reconnexion programmée par `onclose` peut alors ne jamais
+	// partir, et côté serveur l'onglet reste compté absent. Dès qu'il redevient
+	// visible, ou que le réseau revient, on repart sans attendre le délai.
+	document.addEventListener('visibilitychange', () => {
+		if (!document.hidden) revive();
+	});
+	window.addEventListener('focus', revive);
+	window.addEventListener('online', revive);
+	window.addEventListener('pageshow', revive);
+}
+
+/** Reconnexion immédiate, sauf si la socket est déjà ouverte ou en train de s'ouvrir. */
+function revive(): void {
+	if (socket && socket.readyState <= WebSocket.OPEN) return;
+	attempt = 0;
+	connect();
 }
 
 async function refresh(): Promise<void> {

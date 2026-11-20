@@ -23,6 +23,14 @@
 	let showAll = $state(false);
 	let confirmAll = $state<ConfirmDialog>();
 
+	/**
+	 * Délai pendant lequel une session sans WebSocket reste « récemment
+	 * active » : le battement de cœur du serveur met jusqu'à ~1 min à
+	 * raccrocher, et un onglet gelé peut n'avoir plus parlé depuis peu.
+	 */
+	const GRACE = 120;
+	const recently = (session: SessionInfo) =>
+		!session.online && Date.now() / 1000 - session.last_seen_at <= GRACE;
 	const visible = $derived(showAll ? sessions : sessions.slice(0, shown));
 	const hasCurrent = $derived(sessions.some((session) => session.current));
 	const closable = $derived(sessions.some((session) => !session.current));
@@ -73,9 +81,13 @@
 					<span class="session-title">
 						<strong>{agentLabel(session.user_agent) ?? t('users.sessions.unknown')}</strong>
 						{#if session.current}<span class="badge">{t('users.sessions.current')}</span>{/if}
-						<span class="pill" data-tone={session.online ? 'ok' : 'muted'}>
+						<span class="pill" data-tone={session.online ? 'ok' : recently(session) ? 'accent' : 'muted'}>
 							<span class="dot" aria-hidden="true"></span>
-							{session.online ? t('users.sessions.online') : t('users.sessions.away')}
+							{session.online
+								? t('users.sessions.online')
+								: recently(session)
+									? t('users.sessions.recent')
+									: t('users.sessions.away')}
 						</span>
 					</span>
 					<span class="muted">

@@ -26,6 +26,7 @@
 use crate::auth::{self, AuthState};
 use crate::formats::{self, Format};
 use crate::{config, library, readings, resize, rewrite, thumbnail, write};
+use axum::body::Bytes;
 use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -50,6 +51,17 @@ use tower_http::services::ServeFile;
 /// un parcours complet du dossier à chaque fois. Ce n'est pas un sondage : rien
 /// ne tourne en tâche de fond.
 const SNAPSHOT_TTL: Duration = Duration::from_secs(2);
+
+/// Battement de cœur du WebSocket : un `Ping` à cet intervalle, et la connexion est
+/// coupée si plus rien n'est revenu depuis `WS_SILENCE`.
+///
+/// La présence (« en ligne ») ne vaut que si la socket vit encore : sans ce
+/// battement, un onglet gelé par le navigateur ou un réseau coupé laisse la session
+/// faussement présente, et un `Ping` non envoyé ne permet pas non plus de la
+/// réveiller. Le navigateur répond `Pong` tout seul, même quand son JavaScript
+/// dort.
+const WS_HEARTBEAT: Duration = Duration::from_secs(25);
+const WS_SILENCE: Duration = Duration::from_secs(75);
 
 /// Catalogue sérialisé, partagé sans copie entre les requêtes HTTP.
 ///
@@ -811,13 +823,31 @@ async fn handle_ws(
         return;
     }
 
+    // Le premier `Ping` part après un délai plein : la connexion vient d'être
+    // établie, inutile de la sonder tout de suite.
+    let later = tokio::time::Instant::now() + WS_HEARTBEAT;
+    let mut beat = tokio::time::interval_at(later, WS_HEARTBEAT);
+    let mut heard = tokio::time::Instant::now();
+
     loop {
         tokio::select! {
-            // Côté client : seule la fermeture nous intéresse.
+            // Côté client : seule la fermeture nous intéresse (un `Pong` n'est
+            // qu'un signe de vie, il ne réarme que le battement).
             message = stream.next() => match message {
                 Some(Ok(Message::Close(_))) | None => break,
-                Some(Ok(_)) => {}
+                Some(Ok(_)) => heard = tokio::time::Instant::now(),
                 Some(Err(_)) => break,
+            },
+            // Plus personne au bout du fil (onglet tué sans fermeture propre,
+            // proxy qui a coupé, machine en veille) : on rend la présence exacte
+            // en raccrochant nous-mêmes.
+            _ = beat.tick() => {
+                if heard.elapsed() > WS_SILENCE {
+                    break;
+                }
+                if sink.send(Message::Ping(Bytes::new())).await.is_err() {
+                    break;
+                }
             },
             // La session de ce WebSocket vient d'être fermée.
             closed = async {
