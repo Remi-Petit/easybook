@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { formatBytes } from '$lib/api';
 	import BarList from '$lib/components/BarList.svelte';
+	import InfoTip from '$lib/components/InfoTip.svelte';
 	import SegmentBar from '$lib/components/SegmentBar.svelte';
 	import StackedArea from '$lib/components/StackedArea.svelte';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
@@ -315,12 +316,10 @@
 							<p class="stat-line">
 								<span>
 									{t('perf.reading.media')}
-									<span
-										class="info-dot"
-										role="img"
-										aria-label={t('perf.reading.mediaLimit')}
-										title={t('perf.reading.mediaLimit')}>?</span
-									>
+									<InfoTip
+										text={t('perf.reading.mediaLimit')}
+										label={t('perf.reading.media')}
+									/>
 								</span>
 								<span>{formatBytes(readings.releasedMediaBytes)}</span>
 							</p>

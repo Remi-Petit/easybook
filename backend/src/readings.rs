@@ -132,7 +132,7 @@ pub fn spawn_sweeper() {
                 std::thread::sleep(SWEEP);
                 sweep();
                 round = round.wrapping_add(1);
-                if round % MEDIA_EVERY == 0 {
+                if round.is_multiple_of(MEDIA_EVERY) {
                     sweep_media();
                 }
             }
