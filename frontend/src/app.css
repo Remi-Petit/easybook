@@ -622,8 +622,12 @@ code {
 /* Empilés en bas à droite, au-dessus du suivi d'envoi. */
 .toasts {
 	position: fixed;
-	right: 18px;
-	bottom: 18px;
+	inset: auto 18px 18px auto;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	overflow: visible;
 	z-index: 50;
 	display: grid;
 	gap: 8px;
