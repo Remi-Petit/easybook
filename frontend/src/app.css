@@ -514,6 +514,59 @@ code {
 	cursor: default;
 }
 
+.btn-danger {
+	padding: 8px 14px;
+	border-radius: 9px;
+	background: var(--danger);
+	color: #1a0d0a;
+	font-size: 13.5px;
+	font-weight: 600;
+}
+
+.btn-danger:hover:not(:disabled) {
+	filter: brightness(1.08);
+}
+
+.btn-danger:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* Confirmation de suppression : l'objet de l'action est nommé, le bouton danger vient en dernier. */
+.confirm {
+	border-color: rgba(224, 113, 92, 0.45);
+}
+
+.confirm-icon {
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	background: rgba(224, 113, 92, 0.14);
+	color: var(--danger);
+}
+
+.confirm-user {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 12px;
+	background: var(--panel-2);
+	border-radius: 10px;
+}
+
+.confirm-user > div {
+	display: grid;
+	min-width: 0;
+}
+
+.confirm-user code {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .btn-plain {
 	color: var(--muted);
 }

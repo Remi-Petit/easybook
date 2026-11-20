@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import {
 		columnFilteringFeature,
 		columnVisibilityFeature,
@@ -279,11 +279,29 @@
 		else fail(result.code);
 	}
 
-	async function remove(user: User) {
-		if (!confirm(t('users.deleteConfirm', { name: displayName(user) }))) return;
+	// Confirmation de suppression.
+	let deleteDialog = $state<HTMLDialogElement>();
+	let toDelete = $state<User | null>(null);
+	let deleting = $state(false);
+	let cancelDelete = $state<HTMLButtonElement>();
+
+	async function askDelete(user: User) {
+		toDelete = user;
+		await tick();
+		deleteDialog?.showModal();
+		// Entrée ne supprime jamais par accident : le focus part sur « Annuler ».
+		cancelDelete?.focus();
+	}
+
+	async function confirmDelete() {
+		const user = toDelete;
+		if (!user || deleting) return;
+		deleting = true;
 		const result = await call('DELETE', `/api/admin/users/${user.id}`);
+		deleting = false;
+		deleteDialog?.close();
 		if (!result.ok) return fail(result.code);
-		notify(t('users.deleted', { name: displayName(user) }), { tone: 'ok' });
+		notify(t('users.deleted'), { tone: 'ok' });
 		closeDrawer();
 		users = users.filter((entry) => entry.id !== user.id);
 	}
@@ -667,7 +685,7 @@
 				>
 					{selected.disabled ? t('users.enable') : t('users.disable')}
 				</button>
-				<button type="button" class="btn-plain danger" disabled={isSelf} onclick={() => remove(selected)}>
+				<button type="button" class="btn-plain danger" disabled={isSelf} onclick={() => askDelete(selected)}>
 					{t('users.delete')}
 				</button>
 			</div>
@@ -736,6 +754,49 @@
 					<div><button type="submit" class="btn-main">{t('users.link.add')}</button></div>
 				</form>
 			{/if}
+			</div>
+		</div>
+	{/if}
+</dialog>
+
+<dialog
+	bind:this={deleteDialog}
+	class="dialog confirm"
+	aria-labelledby="delete-title"
+	onclick={(event) => event.target === deleteDialog && !deleting && deleteDialog?.close()}
+	onclose={() => (toDelete = null)}
+>
+	{#if toDelete}
+		<div class="dialog-body">
+			<span class="confirm-icon" aria-hidden="true">
+				<svg viewBox="0 0 24 24" width="22" height="22">
+					<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3" />
+					</g>
+				</svg>
+			</span>
+			<h2 id="delete-title">{t('users.deleteTitle')}</h2>
+			<div class="confirm-user">
+				{@render avatar(toDelete)}
+				<div>
+					<strong>{displayName(toDelete)}</strong>
+					<code>{toDelete.email}</code>
+				</div>
+			</div>
+			<p>{t('users.deleteConfirm')}</p>
+			<div class="dialog-actions">
+				<button
+					bind:this={cancelDelete}
+					class="btn-plain"
+					type="button"
+					disabled={deleting}
+					onclick={() => deleteDialog?.close()}
+				>
+					{t('common.cancel')}
+				</button>
+				<button class="btn-danger" type="button" disabled={deleting} onclick={confirmDelete}>
+					{t('users.delete')}
+				</button>
 			</div>
 		</div>
 	{/if}
