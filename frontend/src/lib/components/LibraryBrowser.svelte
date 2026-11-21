@@ -1,7 +1,8 @@
 <script lang="ts">
-	// Le navigateur d'un niveau du catalogue : recherche, tags de format, séries
+	// Le navigateur d'un niveau du catalogue : recherche, filtres, séries
 	// et livres. La page d'accueil (racine) et la page d'un dossier s'en servent
 	// toutes les deux — seule l'intro diffère.
+	import { onMount } from 'svelte';
 	import BookCard from '$lib/components/BookCard.svelte';
 	import FolderCard from '$lib/components/FolderCard.svelte';
 	import {
@@ -16,6 +17,7 @@
 	import { t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
 	import { formatColor } from '$lib/library-stats';
+	import { startReading } from '$lib/reading.svelte';
 
 	/** Les deux groupes que l'on peut afficher : des séries ou des livres. */
 	type Kind = 'series' | 'books';
@@ -142,6 +144,10 @@
 		formats = [];
 		types = [];
 	}
+
+	// Les couvertures montrent l'avancement : la position de chaque livre vient
+	// de l'historique du compte (une seule requête, partagée par les cartes).
+	onMount(() => startReading());
 
 	/** La barre, pour refermer ses menus de l'extérieur. */
 	let bar = $state<HTMLElement>();

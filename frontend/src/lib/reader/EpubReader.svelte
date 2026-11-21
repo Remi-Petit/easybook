@@ -74,13 +74,20 @@
 	});
 
 	onMount(() => {
-		// Reprise : on rouvre le livre là où on l'avait laissé.
+		// Reprise : la position du serveur prime (elle peut venir d'un autre
+		// appareil), sinon on rouvre le livre là où on l'avait laissé.
+		let start = 0;
 		try {
 			const saved = Number(localStorage.getItem(storageKey));
-			if (Number.isInteger(saved) && saved >= 0 && saved < chapters.length) index = saved;
+			if (Number.isInteger(saved) && saved >= 0 && saved < chapters.length) start = saved;
 		} catch {
 			// Rien à restaurer.
 		}
+		const server = detail.progress?.page;
+		index =
+			typeof server === 'number' && Number.isInteger(server) && server >= 0 && server < chapters.length
+				? server
+				: start;
 
 		const onKey = (event: KeyboardEvent) => {
 			if (event.target instanceof HTMLInputElement) return;

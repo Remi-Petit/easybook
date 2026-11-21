@@ -373,6 +373,7 @@ pub fn routes(state: AppState) -> Router {
         // Historique de lecture : la position du lecteur, et ce qu'en voit un
         // administrateur. Le préfixe `/api/admin/` suffit à exiger le rôle.
         .route("/api/read/progress", post(save_progress))
+        .route("/api/read/history", get(get_my_reading))
         .route(
             "/api/admin/users/{id}/read/history",
             get(get_reading_history),
@@ -564,6 +565,18 @@ struct BookDetail {
     /// Explication, quand le livre ne peut pas être ouvert.
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<String>,
+    /// Position du lecteur connecté : c'est elle qui fait **reprendre** la
+    /// lecture, y compris depuis un autre appareil.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress: Option<Position>,
+}
+
+/// La position enregistrée d'un utilisateur dans un livre.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Position {
+    pub page: i64,
+    pub pages: i64,
 }
 
 #[derive(Deserialize)]
@@ -572,14 +585,35 @@ struct BookQuery {
 }
 
 /// `GET /api/book?path=` — sommaire ou nombre de pages.
-async fn get_book(State(state): State<AppState>, Query(query): Query<BookQuery>) -> Response {
+async fn get_book(
+    State(state): State<AppState>,
+    auth::MaybeUser(user): auth::MaybeUser,
+    Query(query): Query<BookQuery>,
+) -> Response {
     let Some(path) = file_in(&state.root(), &query.path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
     let rel = query.path.clone();
     match state.read(move || detail(&path, &rel)).await {
-        Ok(Ok(detail)) => Json(detail).into_response(),
+        Ok(Ok(mut detail)) => {
+            // La position du lecteur : c'est elle qui fait reprendre la lecture.
+            if let (Some(progress), Some(user)) = (state.progress(), user.as_ref()) {
+                let book = query.path.clone();
+                let id = user.id.clone();
+                let position = tokio::task::spawn_blocking(move || progress.position(&id, &book))
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                    .flatten();
+                detail.progress = position.map(|row| Position {
+                    page: row.page,
+                    pages: row.pages,
+                });
+            }
+            // Réponse propre à un lecteur : jamais de cache intermédiaire.
+            ([(header::CACHE_CONTROL, "no-store")], Json(detail)).into_response()
+        }
         Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, e).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
@@ -611,6 +645,7 @@ fn detail(path: &Path, rel: &str) -> Result<BookDetail, String> {
         pages,
         modified: file_stamp(path).map(|(_, secs)| secs),
         note: module.note().map(str::to_string),
+        progress: None,
     })
 }
 
@@ -1413,6 +1448,27 @@ async fn save_progress(
 #[derive(Deserialize)]
 struct ReadingHistoryQuery {
     limit: Option<usize>,
+}
+
+/// `GET /api/read/history?limit=` — les lectures du compte connecté.
+///
+/// C'est ce que l'accueil affiche (« poursuivre la lecture ») et ce qui donne
+/// leur barre de progression aux couvertures.
+async fn get_my_reading(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+    Query(query): Query<ReadingHistoryQuery>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return (StatusCode::NOT_FOUND, "historique désactivé").into_response();
+    };
+    let limit = query.limit.unwrap_or(30).clamp(1, 200);
+    let id = user.id.clone();
+    match tokio::task::spawn_blocking(move || progress.history(&id, limit)).await {
+        Ok(Ok(history)) => ([(header::CACHE_CONTROL, "no-store")], Json(history)).into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
 }
 
 /// `GET /api/admin/users/{id}/read/history?limit=` — l'historique d'un compte.

@@ -204,6 +204,29 @@ impl Progress {
         tx.commit()
     }
 
+    /// La position d'un utilisateur dans un livre, si elle existe.
+    pub fn position(&self, user: &str, book: &str) -> rusqlite::Result<Option<BookProgress>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT book, title, format, page, pages, started_at, updated_at
+               FROM reading_progress
+              WHERE user_id = ?1 AND book = ?2",
+        )?;
+        let mut rows = stmt.query(params![user, book])?;
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
+        Ok(Some(BookProgress {
+            book: row.get(0)?,
+            title: row.get(1)?,
+            format: row.get(2)?,
+            page: row.get(3)?,
+            pages: row.get(4)?,
+            started_at: row.get(5)?,
+            updated_at: row.get(6)?,
+        }))
+    }
+
     /// Livres les plus récemment lus par `user`, du plus récent au plus ancien.
     pub fn recent(&self, user: &str, limit: usize) -> rusqlite::Result<Vec<BookProgress>> {
         let conn = self.lock();

@@ -11,7 +11,6 @@ use axum::http::StatusCode;
 use common::http::{PASSWORD, site};
 use easybook::accounts::Role;
 use serde_json::json;
-
 /// Corps d'une position, pour alléger les appels.
 fn position(path: &str, page: i64, pages: i64) -> serde_json::Value {
     json!({ "path": path, "page": page, "pages": pages })
@@ -147,4 +146,60 @@ async fn an_unknown_account_is_not_found() {
         .get("/api/admin/users/inconnu/read/history", Some(&admin))
         .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_reader_sees_their_own_history() {
+    let site = site();
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    std::fs::write(site.dir.path().join("T1.cbz"), b"x").unwrap();
+    let reader = site.session_for(&alice);
+
+    site.post(
+        "/api/read/progress",
+        Some(&reader),
+        position("T1.cbz", 7, 40),
+    )
+    .await;
+
+    let reply = site.get("/api/read/history", Some(&reader)).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let history = reply.json();
+    assert_eq!(history["summary"]["books"], 1);
+    assert_eq!(history["recent"][0]["book"], "T1.cbz");
+    assert_eq!(history["recent"][0]["page"], 7);
+
+    // Sans session, l'historique personnel n'existe pas.
+    let reply = site.get("/api/read/history", None).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn the_book_detail_carries_the_position_of_the_reader() {
+    let site = site();
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    let bob = site.add_user("bob", Role::User, Some(PASSWORD));
+    // Une vraie archive : la fiche d'un livre est lue par son module de format.
+    common::cbz(site.dir.path(), "T1.cbz", 12);
+
+    let reader = site.session_for(&alice);
+    site.post(
+        "/api/read/progress",
+        Some(&reader),
+        position("T1.cbz", 5, 12),
+    )
+    .await;
+
+    // Le lecteur retrouve sa position dans la fiche du livre.
+    let reply = site.get("/api/book?path=T1.cbz", Some(&reader)).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let detail = reply.json();
+    assert_eq!(detail["progress"]["page"], 5);
+    assert_eq!(detail["progress"]["pages"], 12);
+
+    // Un autre compte ne l'hérite pas.
+    let other = site
+        .get("/api/book?path=T1.cbz", Some(&site.session_for(&bob)))
+        .await;
+    assert!(other.json().get("progress").is_none());
 }

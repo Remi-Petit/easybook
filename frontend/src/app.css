@@ -941,6 +941,38 @@ code {
 	object-fit: cover;
 }
 
+/* Lecture commencée : la barre se pose sur le bas de la couverture. */
+.card-progress {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	height: 6px;
+	background: rgba(8, 8, 12, 0.72);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.card-progress span {
+	display: block;
+	height: 100%;
+	background: var(--accent);
+}
+
+/* « Poursuivre la lecture » : une seule ligne, qui défile horizontalement. */
+.rail {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: 156px;
+	gap: 16px;
+	overflow-x: auto;
+	padding-bottom: 8px;
+	scroll-snap-type: x proximity;
+}
+
+.rail .card {
+	scroll-snap-align: start;
+}
+
 .fallback {
 	display: grid;
 	place-items: center;

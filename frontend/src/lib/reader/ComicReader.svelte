@@ -10,12 +10,15 @@
 		rel,
 		pages,
 		modified,
+		resume,
 		chrome = true,
 		onToggleChrome = () => {}
 	}: {
 		rel: string;
 		pages: number;
 		modified?: number;
+		/** Index enregistré côté serveur : il prime sur la position locale. */
+		resume?: number;
 		chrome?: boolean;
 		onToggleChrome?: () => void;
 	} = $props();
@@ -47,12 +50,15 @@
 	}
 
 	onMount(() => {
+		let start = 0;
 		try {
 			const saved = Number(localStorage.getItem(storageKey));
-			if (Number.isInteger(saved) && saved >= 0 && saved < pages) index = saved;
+			if (Number.isInteger(saved) && saved >= 0 && saved < pages) start = saved;
 		} catch {
 			// Rien à restaurer.
 		}
+		// La position du serveur prime : elle vient d'un autre appareil, peut-être.
+		index = Number.isInteger(resume) && resume! >= 0 && resume! < pages ? resume! : start;
 		// Ouvrir un livre, c'est déjà une lecture : la position de reprise compte.
 		reportPosition(rel, index, pages);
 

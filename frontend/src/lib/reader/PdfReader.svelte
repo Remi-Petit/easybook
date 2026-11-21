@@ -9,9 +9,16 @@
 
 	let {
 		rel,
+		resume,
 		chrome = true,
 		onToggleChrome = () => {}
-	}: { rel: string; chrome?: boolean; onToggleChrome?: () => void } = $props();
+	}: {
+		rel: string;
+		/** Page enregistrée côté serveur : elle prime sur la position locale. */
+		resume?: number;
+		chrome?: boolean;
+		onToggleChrome?: () => void;
+	} = $props();
 
 	/** Niveaux de zoom : 1 = page entière dans l'écran. */
 	const ZOOMS = [1, 1.5, 2, 3, 4];
@@ -84,12 +91,18 @@
 				const loaded = await task.promise;
 				if (cancelled) return;
 
+				let start = 0;
 				try {
 					const saved = Number(localStorage.getItem(storageKey));
-					if (Number.isInteger(saved) && saved >= 0 && saved < loaded.numPages) index = saved;
+					if (Number.isInteger(saved) && saved >= 0 && saved < loaded.numPages) start = saved;
 				} catch {
 					// Rien à restaurer.
 				}
+				// La position du serveur prime : elle vient d'un autre appareil, peut-être.
+				index =
+					Number.isInteger(resume) && resume! >= 0 && resume! < loaded.numPages
+						? resume!
+						: start;
 				pages = loaded.numPages;
 				pdfjs = lib;
 				doc = loaded;

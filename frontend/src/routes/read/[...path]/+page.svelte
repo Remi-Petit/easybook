@@ -116,12 +116,14 @@
 				{rel}
 				pages={detail.pages}
 				modified={detail.modified}
+				resume={detail.progress?.page}
 				{chrome}
 				onToggleChrome={() => (chrome = !chrome)}
 			/>
 		{:else if detail.format === 'pdf'}
 			<PdfReader
 				{rel}
+				resume={detail.progress?.page}
 				{chrome}
 				onToggleChrome={() => (chrome = !chrome)}
 			/>
