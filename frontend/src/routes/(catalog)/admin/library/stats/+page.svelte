@@ -57,6 +57,21 @@
 		}))
 	);
 
+	/** Rangées montrées avant « voir plus » : la page reste courte.
+	 *  Les camemberts, eux, gardent la répartition complète. */
+	const COLLAPSED = 5;
+	let formatsOpen = $state(false);
+	let foldersOpen = $state(false);
+	let booksOpen = $state(false);
+
+	const shownFormats = $derived(
+		formatsOpen ? (detail?.formats ?? []) : (detail?.formats ?? []).slice(0, COLLAPSED)
+	);
+	const shownFolders = $derived(foldersOpen ? folderBars : folderBars.slice(0, COLLAPSED));
+	const shownBooks = $derived(
+		booksOpen ? (detail?.largest ?? []) : (detail?.largest ?? []).slice(0, COLLAPSED)
+	);
+
 	const averageSize = $derived(totals && totals.books > 0 ? totals.bytes / totals.books : 0);
 	const averagePages = $derived(
 		totals && totals.withPages > 0 ? totals.pages / totals.withPages : 0
@@ -150,7 +165,7 @@
 									</tr>
 								</thead>
 								<tbody>
-									{#each detail.formats as entry (entry.format)}
+									{#each shownFormats as entry (entry.format)}
 										<tr>
 											<td>
 												<span
@@ -170,6 +185,18 @@
 								</tbody>
 							</table>
 						</div>
+						{#if detail.formats.length > COLLAPSED}
+							<button
+								type="button"
+								class="more-toggle"
+								aria-expanded={formatsOpen}
+								onclick={() => (formatsOpen = !formatsOpen)}
+							>
+								{formatsOpen
+									? t('stats.less')
+									: t('stats.more', { count: detail.formats.length - COLLAPSED })}
+							</button>
+						{/if}
 						<p class="stat-hint">{t('stats.formatsHint')}</p>
 					</div>
 				</div>
@@ -188,7 +215,19 @@
 						caption={t('stats.folders', { count: folderBars.length })}
 					/>
 					<div>
-						<BarList bars={folderBars} format={formatBytes} />
+						<BarList bars={shownFolders} format={formatBytes} />
+						{#if folderBars.length > COLLAPSED}
+							<button
+								type="button"
+								class="more-toggle"
+								aria-expanded={foldersOpen}
+								onclick={() => (foldersOpen = !foldersOpen)}
+							>
+								{foldersOpen
+									? t('stats.less')
+									: t('stats.more', { count: folderBars.length - COLLAPSED })}
+							</button>
+						{/if}
 						<p class="stat-hint">{t('stats.foldersHint')}</p>
 					</div>
 				</div>
@@ -213,7 +252,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each detail.largest as book (book.rel)}
+							{#each shownBooks as book (book.rel)}
 								<tr>
 									<td title={book.rel}>{book.rel}</td>
 									<td>{formatLabel(book.format)}</td>
@@ -225,6 +264,18 @@
 						</tbody>
 					</table>
 				</div>
+				{#if detail.largest.length > COLLAPSED}
+					<button
+						type="button"
+						class="more-toggle"
+						aria-expanded={booksOpen}
+						onclick={() => (booksOpen = !booksOpen)}
+					>
+						{booksOpen
+							? t('stats.less')
+							: t('stats.more', { count: detail.largest.length - COLLAPSED })}
+					</button>
+				{/if}
 				<p class="stat-hint">{t('stats.largestHint')}</p>
 			</section>
 		</div>
