@@ -7,10 +7,12 @@ import {
 	formatLabel,
 	level,
 	matchesQuery,
+	matchesWords,
 	parentOf,
 	previewBook,
 	segments,
-	subtreeBooks
+	subtreeBooks,
+	subtreeFolders
 } from './catalog';
 
 function book(rel: string, format: BookInfo['format'] = 'cbz', pages: number | null = 10): BookInfo {
@@ -214,5 +216,37 @@ describe('matchesQuery', () => {
 		expect(matchesQuery(entry, 'chainsaw t03')).toBe(true);
 		expect(matchesQuery(entry, 't03 chainsaw')).toBe(true);
 		expect(matchesQuery(entry, 'chainsaw t09')).toBe(false);
+	});
+});
+
+describe('matchesWords', () => {
+	it('ignore la casse et l’ordre des mots', () => {
+		expect(matchesWords('mangas/Chainsaw Man', 'CHAINSaw')).toBe(true);
+		expect(matchesWords('mangas/Chainsaw Man', 'man chainsaw')).toBe(true);
+		expect(matchesWords('mangas/Chainsaw Man', 'chainsaw t03')).toBe(false);
+	});
+});
+
+describe('subtreeFolders', () => {
+	const folders = [
+		folder('mangas', 3),
+		folder('mangas/Chainsaw Man', 2),
+		folder('mangas/Chainsaw Man/Buddy', 1),
+		folder('mangas2', 1)
+	];
+
+	it('prend les sous-dossiers, à tous les niveaux', () => {
+		expect(subtreeFolders(folders, 'mangas').map((entry) => entry.rel)).toEqual([
+			'mangas/Chainsaw Man',
+			'mangas/Chainsaw Man/Buddy'
+		]);
+	});
+
+	it('ne confond pas un dossier avec son homonyme préfixé', () => {
+		expect(subtreeFolders(folders, 'mangas').map((entry) => entry.rel)).not.toContain('mangas2');
+	});
+
+	it('sans dossier, rend tout le catalogue', () => {
+		expect(subtreeFolders(folders, '')).toHaveLength(folders.length);
 	});
 });

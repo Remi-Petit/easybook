@@ -39,17 +39,33 @@ export function subtreeBooks(books: BookInfo[], folder: string): BookInfo[] {
 	return books.filter((book) => book.rel.startsWith(prefix));
 }
 
+/** Dossiers de `folder` **et** de tous ses sous-dossiers (`""` = tout). */
+export function subtreeFolders(folders: FolderInfo[], folder: string): FolderInfo[] {
+	if (!folder) return folders;
+	const prefix = `${folder}/`;
+	return folders.filter((entry) => entry.rel.startsWith(prefix));
+}
+
 /**
- * Un livre répond-il à la recherche ? Le titre, le chemin complet et le format
- * sont interrogés ; chaque mot tapé doit s'y trouver, dans n'importe quel ordre
- * (« chainsaw t03 » trouve `mangas/Chainsaw Man/Chainsaw Man T03.cbz`).
+ * Chaque mot tapé doit apparaître dans le texte, dans n'importe quel ordre et
+ * sans tenir compte de la casse : « chainsaw t03 » trouve
+ * `mangas/Chainsaw Man/Chainsaw Man T03.cbz`.
  */
-export function matchesQuery(book: BookInfo, query: string): boolean {
-	const haystack = `${book.title} ${book.rel} ${book.format}`.toLowerCase();
+export function matchesWords(text: string, query: string): boolean {
+	const haystack = text.toLowerCase();
 	return query
+		.toLowerCase()
 		.split(/\s+/)
 		.filter(Boolean)
 		.every((word) => haystack.includes(word));
+}
+
+/**
+ * Un livre répond-il à la recherche ? Le titre, le chemin complet et le format
+ * sont interrogés.
+ */
+export function matchesQuery(book: BookInfo, query: string): boolean {
+	return matchesWords(`${book.title} ${book.rel} ${book.format}`, query);
 }
 
 /**

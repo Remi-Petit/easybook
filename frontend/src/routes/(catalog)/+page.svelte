@@ -31,7 +31,9 @@
 			{t('home.emptyBefore')} <code>books/</code> {t('home.emptyAfter')}
 		</p>
 	{:else}
-		<!-- La racine du catalogue : ses catégories d'abord, puis ses livres. -->
-		<LibraryBrowser scope="" categories />
+		<!-- La racine du catalogue : ses catégories d'abord, puis ses livres.
+		     La recherche y trouve des **séries** ; les livres se cherchent dans
+		     une série, une fois qu'on y est. -->
+		<LibraryBrowser scope="" categories search="folders" />
 	{/if}
 </div>

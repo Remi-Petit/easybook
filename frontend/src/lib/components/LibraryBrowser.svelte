@@ -4,15 +4,28 @@
 	// toutes les deux — seule l'intro diffère.
 	import BookCard from '$lib/components/BookCard.svelte';
 	import FolderCard from '$lib/components/FolderCard.svelte';
-	import { formatLabel, level, matchesQuery, previewBook, subtreeBooks } from '$lib/catalog';
+	import {
+		formatLabel,
+		level,
+		matchesQuery,
+		matchesWords,
+		previewBook,
+		subtreeBooks,
+		subtreeFolders
+	} from '$lib/catalog';
 	import { t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
 
 	let {
 		scope,
 		/** Les sous-dossiers sont les catégories de la bibliothèque (racine). */
-		categories = false
-	}: { scope: string; categories?: boolean } = $props();
+		categories = false,
+		/**
+		 * Ce que la barre cherche : les **séries** sur l'accueil (on ne cherche pas
+		 * un livre avant d'être dans une série), les **livres** dans un dossier.
+		 */
+		search = 'books'
+	}: { scope: string; categories?: boolean; search?: 'books' | 'folders' } = $props();
 
 	let filter = $state('');
 	const query = $derived(filter.trim().toLowerCase());
@@ -50,10 +63,19 @@
 	);
 
 	/** Cherche-t-on (texte ou format) ? Sinon, on parcourt le niveau. */
-	const searching = $derived(query !== '' || formats.length > 0);
+	const searching = $derived(query !== '' || (search === 'books' && formats.length > 0));
 
 	/** Ce que l'on cherche, tel qu'on le redit quand rien ne correspond. */
 	const wanted = $derived(query || formats.map(formatLabel).join(' '));
+
+	/** Accueil : on cherche une **série** parmi les dossiers du catalogue. */
+	const matchingFolders = $derived(
+		search === 'folders' && query
+			? subtreeFolders(library.folders, scope).filter((folder) =>
+					matchesWords(`${folder.name} ${folder.rel}`, query)
+				)
+			: []
+	);
 
 	function toggleFormat(format: string) {
 		formats = formats.includes(format)
@@ -66,11 +88,11 @@
 	<input
 		class="search"
 		bind:value={filter}
-		placeholder={t('search.placeholder')}
+		placeholder={search === 'folders' ? t('search.seriesPlaceholder') : t('search.placeholder')}
 		aria-label={t('search.label')}
 	/>
 
-	{#if tags.length > 0}
+	{#if search === 'books' && tags.length > 0}
 		<div class="range-tabs tags" role="group" aria-label={t('search.formats')}>
 			{#each tags as tag (tag.format)}
 				<button
@@ -87,7 +109,26 @@
 	{/if}
 
 	{#if searching}
-		{#if matchingBooks.length === 0}
+		{#if search === 'folders'}
+			{#if matchingFolders.length === 0}
+				<p class="notice">{t('search.noMatchSeries', { query: filter })}</p>
+			{:else}
+				<section class="group">
+					<h2>
+						{t('group.series')}
+						<span class="count">{matchingFolders.length}</span>
+					</h2>
+					<div class="grid">
+						{#each matchingFolders as folder (folder.rel)}
+							<FolderCard
+								{folder}
+								preview={previewBook(library.folders, library.books, folder.rel)}
+							/>
+						{/each}
+					</div>
+				</section>
+			{/if}
+		{:else if matchingBooks.length === 0}
 			<p class="notice">{t('search.noMatch', { query: wanted })}</p>
 		{:else}
 			<section class="group">
