@@ -17,6 +17,12 @@ use tokio::sync::broadcast;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
+    // Une sous-commande éventuelle n'ouvre pas le serveur : elle règle la base
+    // des comptes et rend la main.
+    if let Some(command) = std::env::args().nth(1) {
+        return command_line(&command);
+    }
+
     // Réglage de l'allocateur avant la création des threads du runtime.
     thumbnail::tune_allocator();
 
@@ -29,6 +35,86 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .max_blocking_threads(config::limits().max_blocking_threads)
         .build()?
         .block_on(run(config))
+}
+
+const USAGE: &str = "\
+usage : easybook [commande]
+
+Sans commande, démarre le serveur (interface, API, bibliothèque surveillée).
+
+Commandes :
+  admin-reset   réapplique EASYBOOK_ADMIN_EMAIL / EASYBOOK_ADMIN_PASSWORD à la
+                base des comptes, puis quitte
+  help          affiche cette aide";
+
+/// Commandes hors serveur (`easybook admin-reset`).
+fn command_line(command: &str) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        "admin-reset" => match reset_admin() {
+            Ok(()) => Ok(()),
+            Err(message) => fail(&message),
+        },
+        "help" | "-h" | "--help" => {
+            println!("{USAGE}");
+            Ok(())
+        }
+        other => fail(&format!("commande inconnue : {other}\n\n{USAGE}")),
+    }
+}
+
+/// Message d'erreur lisible, sans l'habillage `Error: "…"` que Rust ajoute à
+/// une erreur rendue par `main`.
+fn fail(message: &str) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!("easybook : {message}");
+    std::process::exit(1)
+}
+
+/// `easybook admin-reset` — rejoue l'administrateur désigné par
+/// `EASYBOOK_ADMIN_EMAIL` / `EASYBOOK_ADMIN_PASSWORD`.
+///
+/// Ces variables ne sont lues qu'au tout premier démarrage (base vide) : cette
+/// commande les réapplique à la demande, par exemple après une rotation de mot
+/// de passe ou un changement d'adresse. Elle ne démarre pas le serveur, ce qui
+/// permet de l'exécuter sur le même volume sans arrêter le conteneur :
+///
+///     docker compose run --rm --entrypoint easybook easybook admin-reset
+fn reset_admin() -> Result<(), String> {
+    let config = config::Config::load();
+    let dir = accounts_dir(&canonical_root(config.resolve_books_root()));
+    let path = dir.join("accounts.db");
+    let accounts = accounts::Accounts::open(&path).map_err(|e| e.to_string())?;
+
+    let nonblank = |name: &str| {
+        std::env::var(name)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+    };
+    let email = nonblank("EASYBOOK_ADMIN_EMAIL")
+        .ok_or("EASYBOOK_ADMIN_EMAIL est vide : aucune adresse à administrer")?;
+    let password = nonblank("EASYBOOK_ADMIN_PASSWORD")
+        .ok_or("EASYBOOK_ADMIN_PASSWORD est vide : rien à réinitialiser")?;
+
+    println!("Comptes   : {}", path.display());
+    let outcome = accounts
+        .reset_admin(&email, &password)
+        .map_err(|e| match e {
+            accounts::AccountError::EmailOwnedByUser => format!(
+                "{email} appartient déjà à un compte qui n'est pas administrateur : \
+                 rien n'a été modifié"
+            ),
+            other => other.to_string(),
+        })?;
+    match outcome {
+        accounts::ResetOutcome::Created(user) => println!(
+            "Administrateur créé : {}",
+            user.email.as_deref().unwrap_or_default()
+        ),
+        accounts::ResetOutcome::Updated(user) => println!(
+            "Administrateur mis à jour : {} (sessions révoquées)",
+            user.email.as_deref().unwrap_or_default()
+        ),
+    }
+    Ok(())
 }
 
 async fn run(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -144,10 +230,7 @@ fn enable_accounts(
         return Ok(state);
     }
 
-    let dir = match std::env::var("EASYBOOK_DATA_DIR") {
-        Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
-        _ => root.join(".easybook"),
-    };
+    let dir = accounts_dir(root);
     let path = dir.join("accounts.db");
     let accounts = accounts::Accounts::open(&path)?;
     println!("Comptes   : {}", path.display());
@@ -188,6 +271,17 @@ fn enable_accounts(
         }
     }
     Ok(state.with_auth(auth))
+}
+
+/// Dossier de la base des comptes : `EASYBOOK_DATA_DIR`, sinon `books/.easybook`.
+///
+/// Partagé par le serveur et par `easybook admin-reset`, qui doivent viser la
+/// **même** base dans les deux cas.
+fn accounts_dir(root: &std::path::Path) -> PathBuf {
+    match std::env::var("EASYBOOK_DATA_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
+        _ => root.join(".easybook"),
+    }
 }
 
 /// Chemin canonique, sans le préfixe « verbatim » de Windows (`\\?\C:\…`).

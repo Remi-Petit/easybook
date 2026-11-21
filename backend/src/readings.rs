@@ -416,9 +416,6 @@ fn drop_pages(_path: &Path) -> u64 {
     0
 }
 
-#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
-pub fn release(_path: &Path) {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

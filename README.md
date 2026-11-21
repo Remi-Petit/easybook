@@ -432,6 +432,23 @@ seule l'empreinte est stockée).
 mot de passe est tiré au hasard et affiché **une seule fois** dans les journaux
 (`docker logs easybook`).
 
+**Réappliquer `EASYBOOK_ADMIN_*`.** Ces variables ne sont lues qu'au premier
+démarrage : les modifier dans `.env` puis redémarrer n'a aucun effet. Pour
+imposer l'administrateur à la demande (mot de passe oublié, adresse changée,
+compte supprimé…) :
+
+```bash
+docker compose stop easybook
+docker compose run --rm --entrypoint easybook easybook admin-reset
+docker compose start easybook
+```
+
+La commande vise la même base que le serveur (`EASYBOOK_DATA_DIR`) ; elle crée
+le compte s'il n'existe pas, sinon le réactive, lui redonne le rôle
+d'administrateur et remplace son mot de passe (ses sessions sont révoquées).
+Une adresse déjà portée par un compte **non administrateur** est refusée : rien
+n'est modifié, promouvoir reste une décision explicite.
+
 La page *Administration → Comptes* crée, désactive, supprime et rétrograde des
 comptes, réinitialise un mot de passe (ce qui ferme les sessions du compte) et
 gère la liaison OIDC. Le dernier administrateur actif ne peut être ni supprimé
