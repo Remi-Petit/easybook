@@ -8,8 +8,21 @@
 		value = $bindable(''),
 		temporary = $bindable(false),
 		label,
-		name
-	}: { value?: string; temporary?: boolean; label: string; name?: string } = $props();
+		name,
+		// Un mot de passe courant ne se génère pas ; la case « temporaire » n'a de
+		// sens que pour le compte d'un autre utilisateur.
+		generable = true,
+		temporaryControls = true,
+		autocomplete = 'new-password'
+	}: {
+		value?: string;
+		temporary?: boolean;
+		label: string;
+		name?: string;
+		generable?: boolean;
+		temporaryControls?: boolean;
+		autocomplete?: 'new-password' | 'current-password';
+	} = $props();
 
 	const uid = $props.id();
 
@@ -38,7 +51,7 @@
 					id="pw-{uid}"
 					{name}
 					type={shown ? 'text' : 'password'}
-					autocomplete="new-password"
+					{autocomplete}
 					spellcheck="false"
 					minlength="8"
 					required
@@ -66,19 +79,23 @@
 					</svg>
 				</button>
 			</span>
-			<button type="button" class="btn-plain" onclick={() => (value = generatePassword())}>
-				{t('users.password.generate')}
-			</button>
-			{#if value}
+			{#if generable}
+				<button type="button" class="btn-plain" onclick={() => (value = generatePassword())}>
+					{t('users.password.generate')}
+				</button>
+			{/if}
+			{#if generable && value}
 				<button type="button" class="btn-plain" onclick={copy}>{t('users.link.copy')}</button>
 			{/if}
 		</span>
 	</div>
-	<div class="check-row">
-		<label class="check">
-			<input type="checkbox" bind:checked={temporary} />
-			{t('users.password.temporary')}
-		</label>
-		<InfoTip text={t('users.password.temporaryHint')} label={t('users.password.temporary')} />
-	</div>
+	{#if temporaryControls}
+		<div class="check-row">
+			<label class="check">
+				<input type="checkbox" bind:checked={temporary} />
+				{t('users.password.temporary')}
+			</label>
+			<InfoTip text={t('users.password.temporaryHint')} label={t('users.password.temporary')} />
+		</div>
+	{/if}
 </div>

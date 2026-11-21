@@ -10,6 +10,7 @@ use easybook::accounts::{Accounts, NewUser, Role, User};
 use easybook::api::{self, AppState};
 use easybook::auth::AuthState;
 use easybook::config;
+use easybook::progress;
 use http_body_util::BodyExt;
 use serde_json::Value;
 use std::sync::Arc;
@@ -103,7 +104,10 @@ fn build(settings: config::Auth, direct: bool, logins: Option<&str>) -> Site {
     if let Some(logins) = logins {
         auth = auth.with_dev_logins(logins);
     }
-    let state = AppState::new(dir.path(), tx).with_auth(auth);
+    let state = AppState::new(dir.path(), tx)
+        .with_auth(auth)
+        // Comme en production : des comptes, donc un historique de lecture.
+        .with_progress(Arc::new(progress::Progress::open_in_memory().unwrap()));
     Site {
         app: api::routes(state),
         accounts,

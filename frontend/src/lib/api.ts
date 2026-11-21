@@ -46,6 +46,8 @@ export type BookDetail = {
 	pages?: number;
 	modified?: number;
 	note?: string;
+	/** Position enregistrée du lecteur : c'est elle qui fait reprendre la lecture. */
+	progress?: { page: number; pages: number };
 };
 
 const DEFAULT_PORT = '8091';

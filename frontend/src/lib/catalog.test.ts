@@ -8,6 +8,7 @@ import {
 	level,
 	matchesQuery,
 	matchesWords,
+	noveltyRails,
 	parentOf,
 	previewBook,
 	segments,
@@ -33,6 +34,59 @@ function book(rel: string, format: BookInfo['format'] = 'cbz', pages: number | n
 function folder(rel: string, count = 1): FolderInfo {
 	return { rel, name: rel.split('/').pop() ?? rel, count, modified: 1 };
 }
+
+describe('noveltyRails', () => {
+	const dated = (rel: string, modified: number | null): BookInfo => ({
+		...book(rel),
+		modified
+	});
+
+	it('rend une ligne par catégorie, du livre le plus récent au plus ancien', () => {
+		const folders = [folder('mangas', 3), folder('electronique', 2)];
+		const books = [
+			dated('mangas/T1.cbz', 100),
+			dated('mangas/T2.cbz', 900),
+			dated('electronique/notice.pdf', 500),
+			dated('mangas/Chainsaw/T3.cbz', 300)
+		];
+		const rails = noveltyRails(folders, books, 20);
+		expect(rails.map((rail) => rail.folder.rel)).toEqual(['mangas', 'electronique']);
+		expect(rails[0]!.books.map((entry) => entry.rel)).toEqual([
+			'mangas/T2.cbz',
+			'mangas/Chainsaw/T3.cbz',
+			'mangas/T1.cbz'
+		]);
+		// Un livre rangé dans un sous-dossier compte pour sa catégorie.
+		expect(rails[1]!.books.map((entry) => entry.rel)).toEqual(['electronique/notice.pdf']);
+	});
+
+	it('s’arrête à la limite demandée', () => {
+		const books = [
+			dated('mangas/T1.cbz', 10),
+			dated('mangas/T2.cbz', 30),
+			dated('mangas/T3.cbz', 20)
+		];
+		const rails = noveltyRails([folder('mangas')], books, 2);
+		expect(rails[0]!.books.map((entry) => entry.rel)).toEqual(['mangas/T2.cbz', 'mangas/T3.cbz']);
+	});
+
+	it('ignore les catégories vides et les livres posés à la racine', () => {
+		const folders = [folder('mangas'), folder('vide', 0)];
+		const books = [dated('Seul.cbz', 900), dated('mangas/T1.cbz', 100)];
+		const rails = noveltyRails(folders, books, 20);
+		expect(rails.map((rail) => rail.folder.rel)).toEqual(['mangas']);
+		expect(rails[0]!.books.map((entry) => entry.rel)).toEqual(['mangas/T1.cbz']);
+	});
+
+	it('range en fin de ligne les livres sans date de fichier', () => {
+		const books = [dated('mangas/sans-date.cbz', null), dated('mangas/T1.cbz', 10)];
+		const rails = noveltyRails([folder('mangas')], books, 20);
+		expect(rails[0]!.books.map((entry) => entry.rel)).toEqual([
+			'mangas/T1.cbz',
+			'mangas/sans-date.cbz'
+		]);
+	});
+});
 
 describe('parentOf', () => {
 	it('rend le dossier parent, ou la racine', () => {

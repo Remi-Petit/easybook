@@ -189,7 +189,7 @@ fn modified(path: &Path) -> Option<u64> {
 }
 
 /// Titre affiché : le nom du fichier sans son extension.
-fn title_of(name: &str) -> String {
+pub fn title_of(name: &str) -> String {
     match name.rsplit_once('.') {
         Some((stem, _)) if !stem.is_empty() => stem.to_string(),
         _ => name.to_string(),

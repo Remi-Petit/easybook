@@ -1,7 +1,8 @@
 <script lang="ts">
-	// Le navigateur d'un niveau du catalogue : recherche, tags de format, séries
+	// Le navigateur d'un niveau du catalogue : recherche, filtres, séries
 	// et livres. La page d'accueil (racine) et la page d'un dossier s'en servent
 	// toutes les deux — seule l'intro diffère.
+	import { onMount, type Snippet } from 'svelte';
 	import BookCard from '$lib/components/BookCard.svelte';
 	import FolderCard from '$lib/components/FolderCard.svelte';
 	import {
@@ -16,7 +17,8 @@
 	import { t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
 	import { formatColor } from '$lib/library-stats';
-
+	import { startPins } from '$lib/pins.svelte';
+	import { loadReading, startReading } from '$lib/reading.svelte';
 	/** Les deux groupes que l'on peut afficher : des séries ou des livres. */
 	type Kind = 'series' | 'books';
 
@@ -28,8 +30,18 @@
 		 * Ce que la barre cherche : les **séries** sur l'accueil (on ne cherche pas
 		 * un livre avant d'être dans une série), les **livres** dans un dossier.
 		 */
-		search = 'books'
-	}: { scope: string; categories?: boolean; search?: 'books' | 'folders' } = $props();
+		search = 'books',
+		/**
+		 * Ce qui s'intercale entre la barre et les résultats — la rangée « poursuivre
+		 * la lecture » de l'accueil, qui doit passer **sous** la recherche.
+		 */
+		lead
+	}: {
+		scope: string;
+		categories?: boolean;
+		search?: 'books' | 'folders';
+		lead?: Snippet;
+	} = $props();
 
 	let filter = $state('');
 	const query = $derived(filter.trim().toLowerCase());
@@ -143,6 +155,15 @@
 		types = [];
 	}
 
+	// Les couvertures montrent l'avancement : la position de chaque livre vient
+	// de l'historique du compte (une seule requête, partagée par les cartes).
+	// Relu à chaque montage : au retour du lecteur, la barre est déjà à jour.
+	onMount(() => {
+		startReading();
+		void loadReading();
+		startPins();
+	});
+
 	/** La barre, pour refermer ses menus de l'extérieur. */
 	let bar = $state<HTMLElement>();
 
@@ -231,6 +252,8 @@
 			</button>
 		{/if}
 	</div>
+
+	{@render lead?.()}
 
 	{#if empty}
 		<p class="notice">

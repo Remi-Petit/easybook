@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { afterNavigate } from '$app/navigation';
+	import Avatar from '$lib/components/Avatar.svelte';
 	import { childFolders, folderUrl } from '$lib/catalog';
 	import { call, displayName, type Session } from '$lib/auth';
 	import { library } from '$lib/library.svelte';
@@ -168,8 +169,11 @@
 					aria-current={active('/account') ? 'page' : undefined}
 					title={t('nav.account')}
 				>
-					<span class="user-name">{displayName(user)}</span>
-					<span class="user-role">{t(`account.role.${user.role}`)}</span>
+					<Avatar seed={user.id} size={34} />
+					<span class="user-text">
+						<span class="user-name">{displayName(user)}</span>
+						<span class="user-role">{t(`account.role.${user.role}`)}</span>
+					</span>
 				</a>
 				<button
 					type="button"

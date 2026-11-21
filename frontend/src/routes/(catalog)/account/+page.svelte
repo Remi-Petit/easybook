@@ -3,8 +3,22 @@
 	import { invalidateAll, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { formatDate } from '$lib/api';
-	import { call, displayName, errorKey, oidcLinkUrl, type Session } from '$lib/auth';
-	import { t } from '$lib/i18n/state.svelte';
+	import {
+		call,
+		displayName,
+		errorKey,
+		oidcLinkUrl,
+		type BookProgress,
+		type ReadingHistory,
+		type Session
+	} from '$lib/auth';
+	import { previewBook } from '$lib/catalog';
+	import BookCard from '$lib/components/BookCard.svelte';
+	import FolderCard from '$lib/components/FolderCard.svelte';
+	import PasswordField from '$lib/components/PasswordField.svelte';
+	import { formatNumber, intlLocale, t } from '$lib/i18n/state.svelte';
+	import { library } from '$lib/library.svelte';
+	import { completedSeries, isFinished, readingBuckets } from '$lib/progress';
 	import { notify } from '$lib/toasts.svelte';
 
 	let { data }: { data: { session: Session } } = $props();
@@ -17,14 +31,148 @@
 	let fresh = $state('');
 	let busy = $state(false);
 
-	// Retour d'une liaison OIDC : `?linked=1` ou `?error=<code>`.
-	onMount(() => {
+	// Onglets du compte : la lecture d'abord, puis la sécurité. SSO n'existe que
+	// si un fournisseur est configuré.
+	type Tab = 'reading' | 'password' | 'sso';
+	let tab = $state<Tab>('reading');
+	const tabs = $derived<Tab[]>(oidc ? ['reading', 'password', 'sso'] : ['reading', 'password']);
+	const tabLabel = (id: Tab) =>
+		id === 'reading'
+			? t('account.tab.reading')
+			: id === 'password'
+				? t('account.password.tab')
+				: t('users.type.sso');
+
+	function tabKeys(event: KeyboardEvent) {
+		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+		if (!step) return;
+		event.preventDefault();
+		tab = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]!;
+		document.getElementById(`account-tab-${tab}`)?.focus();
+	}
+
+	// Période de lecture : le mois en cours, l'année en cours, ou tout.
+	type Period = 'month' | 'year' | 'all';
+	const PERIODS: Period[] = ['month', 'year', 'all'];
+	let period = $state<Period>('month');
+	const periodLabel = (id: Period) => t(`account.reading.period.${id}`);
+
+	/** Premier instant de la période, en secondes Unix (`0` pour « tout »). */
+	function periodStart(id: Period): number {
+		if (id === 'all') return 0;
+		const today = new Date();
+		const start =
+			id === 'month'
+				? new Date(today.getFullYear(), today.getMonth(), 1)
+				: new Date(today.getFullYear(), 0, 1);
+		return Math.floor(start.getTime() / 1000);
+	}
+
+	// Les livres terminés : toute la liste du compte (`limit=0` — le serveur ne
+	// plafonne plus, sinon les séries terminées seraient sous-estimées). Elle
+	// sert aux trois périodes, qui ne sont que des filtres sur `updatedAt`.
+	let finished = $state<BookProgress[]>([]);
+	// Les chiffres d'une période viennent du serveur : lui seul connaît le temps
+	// de lecture (les sessions ne sont pas toutes envoyées au client).
+	const summaries = $state<Partial<Record<Period, ReadingHistory['summary']>>>({});
+	const loaded = $state<Record<Period, boolean>>({ month: false, year: false, all: false });
+
+	async function loadPeriod(id: Period) {
+		if (loaded[id]) return;
+		const since = periodStart(id);
+		// Seul « tout » a besoin de la liste entière ; pour le mois et l'année, seuls
+		// les chiffres servent — une ligne suffit à remplir le résumé.
+		const limit = id === 'all' ? 0 : 1;
+		const result = await call<ReadingHistory>(
+			'GET',
+			`/api/read/history?limit=${limit}&since=${since}`
+		);
+		if (result.ok) {
+			summaries[id] = result.data.summary;
+			if (id === 'all') {
+				finished = result.data.recent.filter((entry) => isFinished(entry.page, entry.pages));
+			}
+		}
+		loaded[id] = true;
+	}
+
+	async function selectPeriod(id: Period) {
+		period = id;
+		await loadPeriod(id);
+	}
+
+	function periodKeys(event: KeyboardEvent) {
+		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+		if (!step) return;
+		event.preventDefault();
+		const next = PERIODS[(PERIODS.indexOf(period) + step + PERIODS.length) % PERIODS.length]!;
+		void selectPeriod(next);
+		document.getElementById(`account-period-${next}`)?.focus();
+	}
+
+	onMount(async () => {
+		// Retour d'une liaison OIDC : `?linked=1` ou `?error=<code>`.
 		const params = page.url.searchParams;
 		if (params.get('linked')) notify(t('account.linked'), { tone: 'ok' });
 		else if (params.get('error')) notify(t(errorKey(params.get('error'))), { tone: 'error' });
-		else return;
-		replaceState('/account', {});
+		if (params.get('linked') || params.get('error')) replaceState('/account', {});
+
+		// La liste entière d'abord (livres terminés, séries), puis la période
+		// affichée : elle n'a besoin que de ses chiffres.
+		await Promise.all([loadPeriod('all'), loadPeriod(period)]);
 	});
+
+	/** Début de la période affichée : la même borne pour les cartes et la liste. */
+	const since = $derived(periodStart(period));
+	const summary = $derived(summaries[period] ?? null);
+
+	/** Les livres terminés de la période, quand ils sont encore au catalogue. */
+	const finishedBooks = $derived(
+		finished
+			.filter((entry) => entry.updatedAt >= since)
+			.flatMap((entry) => {
+				const book = library.books.find((candidate) => candidate.rel === entry.book);
+				return book ? [book] : [];
+			})
+	);
+
+	/** Séries terminées : les dossiers dont tous les livres sont finis, et dont le
+	 *  dernier tome a été terminé dans la période. */
+	const series = $derived(completedSeries(library.books, finished, since));
+
+	const monthFormat = $derived(
+		new Intl.DateTimeFormat(intlLocale(), { month: 'long', year: 'numeric' })
+	);
+	const yearFormat = $derived(new Intl.DateTimeFormat(intlLocale(), { year: 'numeric' }));
+
+	/** Le dossier d'une série, s'il est encore au catalogue. */
+	const folderOf = (rel: string) => library.folders.find((entry) => entry.rel === rel);
+
+	/**
+	 * Les livres terminés de la période, rangés mois par mois dans « Année » et
+	 * année par année dans « Tout » (une seule tranche, sans titre, dans « Mois »).
+	 */
+	const groups = $derived(
+		readingBuckets(library.books, finished, period, since).map((bucket) => ({
+			...bucket,
+			label:
+				bucket.key === 'month'
+					? null
+					: (period === 'year' ? monthFormat : yearFormat).format(new Date(bucket.at * 1000))
+		}))
+	);
+
+	/** « 2 h 05 », « 47 min », « 12 s » : une durée se lit d'un coup d'œil. */
+	function duration(seconds: number): string {
+		const total = Math.max(0, Math.round(seconds));
+		if (total < 60) return t('account.reading.duration.seconds', { count: total });
+		const minutes = Math.round(total / 60);
+		if (minutes < 60) return t('account.reading.duration.minutes', { count: minutes });
+		return t('account.reading.duration.hours', {
+			hours: formatNumber(Math.floor(minutes / 60)),
+			minutes: String(minutes % 60).padStart(2, '0')
+		});
+	}
 
 	async function changePassword(event: SubmitEvent) {
 		event.preventDefault();
@@ -71,77 +219,182 @@
 	</section>
 
 	{#if user}
-		<div class="admin-stack">
-			<section class="panel-card">
-				<h2>{t('account.password.title')}</h2>
-				{#if !user.has_password}
-					<p class="panel-hint">{t('account.password.none')}</p>
-				{/if}
-				<form class="stack-form" method="post" onsubmit={changePassword}>
-					<!-- Champ caché : les gestionnaires de mots de passe retrouvent l'identifiant. -->
-					<input type="text" name="email" value={user.email ?? ''} autocomplete="username" hidden />
-					{#if user.has_password}
-						<label class="field">
-							<span>{t('account.password.current')}</span>
-							<input type="password" autocomplete="current-password" required bind:value={current} />
-						</label>
-					{/if}
-					<label class="field">
-						<span>{t('account.password.new')}</span>
-						<input
-							type="password"
-							autocomplete="new-password"
-							minlength="8"
-							required
-							bind:value={fresh}
-						/>
-					</label>
-					<div>
-						<button type="submit" class="btn-main" disabled={busy}>
-							{user.has_password ? t('account.password.change') : t('account.password.set')}
-						</button>
+		<div class="tabs" role="tablist" tabindex="-1" onkeydown={tabKeys}>
+			{#each tabs as id (id)}
+				<button
+					type="button"
+					role="tab"
+					id="account-tab-{id}"
+					aria-selected={tab === id}
+					aria-controls="account-panel"
+					tabindex={tab === id ? 0 : -1}
+					onclick={() => (tab = id)}
+				>
+					{tabLabel(id)}
+				</button>
+			{/each}
+		</div>
+
+		<div id="account-panel" class="tab-panel" role="tabpanel" aria-labelledby="account-tab-{tab}">
+			<div class="admin-stack">
+				{#if tab === 'reading'}
+					<div class="tabs sub" role="tablist" tabindex="-1" onkeydown={periodKeys}>
+						{#each PERIODS as id (id)}
+							<button
+								type="button"
+								role="tab"
+								id="account-period-{id}"
+								aria-selected={period === id}
+								aria-controls="account-reading"
+								tabindex={period === id ? 0 : -1}
+								onclick={() => void selectPeriod(id)}
+							>
+								{periodLabel(id)}
+							</button>
+						{/each}
 					</div>
-				</form>
-			</section>
 
-			{#if oidc}
-				<section class="panel-card">
-					<h2>{t('account.identities.title', { provider: oidc.label })}</h2>
-					{#if user.identities.length === 0}
-						<p class="panel-hint">{t('account.identities.none')}</p>
-					{:else}
-						<ul class="identity-list">
-							{#each user.identities as identity (identity.id)}
-								<li>
-									<div>
-										<strong>{identity.email ?? identity.subject}</strong>
-										<span class="muted">{formatDate(identity.created_at)}</span>
-										<code class="identity-sub">{identity.issuer}</code>
+					<div
+						id="account-reading"
+						class="admin-stack"
+						role="tabpanel"
+						aria-labelledby="account-period-{period}"
+					>
+						<div class="perf-grid compact">
+							<section class="perf-card kpi" style="--kpi: #e0a54a">
+								<h2>{t('account.reading.kpi.books')}</h2>
+								<p class="stat-value">{formatNumber(summary?.finished ?? 0)}</p>
+							</section>
+							<section class="perf-card kpi" style="--kpi: #6aa5e0">
+								<h2>{t('account.reading.kpi.time')}</h2>
+								<p class="stat-value">{duration(summary?.seconds ?? 0)}</p>
+							</section>
+							<section class="perf-card kpi" style="--kpi: #5cc98a">
+								<h2>{t('account.reading.kpi.series')}</h2>
+								<p class="stat-value">
+									{formatNumber(series.done)}
+									<span class="stat-of">/ {formatNumber(series.total)}</span>
+								</p>
+							</section>
+						</div>
+
+						<section class="panel-card">
+							<h2>
+								{t('account.reading.title')}
+								<span class="perf-count">{finishedBooks.length}</span>
+							</h2>
+							{#if !loaded.all}
+								<p class="panel-hint">{t('status.connecting')}</p>
+							{:else if groups.length === 0}
+								<p class="panel-hint">{t('account.reading.empty')}</p>
+							{:else}
+								{#each groups as group (group.key)}
+									<div class="reading-group">
+										{#if group.label}
+											<h3>
+												{group.label}
+												<span class="perf-count">{group.books.length}</span>
+												{#if group.series.length > 0}
+													<span class="group-series">
+														{t('account.reading.group.series', { count: group.series.length })}
+													</span>
+												{/if}
+											</h3>
+										{/if}
+										<div class="grid">
+											{#each group.series as rel (rel)}
+												{@const folder = folderOf(rel)}
+												{#if folder}
+													<FolderCard
+														{folder}
+														preview={previewBook(library.folders, library.books, rel)}
+													/>
+												{/if}
+											{/each}
+											{#each group.books as book (book.rel)}
+												<BookCard {book} />
+											{/each}
+										</div>
 									</div>
-									<button type="button" class="btn-plain" onclick={() => unlink(identity.id)}>
-										{t('account.identities.unlink')}
-									</button>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-					{#if canLink}
-						<p>
-							<a class="btn-main" href={oidcLinkUrl()}>
-								{t('account.identities.link', { provider: oidc.label })}
-							</a>
-						</p>
-					{:else}
-						<p class="panel-hint">{t('account.identities.adminOnly')}</p>
-					{/if}
-				</section>
-			{/if}
+								{/each}
+							{/if}
+						</section>
+					</div>
+				{:else if tab === 'password'}
+					<section class="panel-card">
+						<h2>{t('account.password.title')}</h2>
+						{#if !user.has_password}
+							<p class="panel-hint">{t('account.password.none')}</p>
+						{/if}
+						<form class="stack-form" method="post" onsubmit={changePassword}>
+							<!-- Champ caché : les gestionnaires de mots de passe retrouvent l'identifiant. -->
+							<input
+								type="text"
+								name="email"
+								value={user.email ?? ''}
+								autocomplete="username"
+								hidden
+							/>
+							{#if user.has_password}
+								<PasswordField
+									label={t('account.password.current')}
+									bind:value={current}
+									autocomplete="current-password"
+									generable={false}
+									temporaryControls={false}
+								/>
+							{/if}
+							<PasswordField
+								label={t('account.password.new')}
+								bind:value={fresh}
+								temporaryControls={false}
+							/>
+							<div>
+								<button type="submit" class="btn-main" disabled={busy || fresh === ''}>
+									{t('account.password.save')}
+								</button>
+							</div>
+						</form>
+					</section>
+				{:else if tab === 'sso' && oidc}
+					<section class="panel-card">
+						<h2>{t('account.identities.title', { provider: oidc.label })}</h2>
+						{#if user.identities.length === 0}
+							<p class="panel-hint">{t('account.identities.none')}</p>
+						{:else}
+							<ul class="identity-list">
+								{#each user.identities as identity (identity.id)}
+									<li>
+										<div>
+											<strong>{identity.email ?? identity.subject}</strong>
+											<span class="muted">{formatDate(identity.created_at)}</span>
+											<code class="identity-sub">{identity.issuer}</code>
+										</div>
+										<button type="button" class="btn-plain" onclick={() => unlink(identity.id)}>
+											{t('account.identities.unlink')}
+										</button>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+						{#if canLink}
+							<p>
+								<a class="btn-main" href={oidcLinkUrl()}>
+									{t('account.identities.link', { provider: oidc.label })}
+								</a>
+							</p>
+						{:else}
+							<p class="panel-hint">{t('account.identities.adminOnly')}</p>
+						{/if}
+					</section>
+				{/if}
 
-			{#if data.session.enabled}
-				<p>
-					<button type="button" class="btn-plain" onclick={signOut}>{t('nav.logout')}</button>
-				</p>
-			{/if}
+				{#if data.session.enabled}
+					<p>
+						<button type="button" class="btn-plain" onclick={signOut}>{t('nav.logout')}</button>
+					</p>
+				{/if}
+			</div>
 		</div>
 	{/if}
 </div>

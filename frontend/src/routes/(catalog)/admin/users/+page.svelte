@@ -863,6 +863,9 @@
 								{t('users.history.more')}
 							</a>
 						{/if}
+						<a class="link-more" href="/admin/users/{selected.id}/read/history">
+							{t('users.reading.link')}
+						</a>
 					{/if}
 				{/if}
 			{/if}

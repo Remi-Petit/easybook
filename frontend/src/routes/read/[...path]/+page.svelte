@@ -4,15 +4,32 @@
 	import { bookUrl, rawUrl, type BookDetail } from '$lib/api';
 	import { folderUrl, parentOf } from '$lib/catalog';
 	import { t } from '$lib/i18n/state.svelte';
+	import { setCurrentBook } from '$lib/reading.svelte';
 	import ComicReader from '$lib/reader/ComicReader.svelte';
 	import EpubReader from '$lib/reader/EpubReader.svelte';
 	import PdfReader from '$lib/reader/PdfReader.svelte';
 
 	const rel = $derived(page.params.path ?? '');
 	const fallbackTitle = $derived(rel.split('/').pop()?.replace(/\.[^.]+$/, '') ?? '');
-	// Retour au dossier qui contient le livre, pas nécessairement à la racine.
+	// La collection du livre : son dossier — la racine quand il n'en a pas.
 	const parent = $derived(parentOf(rel));
-	const backLabel = $derived(parent ? (parent.split('/').pop() ?? t('nav.library')) : t('nav.library'));
+	const collectionUrl = $derived(parent ? folderUrl(parent) : '/');
+
+	/**
+	 * La flèche de retour ramène **là où l'on était** — l'accueil, une série, une
+	 * ligne de nouveautés : c'est l'historique qui le sait, pas le chemin du
+	 * livre. Sans historique (lien direct, nouvel onglet), le `href` reprend la
+	 * main et mène à la collection.
+	 */
+	function goBack(event: MouseEvent) {
+		// Ouvrir dans un onglet ou une fenêtre reste au navigateur.
+		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+			return;
+		}
+		if (history.length < 2) return;
+		event.preventDefault();
+		history.back();
+	}
 
 	let detail = $state<BookDetail | null>(null);
 	let error = $state<string | null>(null);
@@ -30,6 +47,16 @@
 		};
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
+	});
+
+	// L'interface sait quel livre est ouvert : il reste dans « poursuivre la
+	// lecture » même terminé, tant qu'on ne l'a pas quitté. L'effet suit aussi
+	// un passage d'un livre à l'autre sans démonter la page.
+	$effect(() => {
+		const path = rel;
+		if (!path) return;
+		setCurrentBook(path);
+		return () => setCurrentBook(null);
 	});
 
 	// Le sommaire est relu à chaque changement de livre : c'est une lecture
@@ -74,8 +101,12 @@
 <div class="reader">
 	{#if chrome}
 		<header class="reader-head">
-			<a class="back" href={parent ? folderUrl(parent) : '/'}>← {backLabel}</a>
-			<h1 class="reader-title">{detail?.title ?? fallbackTitle}</h1>
+			<a class="back" href={collectionUrl} onclick={goBack}>← {t('reader.back')}</a>
+			<h1 class="reader-title">
+				<a href={collectionUrl} title={t('reader.openCollection')}>
+					{detail?.title ?? fallbackTitle}
+				</a>
+			</h1>
 			{#if detail?.author}
 				<span class="reader-sub">{detail.author}</span>
 			{/if}
@@ -116,12 +147,14 @@
 				{rel}
 				pages={detail.pages}
 				modified={detail.modified}
+				resume={detail.progress?.page}
 				{chrome}
 				onToggleChrome={() => (chrome = !chrome)}
 			/>
 		{:else if detail.format === 'pdf'}
 			<PdfReader
 				{rel}
+				resume={detail.progress?.page}
 				{chrome}
 				onToggleChrome={() => (chrome = !chrome)}
 			/>

@@ -907,6 +907,7 @@ code {
 }
 
 .card {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	background: var(--panel);
@@ -916,6 +917,127 @@ code {
 	transition:
 		transform 140ms ease,
 		border-color 140ms ease;
+}
+
+/* Toute la carte ouvre le livre (ou la série) : un lien étiré, sous le menu. */
+.card-hit {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	border-radius: inherit;
+}
+
+/* Les « trois points » d'une carte : visibles au survol et au clavier, en bas à
+   gauche de la couverture. Le menu s'ouvre dans la couverture. */
+.card-menu {
+	position: static;
+}
+
+.card-dots {
+	position: absolute;
+	right: 8px;
+	bottom: 12px;
+	z-index: 3;
+	display: grid;
+	place-items: center;
+	width: 26px;
+	height: 26px;
+	/* Le navigateur donne 1px 6px aux boutons : de quoi décaler l'icône. */
+	padding: 0;
+	background: rgba(8, 8, 12, 0.78);
+	border: 1px solid rgba(255, 255, 255, 0.14);
+	border-radius: 8px;
+	color: var(--text);
+	opacity: 0;
+	transition:
+		opacity 120ms ease,
+		background 120ms ease;
+}
+
+/* L'épingle : en bas à gauche, au survol — et toujours visible quand l'élément
+   est épinglé, pour qu'on voie ce qui est dans « à regarder plus tard ». */
+.card-pin {
+	position: absolute;
+	left: 8px;
+	bottom: 12px;
+	z-index: 3;
+	display: grid;
+	place-items: center;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	background: rgba(8, 8, 12, 0.78);
+	border: 1px solid rgba(255, 255, 255, 0.14);
+	border-radius: 8px;
+	color: var(--muted);
+	opacity: 0;
+	transition:
+		opacity 120ms ease,
+		color 120ms ease,
+		background 120ms ease;
+}
+
+.card-pin.pinned {
+	opacity: 1;
+	color: var(--accent);
+}
+
+.card:hover .card-dots,
+.card:focus-within .card-dots,
+.card:hover .card-pin,
+.card:focus-within .card-pin {
+	opacity: 1;
+}
+
+.card-dots:hover,
+.card-pin:hover {
+	background: rgba(22, 22, 30, 0.95);
+	color: var(--text);
+}
+
+.card-pin.pinned:hover {
+	color: var(--accent);
+}
+
+/* Pas de survol au tactile : les commandes restent visibles. */
+@media (hover: none) {
+	.card-dots,
+	.card-pin {
+		opacity: 1;
+	}
+}
+
+.card-pop {
+	position: absolute;
+	left: 8px;
+	right: 8px;
+	bottom: 44px;
+	z-index: 4;
+	display: grid;
+	gap: 2px;
+	padding: 6px;
+	background: rgba(20, 20, 27, 0.96);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+.card-pop button {
+	padding: 6px 8px;
+	border-radius: 6px;
+	color: var(--text);
+	font-size: 12.5px;
+	line-height: 1.25;
+	text-align: left;
+}
+
+.card-pop button:hover:not(:disabled) {
+	background: var(--accent-soft);
+}
+
+.card-pop button:disabled {
+	opacity: 0.45;
+	cursor: default;
 }
 
 @media (hover: hover) {
@@ -939,6 +1061,142 @@ code {
 	width: 100%;
 	height: 100%;
 	object-fit: cover;
+}
+
+/* Lecture commencée : la barre se pose sur le bas de la couverture. */
+.card-progress {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	height: 6px;
+	background: rgba(8, 8, 12, 0.72);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.card-progress span {
+	display: block;
+	height: 100%;
+	background: var(--accent);
+}
+
+/* Série : livres terminés sur le total, en haut à droite de la couverture. */
+.cover-badge {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	padding: 2px 8px;
+	background: rgba(8, 8, 12, 0.78);
+	border: 1px solid rgba(255, 255, 255, 0.14);
+	border-radius: 999px;
+	color: var(--text);
+	font-size: 11.5px;
+	font-weight: 650;
+	font-variant-numeric: tabular-nums;
+	backdrop-filter: blur(4px);
+}
+
+/* « Poursuivre la lecture », nouveautés : une seule ligne, qui défile
+   horizontalement — au doigt, à la molette, ou par les flèches posées dessus. */
+.rail {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: 156px;
+	gap: 16px;
+	overflow-x: auto;
+	padding-bottom: 8px;
+	scroll-snap-type: x proximity;
+	scroll-behavior: smooth;
+}
+
+.rail .card {
+	scroll-snap-align: start;
+}
+
+/* Le cadre qui porte les flèches : elles se posent sur les bords de la ligne. */
+.rail-frame {
+	position: relative;
+}
+
+.rail-nav {
+	position: absolute;
+	top: 43%;
+	z-index: 2;
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	transform: translateY(-50%);
+	background: rgba(12, 12, 16, 0.88);
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	color: var(--text);
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+	backdrop-filter: blur(6px);
+	transition:
+		opacity 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
+}
+
+.rail-nav.prev {
+	left: -12px;
+}
+
+.rail-nav.next {
+	right: -12px;
+}
+
+.rail-nav:hover:not(:disabled) {
+	border-color: var(--muted);
+	color: var(--accent);
+}
+
+.rail-nav:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* Au bout de la ligne, la flèche n'a plus rien à faire : elle s'efface. Elle
+   reste `aria-disabled` (et non `disabled`) pour garder le focus clavier. */
+.rail-nav[aria-disabled='true'] {
+	opacity: 0;
+	pointer-events: none;
+}
+
+/* La souris peut tirer la ligne : le curseur le dit, et le glissement ne doit
+   pas être freiné par l'aimantation ni par le défilement animé. */
+.rail.dragging {
+	scroll-snap-type: none;
+	scroll-behavior: auto;
+	cursor: grabbing;
+}
+
+.rail.dragging * {
+	cursor: grabbing;
+}
+
+/* Une image ne se « drague » pas comme un fichier : c'est la ligne qu'on tire. */
+.rail img {
+	-webkit-user-drag: none;
+	user-select: none;
+}
+
+/* Une ligne de nouveautés : elle défile à la souris ou au doigt, sans barre
+   visible — le titre de la catégorie mène à la liste entière. */
+.rail.flush {
+	scrollbar-width: none;
+}
+
+.rail.flush::-webkit-scrollbar {
+	display: none;
+}
+
+/* Le titre d'une ligne de nouveautés renvoie vers sa catégorie. */
+.group h2 a:hover {
+	color: var(--text);
+	text-decoration: underline;
+	text-underline-offset: 3px;
 }
 
 .fallback {
@@ -1053,6 +1311,14 @@ code {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+/* Le titre mène à la collection du livre : le survol le dit. */
+.reader-title a:hover,
+.reader-title a:focus-visible {
+	color: var(--accent);
+	text-decoration: underline;
+	text-underline-offset: 3px;
 }
 
 .reader-sub {
@@ -1662,6 +1928,18 @@ code {
 	border-radius: 6px;
 }
 
+/* Sous-onglets d'une période (mois, année, tout) : la même barre, un cran plus
+   discrète que les onglets de la page qui les abrite. */
+.tabs.sub {
+	margin-bottom: 14px;
+}
+
+.tabs.sub button {
+	padding: 5px 12px;
+	font-size: 12.5px;
+	letter-spacing: 0.02em;
+}
+
 .perf-panel {
 	display: grid;
 	gap: 18px;
@@ -1780,6 +2058,62 @@ code {
 	text-transform: none;
 }
 
+/* KPI d'une page de compte : une barre de couleur à gauche (la teinte est
+   passée par `--kpi`), et une carte plus basse que celles des statistiques —
+   trois chiffres tiennent sur une ligne. */
+.perf-card.kpi {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 2px;
+	padding: 10px 16px 12px 18px;
+	border-left: 3px solid var(--kpi, var(--accent));
+}
+
+.perf-card.kpi h2 {
+	margin: 0;
+}
+
+.perf-card.kpi .stat-value {
+	margin: 0;
+	line-height: 1.15;
+	font-size: 26px;
+}
+
+/* Une tranche de l'historique de lecture (un mois, une année) : son titre,
+   puis ses couvertures. */
+.panel-card .reading-group + .reading-group {
+	margin-top: 24px;
+}
+
+.panel-card .reading-group h3 {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 0 0 12px;
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: capitalize;
+}
+
+.panel-card .reading-group .group-series {
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+	letter-spacing: 0;
+	text-transform: none;
+}
+
+/* Le « / 4 » d'un compteur « 3 / 4 » : lisible sans peser comme un chiffre. */
+.stat-of {
+	margin-left: 2px;
+	color: var(--muted);
+	font-size: 15px;
+	font-weight: 500;
+	letter-spacing: 0;
+}
+
 /* Sélecteur de période de l'historique (direct, 1 h, 24 h, 7 j, 30 j). */
 .range-tabs {
 	display: flex;
@@ -1838,6 +2172,44 @@ code {
 	font-weight: 640;
 	letter-spacing: -0.03em;
 	font-variant-numeric: tabular-nums;
+}
+
+/* Une date n'a pas la même échelle qu'un compteur : même carte, autre taille. */
+.perf-stat .stat-value.small {
+	font-size: 15px;
+	font-weight: 600;
+	letter-spacing: 0;
+	font-variant-numeric: normal;
+}
+
+/* Progression de lecture : une barre fine, puis « 20 / 100 · 21 % ». */
+.reading-progress {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 180px;
+}
+
+.reading-bar {
+	flex: 1;
+	height: 6px;
+	border-radius: 999px;
+	background: var(--line);
+	overflow: hidden;
+}
+
+.reading-bar span {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--accent);
+}
+
+.reading-value {
+	color: var(--muted);
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
 }
 
 .stat-sub {
@@ -3273,8 +3645,23 @@ a.link-more {
 }
 
 .user-link {
-	display: grid;
+	display: flex;
+	align-items: center;
+	gap: 10px;
 	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/* Initiales ou visage : rond, net, et jamais déformé par un nom long. */
+.avatar {
+	flex: none;
+	border-radius: 50%;
+	background: var(--panel);
+}
+
+/* Nom et rôle empilés : ils restent lisibles à côté de l'avatar. */
+.user-text {
+	display: grid;
 	min-width: 0;
 }
 

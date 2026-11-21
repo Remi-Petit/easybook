@@ -65,6 +65,36 @@ export type Activity = {
 	online: number;
 };
 
+/** La position d'un utilisateur dans un livre. */
+export type BookProgress = {
+	book: string;
+	title: string;
+	format: string;
+	page: number;
+	pages: number;
+	startedAt: number;
+	updatedAt: number;
+};
+
+/** Une session de lecture (suite de positions à moins de 60 s d'écart). */
+export type ReadingSession = {
+	id: number;
+	book: string;
+	title: string;
+	startedAt: number;
+	lastAt: number;
+	endPage: number;
+	pages: number;
+};
+
+/** Ce que rend `GET /api/admin/users/{id}/read/history`. */
+export type ReadingHistory = {
+	/** `seconds` : temps de lecture cumulé, sessions additionnées. */
+	summary: { books: number; finished: number; pages: number; seconds: number; lastAt: number };
+	recent: BookProgress[];
+	sessions: ReadingSession[];
+};
+
 export type Session = {
 	/** `false` : le serveur n'exige aucune connexion. */
 	enabled: boolean;

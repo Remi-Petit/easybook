@@ -176,6 +176,15 @@ impl AuthState {
         let _ = self.events.send(event.to_string());
     }
 
+    /// Prévient les administrateurs qu'une position de lecture a bougé.
+    ///
+    /// Avis distinct de [`Self::notify`] : la page d'historique de lecture se
+    /// rafraîchit, sans réveiller la liste des comptes à chaque page tournée.
+    pub fn notify_reading(&self, user_id: &str) {
+        let event = serde_json::json!({ "type": "reading", "user_id": user_id });
+        let _ = self.events.send(event.to_string());
+    }
+
     pub fn subscribe_events(&self) -> broadcast::Receiver<String> {
         self.events.subscribe()
     }

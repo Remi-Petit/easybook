@@ -28,7 +28,9 @@
 
 use crate::auth::{self, AuthState};
 use crate::formats::{self, Format};
-use crate::{config, library, perf_history, readings, resize, rewrite, storage, thumbnail, write};
+use crate::{
+    config, library, perf_history, progress, readings, resize, rewrite, storage, thumbnail, write,
+};
 use axum::body::Bytes;
 use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, Request, State};
@@ -127,6 +129,9 @@ pub struct AppState {
     auth: Option<Arc<AuthState>>,
     /// Historique des performances ; `None` : enregistrement désactivé.
     history: Option<Arc<perf_history::History>>,
+    /// Historique de lecture ; `None` : pas d'identité (authentification
+    /// désactivée) ou base indisponible.
+    progress: Option<Arc<progress::Progress>>,
     /// Nombre de rediffusions du catalogue (watcher ou contrôle périodique).
     /// Le contrôle périodique de `main` s'en sert pour ne pas rediffuser un
     /// changement que le watcher a déjà traité entre deux de ses passages.
@@ -150,6 +155,7 @@ impl AppState {
             auth: None,
             history: None,
             broadcasts: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            progress: None,
         }
     }
 
@@ -173,6 +179,17 @@ impl AppState {
 
     pub fn history(&self) -> Option<Arc<perf_history::History>> {
         self.history.clone()
+    }
+
+    /// Attache l'historique de lecture (voir [`crate::progress`]).
+    #[must_use]
+    pub fn with_progress(mut self, progress: Arc<progress::Progress>) -> Self {
+        self.progress = Some(progress);
+        self
+    }
+
+    pub fn progress(&self) -> Option<Arc<progress::Progress>> {
+        self.progress.clone()
     }
 
     /// Réduit une planche à `width` pixels, dans la limite de
@@ -353,6 +370,21 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/asset", get(get_asset))
         .route("/api/page", get(get_page))
         .route("/api/raw", get(get_raw))
+        // Historique de lecture : la position du lecteur, et ce qu'en voit un
+        // administrateur. Le préfixe `/api/admin/` suffit à exiger le rôle.
+        .route(
+            "/api/read/progress",
+            post(save_progress).delete(forget_progress),
+        )
+        .route("/api/read/history", get(get_my_reading))
+        .route(
+            "/api/read/pins",
+            get(get_pins).put(pin_item).delete(unpin_item),
+        )
+        .route(
+            "/api/admin/users/{id}/read/history",
+            get(get_reading_history),
+        )
         // Écriture : ce que le catalogue affiche, il doit pouvoir le créer.
         .route("/api/folder", post(create_folder))
         .route("/api/book", put(upload_book))
@@ -540,6 +572,18 @@ struct BookDetail {
     /// Explication, quand le livre ne peut pas être ouvert.
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<String>,
+    /// Position du lecteur connecté : c'est elle qui fait **reprendre** la
+    /// lecture, y compris depuis un autre appareil.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress: Option<Position>,
+}
+
+/// La position enregistrée d'un utilisateur dans un livre.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Position {
+    pub page: i64,
+    pub pages: i64,
 }
 
 #[derive(Deserialize)]
@@ -548,14 +592,35 @@ struct BookQuery {
 }
 
 /// `GET /api/book?path=` — sommaire ou nombre de pages.
-async fn get_book(State(state): State<AppState>, Query(query): Query<BookQuery>) -> Response {
+async fn get_book(
+    State(state): State<AppState>,
+    auth::MaybeUser(user): auth::MaybeUser,
+    Query(query): Query<BookQuery>,
+) -> Response {
     let Some(path) = file_in(&state.root(), &query.path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
     let rel = query.path.clone();
     match state.read(move || detail(&path, &rel)).await {
-        Ok(Ok(detail)) => Json(detail).into_response(),
+        Ok(Ok(mut detail)) => {
+            // La position du lecteur : c'est elle qui fait reprendre la lecture.
+            if let (Some(progress), Some(user)) = (state.progress(), user.as_ref()) {
+                let book = query.path.clone();
+                let id = user.id.clone();
+                let position = tokio::task::spawn_blocking(move || progress.position(&id, &book))
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                    .flatten();
+                detail.progress = position.map(|row| Position {
+                    page: row.page,
+                    pages: row.pages,
+                });
+            }
+            // Réponse propre à un lecteur : jamais de cache intermédiaire.
+            ([(header::CACHE_CONTROL, "no-store")], Json(detail)).into_response()
+        }
         Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, e).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
@@ -587,6 +652,7 @@ fn detail(path: &Path, rel: &str) -> Result<BookDetail, String> {
         pages,
         modified: file_stamp(path).map(|(_, secs)| secs),
         note: module.note().map(str::to_string),
+        progress: None,
     })
 }
 
@@ -1321,6 +1387,255 @@ fn origin(headers: &HeaderMap) -> String {
 /// Erreur interne (E/S, sérialisation) → 500 avec le message.
 fn internal_error(e: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+}
+
+// ── Historique de lecture ───────────────────────────────────────────────────
+
+/// Corps de `POST /api/read/progress`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProgressBody {
+    /// Chemin du livre dans la bibliothèque (comme le catalogue).
+    path: String,
+    /// Index 0-based de la page (BD, PDF) ou du chapitre (EPUB).
+    page: i64,
+    /// Total connu du lecteur ; `0` s'il ne le sait pas encore.
+    #[serde(default)]
+    pages: i64,
+}
+
+/// `POST /api/read/progress` — enregistre la position du lecteur connecté.
+///
+/// Le livre doit exister : un chemin inventé n'entre pas en base. Sans identité
+/// (authentification désactivée), l'extracteur répond 401 — il n'y a personne à
+/// qui rattacher une position, et rien n'est écrit.
+async fn save_progress(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+    Json(body): Json<ProgressBody>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    let Some(path) = file_in(&state.root(), &body.path) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !path.is_file() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    // Le titre et le format viennent du disque, pas du client : la même règle
+    // que le catalogue, et rien à croire sur parole.
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let entry = progress::Entry {
+        book: body.path,
+        title: library::title_of(name),
+        format: Format::from_path(name).map_or_else(String::new, |format| format.id().to_string()),
+        page: body.page,
+        pages: body.pages,
+    };
+    let user_id = user.id.clone();
+    let notify = user_id.clone();
+    match tokio::task::spawn_blocking(move || progress.save(&user_id, &entry)).await {
+        Ok(Ok(())) => {
+            // Les administrateurs regardent peut-être la page d'historique.
+            if let Some(auth) = state.auth() {
+                auth.notify_reading(&notify);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ProgressQuery {
+    /// Chemin du livre dans la bibliothèque (comme le catalogue).
+    path: String,
+}
+
+/// `DELETE /api/read/progress?path=` — oublie la position du livre connecté.
+///
+/// C'est « marquer comme non lu » : la position et les sessions du livre
+/// partent, la couverture redevient vierge et le temps de lecture cesse de
+/// compter ce livre.
+async fn forget_progress(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+    Query(query): Query<ProgressQuery>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    // Un chemin inventé n'efface rien : le livre doit exister.
+    if file_in(&state.root(), &query.path).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let user_id = user.id.clone();
+    let notify = user_id.clone();
+    let book = query.path;
+    match tokio::task::spawn_blocking(move || progress.forget(&user_id, &book)).await {
+        Ok(Ok(_)) => {
+            // Les administrateurs regardent peut-être la page d'historique.
+            if let Some(auth) = state.auth() {
+                auth.notify_reading(&notify);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct PinQuery {
+    /// Chemin du livre ou du dossier dans la bibliothèque.
+    path: String,
+}
+
+/// Titre d'une épingle, tiré du disque : un livre a le titre que lui donne le
+/// catalogue, un dossier son nom. `None` si le chemin n'existe pas.
+fn pin_title(root: &Path, rel: &str) -> Option<String> {
+    if let Some(path) = file_in(root, rel) {
+        return Some(library::title_of(path.file_name()?.to_str()?));
+    }
+    // La racine entière n'est pas une série : on ne l'épingle pas.
+    if rel.is_empty() {
+        return None;
+    }
+    folder_in(root, rel)?;
+    Some(rel.rsplit('/').next()?.to_string())
+}
+
+/// `GET /api/read/pins` — les livres et séries « à regarder plus tard ».
+async fn get_pins(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return (StatusCode::NOT_FOUND, "historique désactivé").into_response();
+    };
+    let id = user.id.clone();
+    match tokio::task::spawn_blocking(move || progress.pins(&id)).await {
+        Ok(Ok(pins)) => ([(header::CACHE_CONTROL, "no-store")], Json(pins)).into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+/// `PUT /api/read/pins?path=` — épingle un livre ou une série.
+async fn pin_item(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+    Query(query): Query<PinQuery>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    // Ce qui n'existe pas ne s'épingle pas — et le titre vient du disque.
+    let Some(title) = pin_title(&state.root(), &query.path) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let id = user.id.clone();
+    let item = query.path;
+    match tokio::task::spawn_blocking(move || progress.pin(&id, &item, &title)).await {
+        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+/// `DELETE /api/read/pins?path=` — détache une épingle.
+async fn unpin_item(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+    Query(query): Query<PinQuery>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    let id = user.id.clone();
+    let item = query.path;
+    match tokio::task::spawn_blocking(move || progress.unpin(&id, &item)).await {
+        Ok(Ok(_)) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ReadingHistoryQuery {
+    limit: Option<usize>,
+    /// Début de la période, en secondes Unix (`0` ou absent : depuis toujours).
+    since: Option<i64>,
+}
+
+/// `GET /api/read/history?limit=&since=` — les lectures du compte connecté.
+///
+/// C'est ce que l'accueil affiche (« poursuivre la lecture ») et ce qui donne
+/// leur barre de progression aux couvertures. `limit=0` rend **tout**
+/// l'historique : la page du compte y calcule ses chiffres (séries terminées),
+/// qui doivent porter sur toutes les lectures, pas sur les plus récentes.
+/// `since` borne la fenêtre (les KPI du mois, de l'année).
+async fn get_my_reading(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+    Query(query): Query<ReadingHistoryQuery>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return (StatusCode::NOT_FOUND, "historique désactivé").into_response();
+    };
+    let window = progress::Window {
+        since: query.since.unwrap_or(0).max(0),
+        limit: query.limit.unwrap_or(30),
+    };
+    let id = user.id.clone();
+    match tokio::task::spawn_blocking(move || progress.history(&id, window)).await {
+        Ok(Ok(history)) => ([(header::CACHE_CONTROL, "no-store")], Json(history)).into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+/// `GET /api/admin/users/{id}/read/history?limit=` — l'historique d'un compte.
+async fn get_reading_history(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Query(query): Query<ReadingHistoryQuery>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return (StatusCode::NOT_FOUND, "historique désactivé").into_response();
+    };
+    // Un identifiant inconnu est une erreur, pas un historique vide.
+    if let Some(auth) = state.auth() {
+        let accounts = Arc::clone(&auth.accounts);
+        let lookup = id.clone();
+        let known = tokio::task::spawn_blocking(move || accounts.user(&lookup)).await;
+        match known {
+            Ok(Ok(Some(_))) => {}
+            Ok(Ok(None)) => return StatusCode::NOT_FOUND.into_response(),
+            Ok(Err(e)) => return internal_error(e).into_response(),
+            Err(e) => return internal_error(e).into_response(),
+        }
+    }
+
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    let window = progress::Window {
+        since: query.since.unwrap_or(0).max(0),
+        limit,
+    };
+    let user = id.clone();
+    match tokio::task::spawn_blocking(move || progress.history(&user, window)).await {
+        Ok(Ok(history)) => ([(header::CACHE_CONTROL, "no-store")], Json(history)).into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
 }
 
 #[cfg(test)]

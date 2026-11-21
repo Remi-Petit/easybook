@@ -112,9 +112,34 @@ export function previewBook(
 	return undefined;
 }
 
+/** Une catégorie et ses derniers livres : une ligne de nouveautés de l'accueil. */
+export type NoveltyRail = { folder: FolderInfo; books: BookInfo[] };
+
+/**
+ * Les `limit` livres les plus récents de chaque catégorie (les dossiers de
+ * premier niveau), du plus récent au plus ancien.
+ *
+ * Une catégorie sans livre est omise, et les livres posés à la racine
+ * n'appartiennent à aucune catégorie. La date retenue est celle du fichier
+ * (`modified`) : c'est ce que le serveur sait d'un livre "nouveau".
+ */
+export function noveltyRails(
+	folders: FolderInfo[],
+	books: BookInfo[],
+	limit: number
+): NoveltyRail[] {
+	return childFolders(folders, '')
+		.map((folder) => ({
+			folder,
+			books: subtreeBooks(books, folder.rel)
+				.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0))
+				.slice(0, limit)
+		}))
+		.filter((rail) => rail.books.length > 0);
+}
+
 /** Segments d'un chemin, chacun avec son `rel` (fil d'Ariane). */
-export function segments(rel: string): { name: string; rel: string }[] {
-	let path = '';
+export function segments(rel: string): { name: string; rel: string }[] {	let path = '';
 	return rel
 		.split('/')
 		.filter(Boolean)

@@ -555,8 +555,15 @@ cd backend && cargo test --test keycloak -- --ignored   # contre le vrai Keycloa
 - Sous Docker Desktop (Windows/macOS), les événements du système de fichiers ne
   traversent pas toujours le montage : un livre déposé depuis l'hôte peut
   n'apparaître qu'au prochain scan (une requête à `/api/books` en déclenche un).
-- La reprise de lecture (chapitre ou page) est mémorisée dans le navigateur
-  (`localStorage`), pas côté serveur.
+- La reprise de lecture (chapitre ou page) est enregistrée **côté serveur**
+  quand il y a des comptes (`reading.db` : position courante et sessions) :
+  elle suit d'un appareil à l'autre, et l'administrateur voit où en est chaque
+  compte. `localStorage` reste le repli hors connexion.
+- Les avatars des comptes sont dessinés localement par [DiceBear](https://www.dicebear.com/)
+  (`fun-emoji`, graine = identifiant du compte) : aucune requête réseau, et le
+  même visage à chaque connexion. Code MIT ; dessins d'après
+  [Fun Emoji Set](https://www.figma.com/community/file/968125295144990435) de
+  [Davis Uche](https://www.instagram.com/davedirect3/), **CC BY 4.0** (remix de DiceBear).
 - Le contenu d'un livre est inséré dans la page du lecteur : les gestionnaires
   d'événements en ligne (`onerror=`, `onclick=`…) sont retirés et les scripts
   restent inertes (`innerHTML`), mais un livre reste un fichier **tiers** — ne

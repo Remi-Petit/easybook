@@ -250,6 +250,7 @@ pub fn collect(data_dir: &Path, cache_dir: &Path, library: Library) -> Storage {
     let databases = vec![
         database(data_dir, "accounts.db"),
         database(data_dir, "metrics.db"),
+        database(data_dir, "reading.db"),
     ];
     let database_bytes = databases
         .iter()

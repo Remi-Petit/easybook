@@ -8,6 +8,13 @@ const { version } = pkg;
 export default defineConfig({
 	plugins: [sveltekit()],
 	define: { __APP_VERSION__: JSON.stringify(version) },
+	// L'image Docker ne copie que la sortie de `build` (pas de `node_modules`) :
+	// tout ce que le serveur SvelteKit utilise à l'exécution doit être **dans**
+	// le bundle. Les avatars (DiceBear) sont dessinés côté serveur aussi, sinon
+	// la barre latérale arriverait sans visage puis se remplirait.
+	ssr: {
+		noExternal: ['@dicebear/core', '@dicebear/fun-emoji']
+	},
 	server: {
 		// `localhost` résout `::1` en premier sur certaines machines, où IPv6
 		// loopback est bloqué : on écoute explicitement sur IPv4.

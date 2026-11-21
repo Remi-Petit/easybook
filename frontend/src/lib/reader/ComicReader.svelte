@@ -1,20 +1,24 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { pageUrl, pageWidth } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
+	import { flushPositions, reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
 
 	let {
 		rel,
 		pages,
 		modified,
+		resume,
 		chrome = true,
 		onToggleChrome = () => {}
 	}: {
 		rel: string;
 		pages: number;
 		modified?: number;
+		/** Index enregistré côté serveur : il prime sur la position locale. */
+		resume?: number;
 		chrome?: boolean;
 		onToggleChrome?: () => void;
 	} = $props();
@@ -32,6 +36,10 @@
 	const atEnd = $derived(index >= pages - 1);
 	const source = $derived(pageUrl(rel, index, modified, width));
 
+	// Revenir au catalogue est une navigation **interne** : ni `pagehide` ni
+	// changement de visibilité. La dernière page doit donc partir maintenant.
+	onDestroy(() => flushPositions());
+
 	function go(target: number) {
 		if (target < 0 || target >= pages) return;
 		index = target;
@@ -40,16 +48,23 @@
 		} catch {
 			// La reprise de lecture est un confort, pas une exigence.
 		}
+		// L'historique suit la lecture ; l'envoi est groupé (voir `$lib/progress`).
+		reportPosition(rel, target, pages);
 		stage?.scrollTo({ top: 0 });
 	}
 
 	onMount(() => {
+		let start = 0;
 		try {
 			const saved = Number(localStorage.getItem(storageKey));
-			if (Number.isInteger(saved) && saved >= 0 && saved < pages) index = saved;
+			if (Number.isInteger(saved) && saved >= 0 && saved < pages) start = saved;
 		} catch {
 			// Rien à restaurer.
 		}
+		// La position du serveur prime : elle vient d'un autre appareil, peut-être.
+		index = Number.isInteger(resume) && resume! >= 0 && resume! < pages ? resume! : start;
+		// Ouvrir un livre, c'est déjà une lecture : la position de reprise compte.
+		reportPosition(rel, index, pages);
 
 		const onKey = (event: KeyboardEvent) => {
 			if (event.key === 'ArrowLeft') go(index - 1);

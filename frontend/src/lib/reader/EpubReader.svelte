@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { chapterUrl, type BookDetail } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
+	import { flushPositions, reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
 
 	let {
@@ -30,6 +31,10 @@
 	const atStart = $derived(index <= 0);
 	const atEnd = $derived(index >= chapters.length - 1);
 
+	// Revenir au catalogue est une navigation **interne** : ni `pagehide` ni
+	// changement de visibilité. Le dernier chapitre doit donc partir maintenant.
+	onDestroy(() => flushPositions());
+
 	function go(target: number) {
 		if (target < 0 || target >= chapters.length) return;
 		index = target;
@@ -41,6 +46,8 @@
 		} catch {
 			// Mode navigation privée : la reprise de lecture est un confort.
 		}
+		// L'historique suit la lecture ; l'envoi est groupé (voir `$lib/progress`).
+		reportPosition(rel, target, chapters.length);
 	}
 
 	/**
@@ -71,13 +78,20 @@
 	});
 
 	onMount(() => {
-		// Reprise : on rouvre le livre là où on l'avait laissé.
+		// Reprise : la position du serveur prime (elle peut venir d'un autre
+		// appareil), sinon on rouvre le livre là où on l'avait laissé.
+		let start = 0;
 		try {
 			const saved = Number(localStorage.getItem(storageKey));
-			if (Number.isInteger(saved) && saved >= 0 && saved < chapters.length) index = saved;
+			if (Number.isInteger(saved) && saved >= 0 && saved < chapters.length) start = saved;
 		} catch {
 			// Rien à restaurer.
 		}
+		const server = detail.progress?.page;
+		index =
+			typeof server === 'number' && Number.isInteger(server) && server >= 0 && server < chapters.length
+				? server
+				: start;
 
 		const onKey = (event: KeyboardEvent) => {
 			if (event.target instanceof HTMLInputElement) return;
