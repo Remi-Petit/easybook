@@ -161,6 +161,14 @@ async fn the_history_follows_the_limit_and_zero_means_everything() {
     // `limit=0` : tout l'historique, pour les chiffres du compte.
     let all = site.get("/api/read/history?limit=0", Some(&reader)).await;
     assert_eq!(all.json()["recent"].as_array().unwrap().len(), 4);
+
+    // `since` borne la période : rien n'a été lu dans le futur.
+    let future = site
+        .get("/api/read/history?limit=0&since=99999999999", Some(&reader))
+        .await;
+    let empty = future.json();
+    assert_eq!(empty["recent"].as_array().unwrap().len(), 0);
+    assert_eq!(empty["summary"]["books"], 0);
 }
 
 #[tokio::test]

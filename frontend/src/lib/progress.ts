@@ -111,21 +111,32 @@ export const SERIES_MIN_BOOKS = 2;
  * un seul dossier — donc une catégorie et ses sous-dossiers ne se comptent pas
  * deux fois. Les livres posés à la racine n'appartiennent à aucune série, et un
  * dossier qui ne range qu'un livre n'est pas une série (voir `SERIES_MIN_BOOKS`).
+ *
+ * `since` (secondes Unix) ne garde que les séries terminées depuis : la date de
+ * fin est celle du **dernier tome terminé**, pas celle du dossier. Relire un
+ * tome sans le finir ne rajeunit donc pas la série.
  */
 export function completedSeries(
 	books: BookInfo[],
-	items: BookProgress[]
+	items: BookProgress[],
+	since = 0
 ): { done: number; total: number } {
-	const finished = new Set(
-		items.filter((item) => isFinished(item.page, item.pages)).map((item) => item.book)
+	const finished = new Map(
+		items
+			.filter((item) => isFinished(item.page, item.pages))
+			.map((item) => [item.book, item.updatedAt])
 	);
-	const series = new Map<string, { done: number; total: number }>();
+	const series = new Map<string, { done: number; total: number; last: number }>();
 	for (const book of books) {
 		const folder = parentOf(book.rel);
 		if (!folder) continue;
-		const entry = series.get(folder) ?? { done: 0, total: 0 };
+		const entry = series.get(folder) ?? { done: 0, total: 0, last: 0 };
 		entry.total += 1;
-		if (finished.has(book.rel)) entry.done += 1;
+		const at = finished.get(book.rel);
+		if (at !== undefined) {
+			entry.done += 1;
+			entry.last = Math.max(entry.last, at);
+		}
 		series.set(folder, entry);
 	}
 
@@ -134,7 +145,7 @@ export function completedSeries(
 	for (const entry of series.values()) {
 		if (entry.total < SERIES_MIN_BOOKS) continue;
 		total += 1;
-		if (entry.done === entry.total) done += 1;
+		if (entry.done === entry.total && entry.last >= since) done += 1;
 	}
 	return { done, total };
 }

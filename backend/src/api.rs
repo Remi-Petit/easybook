@@ -1448,14 +1448,17 @@ async fn save_progress(
 #[derive(Deserialize)]
 struct ReadingHistoryQuery {
     limit: Option<usize>,
+    /// Début de la période, en secondes Unix (`0` ou absent : depuis toujours).
+    since: Option<i64>,
 }
 
-/// `GET /api/read/history?limit=` — les lectures du compte connecté.
+/// `GET /api/read/history?limit=&since=` — les lectures du compte connecté.
 ///
 /// C'est ce que l'accueil affiche (« poursuivre la lecture ») et ce qui donne
 /// leur barre de progression aux couvertures. `limit=0` rend **tout**
 /// l'historique : la page du compte y calcule ses chiffres (séries terminées),
 /// qui doivent porter sur toutes les lectures, pas sur les plus récentes.
+/// `since` borne la fenêtre (les KPI du mois, de l'année).
 async fn get_my_reading(
     State(state): State<AppState>,
     auth::SessionUser(user): auth::SessionUser,
@@ -1464,9 +1467,12 @@ async fn get_my_reading(
     let Some(progress) = state.progress() else {
         return (StatusCode::NOT_FOUND, "historique désactivé").into_response();
     };
-    let limit = query.limit.unwrap_or(30);
+    let window = progress::Window {
+        since: query.since.unwrap_or(0).max(0),
+        limit: query.limit.unwrap_or(30),
+    };
     let id = user.id.clone();
-    match tokio::task::spawn_blocking(move || progress.history(&id, limit)).await {
+    match tokio::task::spawn_blocking(move || progress.history(&id, window)).await {
         Ok(Ok(history)) => ([(header::CACHE_CONTROL, "no-store")], Json(history)).into_response(),
         Ok(Err(e)) => internal_error(e).into_response(),
         Err(e) => internal_error(e).into_response(),
@@ -1496,8 +1502,12 @@ async fn get_reading_history(
     }
 
     let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    let window = progress::Window {
+        since: query.since.unwrap_or(0).max(0),
+        limit,
+    };
     let user = id.clone();
-    match tokio::task::spawn_blocking(move || progress.history(&user, limit)).await {
+    match tokio::task::spawn_blocking(move || progress.history(&user, window)).await {
         Ok(Ok(history)) => ([(header::CACHE_CONTROL, "no-store")], Json(history)).into_response(),
         Ok(Err(e)) => internal_error(e).into_response(),
         Err(e) => internal_error(e).into_response(),

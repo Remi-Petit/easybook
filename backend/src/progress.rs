@@ -106,6 +106,38 @@ pub struct History {
     pub sessions: Vec<Session>,
 }
 
+/// La tranche d'historique demandée.
+///
+/// `since` : début de la période, en secondes Unix — `0` veut dire « depuis
+/// toujours ». `limit` : nombre de lignes — `0` veut dire « toutes ».
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Window {
+    pub since: i64,
+    pub limit: usize,
+}
+
+impl Window {
+    /// Tout l'historique.
+    pub const fn all() -> Self {
+        Self { since: 0, limit: 0 }
+    }
+
+    /// Les `limit` entrées les plus récentes.
+    pub const fn last(limit: usize) -> Self {
+        Self { since: 0, limit }
+    }
+
+    /// Ce qui s'est passé depuis `since`, sans limite.
+    pub const fn since(since: i64) -> Self {
+        Self { since, limit: 0 }
+    }
+}
+
+/// `LIMIT` de SQLite : `-1` est sa façon de dire « pas de limite ».
+fn sql_limit(limit: usize) -> i64 {
+    if limit == 0 { -1 } else { limit as i64 }
+}
+
 pub struct Progress {
     conn: Mutex<Connection>,
 }
@@ -234,66 +266,72 @@ impl Progress {
         }))
     }
 
-    /// Livres les plus récemment lus par `user`, du plus récent au plus ancien.
+    /// Livres les plus récemment lus par `user`, du plus récent au plus ancien,
+    /// dans la fenêtre demandée.
     ///
-    /// `limit` : `0` rend **tout** l'historique — les chiffres d'un compte (KPI,
-    /// séries terminées) en ont besoin pour être exacts.
-    pub fn recent(&self, user: &str, limit: usize) -> rusqlite::Result<Vec<BookProgress>> {
+    /// `Window::all()` rend **tout** l'historique — les chiffres d'un compte
+    /// (KPI, séries terminées) en ont besoin pour être exacts.
+    pub fn recent(&self, user: &str, window: Window) -> rusqlite::Result<Vec<BookProgress>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT book, title, format, page, pages, started_at, updated_at
                FROM reading_progress
-              WHERE user_id = ?1
+              WHERE user_id = ?1 AND updated_at >= ?2
               ORDER BY updated_at DESC, book ASC
-              LIMIT ?2",
+              LIMIT ?3",
         )?;
-        // `LIMIT -1` est la façon dont SQLite dit « pas de limite ».
-        let limit = if limit == 0 { -1 } else { limit as i64 };
         let rows = stmt
-            .query_map(params![user, limit], |row| {
-                Ok(BookProgress {
-                    book: row.get(0)?,
-                    title: row.get(1)?,
-                    format: row.get(2)?,
-                    page: row.get(3)?,
-                    pages: row.get(4)?,
-                    started_at: row.get(5)?,
-                    updated_at: row.get(6)?,
-                })
-            })?
+            .query_map(
+                params![user, window.since, sql_limit(window.limit)],
+                |row| {
+                    Ok(BookProgress {
+                        book: row.get(0)?,
+                        title: row.get(1)?,
+                        format: row.get(2)?,
+                        page: row.get(3)?,
+                        pages: row.get(4)?,
+                        started_at: row.get(5)?,
+                        updated_at: row.get(6)?,
+                    })
+                },
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    /// Sessions récentes de `user`, de la plus récente à la plus ancienne.
-    pub fn sessions(&self, user: &str, limit: usize) -> rusqlite::Result<Vec<Session>> {
+    /// Sessions de lecture de `user`, de la plus récente à la plus ancienne :
+    /// celles qui se sont terminées dans la fenêtre demandée.
+    pub fn sessions(&self, user: &str, window: Window) -> rusqlite::Result<Vec<Session>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, book, title, started_at, last_at, end_page, pages
                FROM reading_sessions
-              WHERE user_id = ?1
+              WHERE user_id = ?1 AND last_at >= ?2
               ORDER BY last_at DESC, id DESC
-              LIMIT ?2",
+              LIMIT ?3",
         )?;
         let rows = stmt
-            .query_map(params![user, limit as i64], |row| {
-                Ok(Session {
-                    id: row.get(0)?,
-                    book: row.get(1)?,
-                    title: row.get(2)?,
-                    started_at: row.get(3)?,
-                    last_at: row.get(4)?,
-                    end_page: row.get(5)?,
-                    pages: row.get(6)?,
-                })
-            })?
+            .query_map(
+                params![user, window.since, sql_limit(window.limit)],
+                |row| {
+                    Ok(Session {
+                        id: row.get(0)?,
+                        book: row.get(1)?,
+                        title: row.get(2)?,
+                        started_at: row.get(3)?,
+                        last_at: row.get(4)?,
+                        end_page: row.get(5)?,
+                        pages: row.get(6)?,
+                    })
+                },
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    /// Les chiffres d'un utilisateur : une requête par table (les deux sont
-    /// indexées sur `user_id`).
-    pub fn summary(&self, user: &str) -> rusqlite::Result<Summary> {
+    /// Les chiffres d'un utilisateur depuis `since` : une requête par table
+    /// (les deux sont indexées sur `user_id`).
+    pub fn summary(&self, user: &str, since: i64) -> rusqlite::Result<Summary> {
         let conn = self.lock();
         let mut summary = conn.query_row(
             "SELECT COUNT(*),
@@ -301,8 +339,8 @@ impl Progress {
                     COALESCE(SUM(page + 1), 0),
                     COALESCE(MAX(updated_at), 0)
                FROM reading_progress
-              WHERE user_id = ?1",
-            params![user],
+              WHERE user_id = ?1 AND updated_at >= ?2",
+            params![user, since],
             |row| {
                 Ok(Summary {
                     books: row.get(0)?,
@@ -318,8 +356,8 @@ impl Progress {
         summary.seconds = conn.query_row(
             "SELECT COALESCE(SUM(MAX(last_at - started_at, 0)), 0)
                FROM reading_sessions
-              WHERE user_id = ?1",
-            params![user],
+              WHERE user_id = ?1 AND last_at >= ?2",
+            params![user, since],
             |row| row.get(0),
         )?;
         Ok(summary)
@@ -327,15 +365,25 @@ impl Progress {
 
     /// Tout ce qu'affiche la page d'administration, en une fois.
     ///
-    /// `limit` : `0` rend tout l'historique de lecture. Les sessions, elles,
+    /// `Window::all()` rend tout l'historique de lecture. Les sessions, elles,
     /// s'arrêtent à `SESSIONS_RECENT` dans ce cas : elles ne sont qu'un tableau
     /// informatif, et « tout » pour les livres ne doit pas le devenir aussi.
-    pub fn history(&self, user: &str, limit: usize) -> rusqlite::Result<History> {
-        let sessions = if limit == 0 { SESSIONS_RECENT } else { limit };
+    pub fn history(&self, user: &str, window: Window) -> rusqlite::Result<History> {
+        let limit = if window.limit == 0 {
+            SESSIONS_RECENT
+        } else {
+            window.limit
+        };
         Ok(History {
-            summary: self.summary(user)?,
-            recent: self.recent(user, limit)?,
-            sessions: self.sessions(user, sessions)?,
+            summary: self.summary(user, window.since)?,
+            recent: self.recent(user, window)?,
+            sessions: self.sessions(
+                user,
+                Window {
+                    since: window.since,
+                    limit,
+                },
+            )?,
         })
     }
 }
@@ -397,13 +445,13 @@ mod tests {
             .save("u1", &entry("mangas/T1.cbz", 5, 100))
             .unwrap();
 
-        let recent = progress.recent("u1", 10).unwrap();
+        let recent = progress.recent("u1", Window::last(10)).unwrap();
         assert_eq!(recent.len(), 1, "une seule ligne par livre");
         assert_eq!(recent[0].page, 5);
         assert_eq!(recent[0].pages, 100);
 
         // Deux écritures rapprochées : une seule session.
-        let sessions = progress.sessions("u1", 10).unwrap();
+        let sessions = progress.sessions("u1", Window::last(10)).unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].end_page, 5);
         assert_eq!(sessions[0].started_at, sessions[0].last_at);
@@ -423,7 +471,7 @@ mod tests {
             .unwrap();
         progress.save("u1", &entry("mangas/T1.cbz", 2, 10)).unwrap();
 
-        let sessions = progress.sessions("u1", 10).unwrap();
+        let sessions = progress.sessions("u1", Window::last(10)).unwrap();
         assert_eq!(sessions.len(), 2);
         assert!(sessions[0].last_at > sessions[1].last_at);
     }
@@ -435,7 +483,7 @@ mod tests {
         progress.save("u1", &entry("b.cbz", 0, 20)).unwrap();
         progress.save("u2", &entry("c.cbz", 4, 10)).unwrap();
 
-        let summary = progress.summary("u1").unwrap();
+        let summary = progress.summary("u1", 0).unwrap();
         assert_eq!(summary.books, 2);
         assert_eq!(summary.finished, 1);
         assert_eq!(summary.pages, 11);
@@ -445,7 +493,7 @@ mod tests {
         assert_eq!(summary.seconds, 0);
 
         // Chaque utilisateur ne voit que ses lignes.
-        assert_eq!(progress.recent("u2", 10).unwrap().len(), 1);
+        assert_eq!(progress.recent("u2", Window::last(10)).unwrap().len(), 1);
     }
 
     #[test]
@@ -458,13 +506,55 @@ mod tests {
         progress.save("u2", &entry("autre.cbz", 1, 10)).unwrap();
 
         // Une limite ordinaire borne la liste ; zéro veut dire « tout ».
-        assert_eq!(progress.recent("u1", 2).unwrap().len(), 2);
-        assert_eq!(progress.recent("u1", 0).unwrap().len(), 5);
-        let history = progress.history("u1", 0).unwrap();
+        assert_eq!(progress.recent("u1", Window::last(2)).unwrap().len(), 2);
+        assert_eq!(progress.recent("u1", Window::all()).unwrap().len(), 5);
+        let history = progress.history("u1", Window::all()).unwrap();
         assert_eq!(history.recent.len(), 5);
         assert_eq!(history.summary.books, 5);
         // Les sessions, elles, gardent leur plafond.
         assert!(history.sessions.len() <= SESSIONS_RECENT);
+    }
+
+    #[test]
+    fn a_window_only_counts_what_happened_since_it_started() {
+        let progress = Progress::open_in_memory().unwrap();
+        progress.save("u1", &entry("vieux.cbz", 3, 10)).unwrap();
+        progress.save("u1", &entry("recent.cbz", 9, 10)).unwrap();
+        // Le premier livre date d'hier, le second vient d'être ouvert.
+        let hier = now() - 86_400;
+        progress
+            .lock()
+            .execute(
+                "UPDATE reading_progress SET updated_at = ?1 WHERE book = 'vieux.cbz'",
+                params![hier],
+            )
+            .unwrap();
+        progress
+            .lock()
+            .execute(
+                "UPDATE reading_sessions SET last_at = ?1, started_at = ?1
+                  WHERE book = 'vieux.cbz'",
+                params![hier],
+            )
+            .unwrap();
+
+        let depuis = now() - 3_600;
+        let summary = progress.summary("u1", depuis).unwrap();
+        assert_eq!(summary.books, 1, "seul le livre de ce matin compte");
+        assert_eq!(summary.finished, 1);
+        assert_eq!(
+            progress.recent("u1", Window::since(depuis)).unwrap().len(),
+            1
+        );
+        assert_eq!(
+            progress
+                .sessions("u1", Window::since(depuis))
+                .unwrap()
+                .len(),
+            1
+        );
+        // Depuis toujours, les deux sont là.
+        assert_eq!(progress.summary("u1", 0).unwrap().books, 2);
     }
 
     #[test]
@@ -481,19 +571,19 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(progress.summary("u1").unwrap().seconds, 90);
-        assert_eq!(progress.summary("u2").unwrap().seconds, 0);
+        assert_eq!(progress.summary("u1", 0).unwrap().seconds, 90);
+        assert_eq!(progress.summary("u2", 0).unwrap().seconds, 0);
     }
 
     #[test]
     fn a_position_beyond_the_last_page_is_clamped() {
         let progress = Progress::open_in_memory().unwrap();
         progress.save("u1", &entry("a.cbz", 5_000, 10)).unwrap();
-        assert_eq!(progress.recent("u1", 1).unwrap()[0].page, 9);
+        assert_eq!(progress.recent("u1", Window::last(1)).unwrap()[0].page, 9);
 
         // Un total inconnu (0) laisse la position telle quelle.
         progress.save("u1", &entry("b.epub", 12, 0)).unwrap();
-        let rows = progress.recent("u1", 10).unwrap();
+        let rows = progress.recent("u1", Window::last(10)).unwrap();
         let epub = rows.iter().find(|row| row.book == "b.epub").unwrap();
         assert_eq!(epub.page, 12);
         assert_eq!(epub.pages, 0);
@@ -505,6 +595,9 @@ mod tests {
         let mut row = entry("a.cbz", 0, 10);
         row.title = "Titre\u{0} sale".to_string();
         progress.save("u1", &row).unwrap();
-        assert_eq!(progress.recent("u1", 1).unwrap()[0].title, "Titre sale");
+        assert_eq!(
+            progress.recent("u1", Window::last(1)).unwrap()[0].title,
+            "Titre sale"
+        );
     }
 }

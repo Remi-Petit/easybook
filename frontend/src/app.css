@@ -1710,6 +1710,18 @@ code {
 	border-radius: 6px;
 }
 
+/* Sous-onglets d'une période (mois, année, tout) : la même barre, un cran plus
+   discrète que les onglets de la page qui les abrite. */
+.tabs.sub {
+	margin-bottom: 14px;
+}
+
+.tabs.sub button {
+	padding: 5px 12px;
+	font-size: 12.5px;
+	letter-spacing: 0.02em;
+}
+
 .perf-panel {
 	display: grid;
 	gap: 18px;

@@ -49,13 +49,64 @@
 		document.getElementById(`account-tab-${tab}`)?.focus();
 	}
 
+	// Période de lecture : le mois en cours, l'année en cours, ou tout.
+	type Period = 'month' | 'year' | 'all';
+	const PERIODS: Period[] = ['month', 'year', 'all'];
+	let period = $state<Period>('month');
+	const periodLabel = (id: Period) => t(`account.reading.period.${id}`);
+
+	/** Premier instant de la période, en secondes Unix (`0` pour « tout »). */
+	function periodStart(id: Period): number {
+		if (id === 'all') return 0;
+		const today = new Date();
+		const start =
+			id === 'month'
+				? new Date(today.getFullYear(), today.getMonth(), 1)
+				: new Date(today.getFullYear(), 0, 1);
+		return Math.floor(start.getTime() / 1000);
+	}
+
 	// Les livres terminés : toute la liste du compte (`limit=0` — le serveur ne
-	// plafonne plus, sinon les séries terminées seraient sous-estimées).
+	// plafonne plus, sinon les séries terminées seraient sous-estimées). Elle
+	// sert aux trois périodes, qui ne sont que des filtres sur `updatedAt`.
 	let finished = $state<BookProgress[]>([]);
-	// Les chiffres du compte (`summary`) viennent de la même réponse : ils
-	// portent sur **toutes** les lectures, pas seulement les plus récentes.
-	let summary = $state<ReadingHistory['summary'] | null>(null);
-	let readingLoaded = $state(false);
+	// Les chiffres d'une période viennent du serveur : lui seul connaît le temps
+	// de lecture (les sessions ne sont pas toutes envoyées au client).
+	const summaries = $state<Partial<Record<Period, ReadingHistory['summary']>>>({});
+	const loaded = $state<Record<Period, boolean>>({ month: false, year: false, all: false });
+
+	async function loadPeriod(id: Period) {
+		if (loaded[id]) return;
+		const since = periodStart(id);
+		// Seul « tout » a besoin de la liste entière ; pour le mois et l'année, seuls
+		// les chiffres servent — une ligne suffit à remplir le résumé.
+		const limit = id === 'all' ? 0 : 1;
+		const result = await call<ReadingHistory>(
+			'GET',
+			`/api/read/history?limit=${limit}&since=${since}`
+		);
+		if (result.ok) {
+			summaries[id] = result.data.summary;
+			if (id === 'all') {
+				finished = result.data.recent.filter((entry) => isFinished(entry.page, entry.pages));
+			}
+		}
+		loaded[id] = true;
+	}
+
+	async function selectPeriod(id: Period) {
+		period = id;
+		await loadPeriod(id);
+	}
+
+	function periodKeys(event: KeyboardEvent) {
+		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+		if (!step) return;
+		event.preventDefault();
+		const next = PERIODS[(PERIODS.indexOf(period) + step + PERIODS.length) % PERIODS.length]!;
+		void selectPeriod(next);
+		document.getElementById(`account-period-${next}`)?.focus();
+	}
 
 	onMount(async () => {
 		// Retour d'une liaison OIDC : `?linked=1` ou `?error=<code>`.
@@ -64,24 +115,28 @@
 		else if (params.get('error')) notify(t(errorKey(params.get('error'))), { tone: 'error' });
 		if (params.get('linked') || params.get('error')) replaceState('/account', {});
 
-		const result = await call<ReadingHistory>('GET', '/api/read/history?limit=0');
-		if (result.ok) {
-			summary = result.data.summary;
-			finished = result.data.recent.filter((entry) => isFinished(entry.page, entry.pages));
-		}
-		readingLoaded = true;
+		// La liste entière d'abord (livres terminés, séries), puis la période
+		// affichée : elle n'a besoin que de ses chiffres.
+		await Promise.all([loadPeriod('all'), loadPeriod(period)]);
 	});
 
-	/** Les livres terminés, quand ils sont encore au catalogue (la carte a besoin du livre). */
+	/** Début de la période affichée : la même borne pour les cartes et la liste. */
+	const since = $derived(periodStart(period));
+	const summary = $derived(summaries[period] ?? null);
+
+	/** Les livres terminés de la période, quand ils sont encore au catalogue. */
 	const finishedBooks = $derived(
-		finished.flatMap((entry) => {
-			const book = library.books.find((candidate) => candidate.rel === entry.book);
-			return book ? [book] : [];
-		})
+		finished
+			.filter((entry) => entry.updatedAt >= since)
+			.flatMap((entry) => {
+				const book = library.books.find((candidate) => candidate.rel === entry.book);
+				return book ? [book] : [];
+			})
 	);
 
-	/** Séries terminées : les dossiers dont tous les livres sont finis. */
-	const series = $derived(completedSeries(library.books, finished));
+	/** Séries terminées : les dossiers dont tous les livres sont finis, et dont le
+	 *  dernier tome a été terminé dans la période. */
+	const series = $derived(completedSeries(library.books, finished, since));
 
 	/** « 2 h 05 », « 47 min », « 12 s » : une durée se lit d'un coup d'œil. */
 	function duration(seconds: number): string {
@@ -159,41 +214,64 @@
 		<div id="account-panel" class="tab-panel" role="tabpanel" aria-labelledby="account-tab-{tab}">
 			<div class="admin-stack">
 				{#if tab === 'reading'}
-					<div class="perf-grid compact">
-						<section class="perf-card kpi" style="--kpi: #e0a54a">
-							<h2>{t('account.reading.kpi.books')}</h2>
-							<p class="stat-value">{formatNumber(summary?.finished ?? 0)}</p>
-						</section>
-						<section class="perf-card kpi" style="--kpi: #6aa5e0">
-							<h2>{t('account.reading.kpi.time')}</h2>
-							<p class="stat-value">{duration(summary?.seconds ?? 0)}</p>
-						</section>
-						<section class="perf-card kpi" style="--kpi: #5cc98a">
-							<h2>{t('account.reading.kpi.series')}</h2>
-							<p class="stat-value">
-								{formatNumber(series.done)}
-								<span class="stat-of">/ {formatNumber(series.total)}</span>
-							</p>
-						</section>
+					<div class="tabs sub" role="tablist" tabindex="-1" onkeydown={periodKeys}>
+						{#each PERIODS as id (id)}
+							<button
+								type="button"
+								role="tab"
+								id="account-period-{id}"
+								aria-selected={period === id}
+								aria-controls="account-reading"
+								tabindex={period === id ? 0 : -1}
+								onclick={() => void selectPeriod(id)}
+							>
+								{periodLabel(id)}
+							</button>
+						{/each}
 					</div>
 
-					<section class="panel-card">
-						<h2>
-							{t('account.reading.title')}
-							<span class="perf-count">{finished.length}</span>
-						</h2>
-						{#if !readingLoaded}
-							<p class="panel-hint">{t('status.connecting')}</p>
-						{:else if finishedBooks.length === 0}
-							<p class="panel-hint">{t('account.reading.empty')}</p>
-						{:else}
-							<div class="grid">
-								{#each finishedBooks as book (book.rel)}
-									<BookCard {book} />
-								{/each}
-							</div>
-						{/if}
-					</section>
+					<div
+						id="account-reading"
+						class="admin-stack"
+						role="tabpanel"
+						aria-labelledby="account-period-{period}"
+					>
+						<div class="perf-grid compact">
+							<section class="perf-card kpi" style="--kpi: #e0a54a">
+								<h2>{t('account.reading.kpi.books')}</h2>
+								<p class="stat-value">{formatNumber(summary?.finished ?? 0)}</p>
+							</section>
+							<section class="perf-card kpi" style="--kpi: #6aa5e0">
+								<h2>{t('account.reading.kpi.time')}</h2>
+								<p class="stat-value">{duration(summary?.seconds ?? 0)}</p>
+							</section>
+							<section class="perf-card kpi" style="--kpi: #5cc98a">
+								<h2>{t('account.reading.kpi.series')}</h2>
+								<p class="stat-value">
+									{formatNumber(series.done)}
+									<span class="stat-of">/ {formatNumber(series.total)}</span>
+								</p>
+							</section>
+						</div>
+
+						<section class="panel-card">
+							<h2>
+								{t('account.reading.title')}
+								<span class="perf-count">{finishedBooks.length}</span>
+							</h2>
+							{#if !loaded.all}
+								<p class="panel-hint">{t('status.connecting')}</p>
+							{:else if finishedBooks.length === 0}
+								<p class="panel-hint">{t('account.reading.empty')}</p>
+							{:else}
+								<div class="grid">
+									{#each finishedBooks as book (book.rel)}
+										<BookCard {book} />
+									{/each}
+								</div>
+							{/if}
+						</section>
+					</div>
 				{:else if tab === 'password'}
 					<section class="panel-card">
 						<h2>{t('account.password.title')}</h2>

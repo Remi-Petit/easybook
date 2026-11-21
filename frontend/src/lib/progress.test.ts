@@ -169,4 +169,26 @@ describe('completedSeries', () => {
 		// Deux dossiers rangent des livres : la série et son recueil bonus.
 		expect(completedSeries(books, items)).toEqual({ done: 2, total: 2 });
 	});
+
+	it('ne compte que les séries finies dans la période demandée', () => {
+		const books = [book('mangas/A/T1.cbz'), book('mangas/A/T2.cbz')];
+		const old = { ...entry('mangas/A/T1.cbz', 99, 100), updatedAt: 1_000 };
+		const recent = { ...entry('mangas/A/T2.cbz', 99, 100), updatedAt: 5_000 };
+		const items = [old, recent];
+
+		// La série est finie, mais son dernier tome date de `1 000`.
+		expect(completedSeries(books, items, 0)).toEqual({ done: 1, total: 1 });
+		expect(completedSeries(books, items, 4_000)).toEqual({ done: 1, total: 1 });
+		expect(completedSeries(books, items, 6_000)).toEqual({ done: 0, total: 1 });
+	});
+
+	it('relire un tome sans le finir sort la série des « terminées »', () => {
+		const books = [book('mangas/A/T1.cbz'), book('mangas/A/T2.cbz')];
+		const items = [
+			{ ...entry('mangas/A/T1.cbz', 20, 100), updatedAt: 9_000 },
+			{ ...entry('mangas/A/T2.cbz', 99, 100), updatedAt: 5_000 }
+		];
+		// T1 est repassé « en cours » : la série n'est plus terminée du tout.
+		expect(completedSeries(books, items, 4_000)).toEqual({ done: 0, total: 1 });
+	});
 });
