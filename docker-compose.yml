@@ -28,7 +28,7 @@ services:
     image: easybook:dev
     # Compose construit et ne cherche jamais `easybook:dev` sur un registre.
     pull_policy: build
-    container_name: easybook
+    container_name: easybook-dev
     restart: unless-stopped
     ports:
       # Seul port publié : nginx. L'API et le serveur SvelteKit écoutent sur la
@@ -94,7 +94,7 @@ services:
   keycloak:
     profiles: ["dev"]
     image: quay.io/keycloak/keycloak:26.4
-    container_name: easybook-keycloak
+    container_name: easybook-keycloak-dev
     restart: unless-stopped
     command: ["start-dev", "--import-realm"]
     environment:
@@ -135,7 +135,7 @@ services:
   zap:
     profiles: ["zap"]
     image: ghcr.io/zaproxy/zaproxy:stable
-    container_name: easybook-zap
+    container_name: easybook-zap-dev
     depends_on:
       easybook:
         condition: service_healthy
