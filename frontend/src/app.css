@@ -1191,6 +1191,14 @@ code {
 	white-space: nowrap;
 }
 
+/* Le titre mène à la collection du livre : le survol le dit. */
+.reader-title a:hover,
+.reader-title a:focus-visible {
+	color: var(--accent);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
 .reader-sub {
 	/* Les infos secondaires cèdent leur place en premier (retour et titre d'abord). */
 	flex: 0 3 auto;

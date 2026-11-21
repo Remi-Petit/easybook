@@ -91,6 +91,8 @@
 	"size.megabytes": "Mo",
 	"size.gigabytes": "Go",
 	"reader.opening": "Ouverture du livre…",
+	"reader.back": "Retour",
+	"reader.openCollection": "Ouvrir la collection",
 	"reader.unreadable": "Livre illisible",
 	"reader.unsupported": "{format} n’est pas encore pris en charge",
 	"reader.unsupportedNote": "Ce format ne peut pas être ouvert pour le moment.",

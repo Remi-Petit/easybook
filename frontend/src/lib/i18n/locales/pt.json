@@ -91,6 +91,8 @@
 	"size.megabytes": "MB",
 	"size.gigabytes": "GB",
 	"reader.opening": "A abrir o livro…",
+	"reader.back": "Voltar",
+	"reader.openCollection": "Abrir a coleção",
 	"reader.unreadable": "Livro ilegível",
 	"reader.unsupported": "{format} ainda não é suportado",
 	"reader.unsupportedNote": "Este formato não pode ser aberto por enquanto.",

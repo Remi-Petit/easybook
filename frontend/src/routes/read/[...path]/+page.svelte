@@ -11,9 +11,25 @@
 
 	const rel = $derived(page.params.path ?? '');
 	const fallbackTitle = $derived(rel.split('/').pop()?.replace(/\.[^.]+$/, '') ?? '');
-	// Retour au dossier qui contient le livre, pas nécessairement à la racine.
+	// La collection du livre : son dossier — la racine quand il n'en a pas.
 	const parent = $derived(parentOf(rel));
-	const backLabel = $derived(parent ? (parent.split('/').pop() ?? t('nav.library')) : t('nav.library'));
+	const collectionUrl = $derived(parent ? folderUrl(parent) : '/');
+
+	/**
+	 * La flèche de retour ramène **là où l'on était** — l'accueil, une série, une
+	 * ligne de nouveautés : c'est l'historique qui le sait, pas le chemin du
+	 * livre. Sans historique (lien direct, nouvel onglet), le `href` reprend la
+	 * main et mène à la collection.
+	 */
+	function goBack(event: MouseEvent) {
+		// Ouvrir dans un onglet ou une fenêtre reste au navigateur.
+		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+			return;
+		}
+		if (history.length < 2) return;
+		event.preventDefault();
+		history.back();
+	}
 
 	let detail = $state<BookDetail | null>(null);
 	let error = $state<string | null>(null);
@@ -85,8 +101,12 @@
 <div class="reader">
 	{#if chrome}
 		<header class="reader-head">
-			<a class="back" href={parent ? folderUrl(parent) : '/'}>← {backLabel}</a>
-			<h1 class="reader-title">{detail?.title ?? fallbackTitle}</h1>
+			<a class="back" href={collectionUrl} onclick={goBack}>← {t('reader.back')}</a>
+			<h1 class="reader-title">
+				<a href={collectionUrl} title={t('reader.openCollection')}>
+					{detail?.title ?? fallbackTitle}
+				</a>
+			</h1>
 			{#if detail?.author}
 				<span class="reader-sub">{detail.author}</span>
 			{/if}
