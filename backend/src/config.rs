@@ -24,6 +24,8 @@ pub struct Config {
     pub limits: Limits,
     /// Réduction des planches à la taille de l'écran (voir [`Resize`]).
     pub resize: Resize,
+    /// Historique de la page Performances (voir [`Performance`]).
+    pub performance: Performance,
     /// Comptes et connexion (voir [`Auth`]).
     pub auth: Auth,
 }
@@ -168,6 +170,46 @@ impl Default for Resize {
     }
 }
 
+/// Historique de la page Performances.
+///
+/// La page mesure en direct toutes les `live_secs` ; le serveur enregistre une
+/// mesure toutes les `sample_secs` et ne garde que `retention_days` jours.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Performance {
+    /// `false` : aucune mesure enregistrée (la page reste en direct).
+    pub enabled: bool,
+    /// Fréquence d'enregistrement côté serveur, en secondes.
+    pub sample_secs: u64,
+    /// Durée de conservation, en jours (plafonnée à 30).
+    pub retention_days: u32,
+    /// Fréquence de rafraîchissement de la page, en secondes.
+    pub live_secs: u64,
+}
+
+impl Default for Performance {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            sample_secs: 10,
+            retention_days: 30,
+            live_secs: 2,
+        }
+    }
+}
+
+impl Performance {
+    /// Bornes appliquées à la lecture : 1 s à 1 h d'échantillonnage, 1 à 60 s
+    /// de rafraîchissement, 1 à 30 jours de rétention.
+    #[must_use]
+    pub fn sanitized(mut self) -> Self {
+        self.sample_secs = self.sample_secs.clamp(1, 3600);
+        self.live_secs = self.live_secs.clamp(1, 60);
+        self.retention_days = self.retention_days.clamp(1, 30);
+        self
+    }
+}
+
 /// Plafonds de ressources : sans eux, une rafale de requêtes ouvre autant de
 /// lectures d'archive que de connexions, chacune avec sa page en mémoire.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -202,6 +244,7 @@ impl Default for Config {
             books_root: "../books".to_string(),
             limits: Limits::default(),
             resize: Resize::default(),
+            performance: Performance::default(),
             auth: Auth::default(),
         }
     }
@@ -255,6 +298,14 @@ pub fn resize() -> Resize {
     resize.quality = resize.quality.clamp(1, 100);
     resize.max_concurrent = resize.max_concurrent.max(1);
     resize
+}
+
+/// Historique des performances en vigueur (fréquences bornées, 30 jours max).
+pub fn performance() -> Performance {
+    INSTALLED
+        .get()
+        .map_or_else(Performance::default, |config| config.performance.clone())
+        .sanitized()
 }
 
 impl Config {
@@ -463,6 +514,42 @@ mod tests {
         assert!(!oidc.auto_create);
         // Une variable blanche ne compte pas.
         assert_eq!(oidc.label, Oidc::default().label);
+    }
+
+    #[test]
+    fn performance_is_read_from_the_file_and_clamped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(
+            &path,
+            "performance:\n  enabled: false\n  sample_secs: 5\n  retention_days: 90\n  live_secs: 3\n",
+        )
+        .unwrap();
+
+        let performance = Config::load_from(&path).performance;
+        assert!(!performance.enabled);
+        assert_eq!(performance.sample_secs, 5);
+        assert_eq!(performance.live_secs, 3);
+        // La lecture applique le plafond de 30 jours.
+        assert_eq!(performance.sanitized().retention_days, 30);
+    }
+
+    #[test]
+    fn performance_defaults_and_zero_values_are_sanitized() {
+        let defaults = Performance::default();
+        assert!(defaults.enabled);
+        assert_eq!(defaults.sample_secs, 10);
+        assert_eq!(defaults.retention_days, 30);
+        let zero = Performance {
+            sample_secs: 0,
+            retention_days: 0,
+            live_secs: 0,
+            ..Performance::default()
+        }
+        .sanitized();
+        assert_eq!(zero.sample_secs, 1);
+        assert_eq!(zero.retention_days, 1);
+        assert_eq!(zero.live_secs, 1);
     }
 
     #[test]

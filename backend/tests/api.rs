@@ -135,6 +135,66 @@ async fn performance_describes_this_process() {
 }
 
 #[tokio::test]
+async fn performance_history_is_absent_by_default() {
+    let (_dir, app) = library();
+    let (status, _) = json(&app, "/api/admin/performance/history?range=1h").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn performance_history_aggregates_stored_measurements() {
+    use easybook::{config, perf_history};
+
+    let dir = tempfile::tempdir().unwrap();
+    common::epub(dir.path());
+    let settings = config::Performance {
+        sample_secs: 60,
+        ..Default::default()
+    };
+    let history = std::sync::Arc::new(
+        perf_history::History::open(&dir.path().join("metrics.db"), &settings).unwrap(),
+    );
+    // Deux mesures dans la même minute, il y a deux minutes.
+    let base = perf_history::now_ms() / 60_000 * 60_000 - 120_000;
+    for (index, mem) in [(0_i64, 100_i64), (1, 140)] {
+        history
+            .record(&perf_history::Measurement {
+                at_ms: base + index * 10_000,
+                mem_total: mem,
+                mem_anon: mem / 2,
+                mem_file: mem / 4,
+                mem_kernel: 1,
+                cpu_pct: 5.0,
+                heap_live: 1_000,
+                sessions: 2,
+                sockets: 3,
+                groups: vec![perf_history::GroupMeasurement {
+                    name: "easybook".into(),
+                    rss: mem,
+                    cpu_pct: 5.0,
+                }],
+            })
+            .unwrap();
+    }
+    let (tx, _) = tokio::sync::broadcast::channel(4);
+    let app = api::routes(AppState::new(dir.path(), tx).with_history(history));
+
+    let (status, body) = json(&app, "/api/admin/performance/history?range=1h").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["range"], "1h");
+    assert_eq!(body["stepMs"], 60_000);
+    let points = body["points"].as_array().unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0]["memMax"], 140);
+    assert_eq!(points[0]["groups"]["easybook"]["rssMax"], 140);
+
+    // Fenêtre inconnue : la journée par défaut.
+    let (status, body) = json(&app, "/api/admin/performance/history?range=nope").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["range"], "24h");
+}
+
+#[tokio::test]
 async fn performance_lists_the_books_being_read() {
     let (_dir, app) = library();
     let (status, _, _) = call(&app, "/api/page?path=mangas%2FT1.cbz&index=0").await;

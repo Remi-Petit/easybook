@@ -7,7 +7,14 @@
 	import StackedArea from '$lib/components/StackedArea.svelte';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
 	import { bookName, colorFor, formatDuration, formatPercent, processLabel } from '$lib/perf';
-	import { INTERVAL_MS, WINDOW_MS, perf, watchPerformance } from '$lib/perf.svelte';
+	import {
+		DEFAULT_INTERVAL_MS,
+		RANGES,
+		WINDOW_MS,
+		perf,
+		selectRange,
+		watchPerformance
+	} from '$lib/perf.svelte';
 
 	type Tab = 'ram' | 'cpu';
 	let tab = $state<Tab>('ram');
@@ -22,6 +29,34 @@
 	const snapshot = $derived(perf.snapshot);
 	const view = $derived(perf.view);
 	const memory = $derived(snapshot?.memory ?? null);
+	const liveSeconds = $derived(snapshot?.settings?.liveSecs ?? DEFAULT_INTERVAL_MS / 1000);
+	const historyEnabled = $derived(snapshot?.settings?.history ?? false);
+
+	/** Points de l'historique enregistré (vide tant qu'on est en direct). */
+	const historyPoints = $derived(perf.range === 'live' ? [] : (perf.history?.points ?? []));
+	const historyNames = $derived([
+		...new Set(historyPoints.flatMap((point) => Object.keys(point.groups)))
+	].sort());
+	const historyTimes = $derived(historyPoints.map((point) => point.atMs));
+	const historyWindow = $derived(
+		perf.history ? perf.history.toMs - perf.history.fromMs : WINDOW_MS
+	);
+	const historyRamSeries = $derived(
+		historyNames.map((name) => ({
+			key: name,
+			label: processLabel(name),
+			color: colorFor(name),
+			values: historyPoints.map((point) => point.groups[name]?.rssAvg ?? 0)
+		}))
+	);
+	const historyCpuSeries = $derived(
+		historyNames.map((name) => ({
+			key: name,
+			label: processLabel(name),
+			color: colorFor(name),
+			values: historyPoints.map((point) => point.groups[name]?.cpuPctAvg ?? 0)
+		}))
+	);
 
 	/** Programmes vus dans la fenêtre, dans un ordre fixe pour que les aires ne sautent pas. */
 	const names = $derived(
@@ -106,6 +141,12 @@
 	const cpuCapacity = $derived(snapshot ? (snapshot.cpuLimit ?? snapshot.cpus) : 1);
 	const ticksPerSecond = $derived(snapshot?.clockTicks ?? 100);
 	const minutes = $derived(formatNumber(WINDOW_MS / 60000));
+	/** Libellé de la période affichée : la fenêtre du direct, ou la tranche choisie. */
+	const rangeLabel = $derived(
+		perf.range === 'live'
+			? t('perf.window', { minutes })
+			: t(RANGES.find((entry) => entry.id === perf.range)?.label ?? 'perf.range.24h')
+	);
 
 	// Ce que l'API garde pour elle, et ce que ses sessions coûtent en CPU.
 	const app = $derived(snapshot?.app ?? null);
@@ -121,10 +162,26 @@
 	<title>{t('perf.title')} · easybook</title>
 </svelte:head>
 
+{#snippet rangeTabs()}
+	{#if historyEnabled}
+		<div class="range-tabs" role="group" aria-label={t('perf.range.label')}>
+			{#each RANGES as entry (entry.id)}
+				<button
+					type="button"
+					aria-pressed={perf.range === entry.id}
+					onclick={() => selectRange(entry.id)}
+				>
+					{t(entry.label)}
+				</button>
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
 <div class="page">
 	<section class="intro">
 		<h1>{t('perf.title')}</h1>
-		<p>{t('perf.subtitle', { seconds: INTERVAL_MS / 1000 })}</p>
+		<p>{t('perf.subtitle', { seconds: formatNumber(liveSeconds) })}</p>
 	</section>
 
 	{#if perf.error && !view}
@@ -177,15 +234,40 @@
 				<section class="perf-card">
 					<h2>
 						{t('perf.ram.history')}
-						<span class="perf-count">{t('perf.window', { minutes })}</span>
+						<span class="perf-count">{rangeLabel}</span>
 					</h2>
-					<StackedArea
-						times={ramTimes}
-						series={ramSeries}
-						format={formatBytes}
-						windowMs={WINDOW_MS}
-						label={t('perf.ram.history')}
-					/>
+					{@render rangeTabs()}
+					{#if perf.range === 'live'}
+						<StackedArea
+							times={ramTimes}
+							series={ramSeries}
+							format={formatBytes}
+							windowMs={WINDOW_MS}
+							label={t('perf.ram.history')}
+						/>
+					{:else if perf.historyError}
+						<p class="notice">{t('perf.history.error', { error: perf.historyError })}</p>
+					{:else if !perf.history}
+						<p class="notice">{t('perf.history.loading')}</p>
+					{:else if historyTimes.length === 0}
+						<p class="notice">{t('perf.history.empty')}</p>
+					{:else}
+						<StackedArea
+							times={historyTimes}
+							series={historyRamSeries}
+							format={formatBytes}
+							windowMs={historyWindow}
+							label={t('perf.ram.history')}
+						/>
+					{/if}
+					{#if historyEnabled && snapshot?.settings}
+						<p class="stat-hint">
+							{t('perf.history.hint', {
+								sample: formatNumber(snapshot.settings.sampleSecs),
+								days: formatNumber(snapshot.settings.retentionDays)
+							})}
+						</p>
+					{/if}
 				</section>
 
 				<div class="perf-grid">
@@ -398,15 +480,40 @@
 				<section class="perf-card">
 					<h2>
 						{t('perf.cpu.history')}
-						<span class="perf-count">{t('perf.window', { minutes })}</span>
+						<span class="perf-count">{rangeLabel}</span>
 					</h2>
-					<StackedArea
-						times={cpuTimes}
-						series={cpuSeries}
-						format={formatPercent}
-						windowMs={WINDOW_MS}
-						label={t('perf.cpu.history')}
-					/>
+					{@render rangeTabs()}
+					{#if perf.range === 'live'}
+						<StackedArea
+							times={cpuTimes}
+							series={cpuSeries}
+							format={formatPercent}
+							windowMs={WINDOW_MS}
+							label={t('perf.cpu.history')}
+						/>
+					{:else if perf.historyError}
+						<p class="notice">{t('perf.history.error', { error: perf.historyError })}</p>
+					{:else if !perf.history}
+						<p class="notice">{t('perf.history.loading')}</p>
+					{:else if historyTimes.length === 0}
+						<p class="notice">{t('perf.history.empty')}</p>
+					{:else}
+						<StackedArea
+							times={historyTimes}
+							series={historyCpuSeries}
+							format={formatPercent}
+							windowMs={historyWindow}
+							label={t('perf.cpu.history')}
+						/>
+					{/if}
+					{#if historyEnabled && snapshot?.settings}
+						<p class="stat-hint">
+							{t('perf.history.hint', {
+								sample: formatNumber(snapshot.settings.sampleSecs),
+								days: formatNumber(snapshot.settings.retentionDays)
+							})}
+						</p>
+					{/if}
 				</section>
 
 				<section class="perf-card">

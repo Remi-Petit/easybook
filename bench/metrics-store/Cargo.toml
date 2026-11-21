@@ -1,0 +1,37 @@
+[package]
+name = "metrics-store-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Banc d'essai jetable : il compare des moteurs de stockage pour l'historique
+# des performances (30 jours de mesures). Il vit hors de `backend/` pour que
+# ses dépendances (DuckDB, LMDB, redb…) n'entrent jamais dans l'image.
+
+[dependencies]
+anyhow = "1"
+memory-stats = "1"
+
+rusqlite = { version = "0.43", features = ["bundled"], optional = true }
+duckdb = { version = "1", features = ["bundled"], optional = true }
+redb = { version = "2", optional = true }
+heed = { version = "0.20", optional = true }
+
+[[bin]]
+name = "metrics-store-bench"
+path = "src/main.rs"
+
+[[bin]]
+name = "duck-inspect"
+path = "src/bin/duck_inspect.rs"
+required-features = ["duckdb"]
+
+[features]
+default = ["sqlite", "redb", "heed"]
+sqlite = ["dep:rusqlite"]
+duckdb = ["dep:duckdb"]
+redb = ["dep:redb"]
+heed = ["dep:heed"]
+
+[profile.release]
+debug = false

@@ -71,6 +71,42 @@ export type PerfSnapshot = {
 		/** Période du balayage du cache média : délai maximal avant restitution. */
 		mediaSweepSecs: number;
 	};
+	/** Fréquences et rétention de l'historique (`config.yml`, section performance). */
+	settings?: {
+		history: boolean;
+		sampleSecs: number;
+		liveSecs: number;
+		retentionDays: number;
+	};
+};
+
+/** Fenêtres d'historique servies par l'API. */
+export type Range = '3m' | '1h' | '24h' | '7d' | '30d';
+
+/** Un groupe de programmes dans une tranche d'historique. */
+export type PerfHistoryGroup = {
+	rssAvg: number;
+	rssMax: number;
+	cpuPctAvg: number;
+	cpuPctMax: number;
+};
+
+/** Une tranche de l'historique enregistré. */
+export type PerfHistoryPoint = {
+	atMs: number;
+	memAvg: number;
+	memMax: number;
+	cpuPctAvg: number;
+	cpuPctMax: number;
+	groups: Record<string, PerfHistoryGroup>;
+};
+
+export type PerfHistory = {
+	range: Range;
+	fromMs: number;
+	toMs: number;
+	stepMs: number;
+	points: PerfHistoryPoint[];
 };
 
 /** Un livre lu en ce moment. */

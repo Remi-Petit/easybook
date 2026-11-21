@@ -15,6 +15,7 @@
 //! | `GET /api/book?path=` | sommaire d'un livre |
 //! | `GET /api/cover?path=&v=` | couverture (vignette JPEG) |
 //! | `GET /api/admin/performance` | mémoire et CPU du conteneur, par process |
+//! | `GET /api/admin/performance/history?range=` | historique agrégé (3m, 1h, 24h, 7d, 30d) |
 //! | `GET /api/chapter?path=&index=` | document d'un chapitre (HTML réécrit) |
 //! | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 //! | `GET /api/page?path=&index=` | page d'une bande dessinée (image) |
@@ -25,7 +26,7 @@
 
 use crate::auth::{self, AuthState};
 use crate::formats::{self, Format};
-use crate::{config, library, readings, resize, rewrite, thumbnail, write};
+use crate::{config, library, perf_history, readings, resize, rewrite, thumbnail, write};
 use axum::body::Bytes;
 use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, Request, State};
@@ -111,6 +112,8 @@ pub struct AppState {
     resizes: Arc<Semaphore>,
     /// Comptes et sessions ; `None` : l'API reste ouverte (voir [`crate::auth`]).
     auth: Option<Arc<AuthState>>,
+    /// Historique des performances ; `None` : enregistrement désactivé.
+    history: Option<Arc<perf_history::History>>,
 }
 
 impl AppState {
@@ -126,6 +129,7 @@ impl AppState {
             reads: Arc::new(Semaphore::new(config::limits().max_concurrent_reads)),
             resizes: Arc::new(Semaphore::new(config::resize().max_concurrent)),
             auth: None,
+            history: None,
         }
     }
 
@@ -138,6 +142,17 @@ impl AppState {
 
     pub fn auth(&self) -> Option<&Arc<AuthState>> {
         self.auth.as_ref()
+    }
+
+    /// Attache l'historique des performances (voir [`crate::perf_history`]).
+    #[must_use]
+    pub fn with_history(mut self, history: Arc<perf_history::History>) -> Self {
+        self.history = Some(history);
+        self
+    }
+
+    pub fn history(&self) -> Option<Arc<perf_history::History>> {
+        self.history.clone()
     }
 
     /// Réduit une planche à `width` pixels, dans la limite de
@@ -214,7 +229,10 @@ impl AppState {
 
     /// Ce que l'API seule connaît : catalogue en mémoire, sessions, onglets
     /// connectés et coût cumulé du garde de session (voir la page Performance).
-    fn detail(&self) -> crate::perf::Detail {
+    ///
+    /// `pub` : l'échantillonneur d'historique (voir `main`) la lit pour
+    /// que la mesure enregistrée soit la même que celle affichée en direct.
+    pub fn detail(&self) -> crate::perf::Detail {
         let catalog_bytes = self
             .snapshot
             .read()
@@ -258,6 +276,10 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/book", get(get_book))
         .route("/api/cover", get(get_cover))
         .route("/api/admin/performance", get(get_performance))
+        .route(
+            "/api/admin/performance/history",
+            get(get_performance_history),
+        )
         .route("/api/chapter", get(get_chapter))
         .route("/api/asset", get(get_asset))
         .route("/api/page", get(get_page))
@@ -291,6 +313,40 @@ async fn get_performance(State(state): State<AppState>) -> Response {
     let detail = state.detail();
     match tokio::task::spawn_blocking(move || crate::perf::snapshot(detail)).await {
         Ok(snapshot) => ([(header::CACHE_CONTROL, "no-store")], Json(snapshot)).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct PerformanceHistoryQuery {
+    range: Option<String>,
+}
+
+/// `GET /api/admin/performance/history?range=3m|1h|24h|7d|30d` — historique
+/// agrégé. Le serveur choisit la tranche pour rester sous ~800 points ; une
+/// même fenêtre est réutilisée 15 s (l'échantillonneur écrit toutes les 10 s).
+async fn get_performance_history(
+    State(state): State<AppState>,
+    Query(query): Query<PerformanceHistoryQuery>,
+) -> Response {
+    let Some(history) = state.history() else {
+        return (StatusCode::NOT_FOUND, "historique désactivé").into_response();
+    };
+    let range = query
+        .range
+        .as_deref()
+        .and_then(perf_history::Range::parse)
+        .unwrap_or(perf_history::Range::Day);
+    match tokio::task::spawn_blocking(move || history.series_json(range)).await {
+        Ok(Ok(json)) => (
+            [
+                (header::CACHE_CONTROL, "no-store"),
+                (header::CONTENT_TYPE, "application/json"),
+            ],
+            json,
+        )
+            .into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
 }

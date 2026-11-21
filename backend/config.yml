@@ -22,6 +22,16 @@ limits:
   # au nombre de livres : au-delà, chaque scan rouvre les livres en trop.
   page_counts: 50000
 
+# Historique de la page Performances. Le serveur enregistre une mesure toutes
+# les `sample_secs` et la conserve `retention_days` jours (30 au maximum) ; la
+# page se rafraîchit toutes les `live_secs`. `enabled: false` désactive
+# l'enregistrement (la page reste utilisable en direct).
+performance:
+  enabled: true
+  sample_secs: 10
+  retention_days: 30
+  live_secs: 2
+
 # Comptes et connexion (voir le README, « Comptes et connexion »).
 auth:
   # false : aucune connexion, l'API est ouverte à qui l'atteint.
