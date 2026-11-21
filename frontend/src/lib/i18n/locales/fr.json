@@ -370,7 +370,7 @@
 	"account.password.current": "Mot de passe actuel",
 	"account.password.new": "Nouveau mot de passe",
 	"account.password.change": "Changer le mot de passe",
-	"account.password.set": "Définir un mot de passe",
+	"account.password.save": "Enregistrer",
 	"account.password.changed": "Mot de passe modifié",
 	"account.identities.title": "Comptes {provider} liés",
 	"account.identities.none": "Aucun compte lié.",

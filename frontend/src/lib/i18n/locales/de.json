@@ -370,7 +370,7 @@
 	"account.password.current": "Aktuelles Passwort",
 	"account.password.new": "Neues Passwort",
 	"account.password.change": "Passwort ändern",
-	"account.password.set": "Passwort festlegen",
+	"account.password.save": "Speichern",
 	"account.password.changed": "Passwort geändert",
 	"account.identities.title": "Verknüpfte {provider}-Konten",
 	"account.identities.none": "Kein verknüpftes Konto.",

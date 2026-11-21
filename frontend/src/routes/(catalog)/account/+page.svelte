@@ -13,6 +13,7 @@
 		type Session
 	} from '$lib/auth';
 	import BookCard from '$lib/components/BookCard.svelte';
+	import PasswordField from '$lib/components/PasswordField.svelte';
 	import { t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
 	import { isFinished } from '$lib/progress';
@@ -172,29 +173,22 @@
 								hidden
 							/>
 							{#if user.has_password}
-								<label class="field">
-									<span>{t('account.password.current')}</span>
-									<input
-										type="password"
-										autocomplete="current-password"
-										required
-										bind:value={current}
-									/>
-								</label>
-							{/if}
-							<label class="field">
-								<span>{t('account.password.new')}</span>
-								<input
-									type="password"
-									autocomplete="new-password"
-									minlength="8"
-									required
-									bind:value={fresh}
+								<PasswordField
+									label={t('account.password.current')}
+									bind:value={current}
+									autocomplete="current-password"
+									generable={false}
+									temporaryControls={false}
 								/>
-							</label>
+							{/if}
+							<PasswordField
+								label={t('account.password.new')}
+								bind:value={fresh}
+								temporaryControls={false}
+							/>
 							<div>
-								<button type="submit" class="btn-main" disabled={busy}>
-									{user.has_password ? t('account.password.change') : t('account.password.set')}
+								<button type="submit" class="btn-main" disabled={busy || fresh === ''}>
+									{t('account.password.save')}
 								</button>
 							</div>
 						</form>

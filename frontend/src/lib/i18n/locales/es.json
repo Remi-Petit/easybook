@@ -370,7 +370,7 @@
 	"account.password.current": "Contraseña actual",
 	"account.password.new": "Nueva contraseña",
 	"account.password.change": "Cambiar la contraseña",
-	"account.password.set": "Definir una contraseña",
+	"account.password.save": "Guardar",
 	"account.password.changed": "Contraseña cambiada",
 	"account.identities.title": "Cuentas de {provider} vinculadas",
 	"account.identities.none": "Ninguna cuenta vinculada.",

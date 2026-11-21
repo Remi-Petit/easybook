@@ -370,7 +370,7 @@
 	"account.password.current": "Current password",
 	"account.password.new": "New password",
 	"account.password.change": "Change password",
-	"account.password.set": "Set a password",
+	"account.password.save": "Save",
 	"account.password.changed": "Password changed",
 	"account.identities.title": "Linked {provider} accounts",
 	"account.identities.none": "No linked account.",

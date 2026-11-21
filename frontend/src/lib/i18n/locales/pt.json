@@ -370,7 +370,7 @@
 	"account.password.current": "Palavra-passe atual",
 	"account.password.new": "Nova palavra-passe",
 	"account.password.change": "Alterar a palavra-passe",
-	"account.password.set": "Definir uma palavra-passe",
+	"account.password.save": "Guardar",
 	"account.password.changed": "Palavra-passe alterada",
 	"account.identities.title": "Contas {provider} associadas",
 	"account.identities.none": "Nenhuma conta associada.",
