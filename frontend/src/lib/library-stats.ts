@@ -44,11 +44,6 @@ export function formatColor(format: string): string {
 	return FORMAT_COLORS[format] ?? colorFor(format);
 }
 
-/** `cbz` → `CBZ` : le format se lit comme une extension. */
-export function formatLabel(format: string): string {
-	return format.toUpperCase();
-}
-
 /**
  * Couleur d'un dossier, prise par rang : les douze dossiers listés ont ainsi
  * douze teintes distinctes, dans les barres comme dans le camembert.

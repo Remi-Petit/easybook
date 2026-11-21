@@ -1,5 +1,5 @@
 import { describe as suite, expect, it } from 'vitest';
-import { folderColor, formatColor, formatLabel } from './library-stats';
+import { folderColor, formatColor } from './library-stats';
 
 suite('formatColor', () => {
 	it('donne une teinte par format connu', () => {
@@ -9,13 +9,6 @@ suite('formatColor', () => {
 
 	it('retombe sur la palette des programmes pour un format inconnu', () => {
 		expect(formatColor('djvu')).toMatch(/^#[0-9a-f]{6}$/);
-	});
-});
-
-suite('formatLabel', () => {
-	it('écrit le format comme une extension', () => {
-		expect(formatLabel('cbz')).toBe('CBZ');
-		expect(formatLabel('epub')).toBe('EPUB');
 	});
 });
 

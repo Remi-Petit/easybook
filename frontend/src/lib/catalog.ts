@@ -7,6 +7,11 @@
 
 import type { BookInfo, FolderInfo } from './api';
 
+/** `cbz` → `CBZ` : le format se lit comme une extension. */
+export function formatLabel(format: string): string {
+	return format.toUpperCase();
+}
+
 /** Dossier parent d'un chemin relatif (`""` pour la racine). */
 export function parentOf(rel: string): string {
 	const cut = rel.lastIndexOf('/');

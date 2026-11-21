@@ -19,9 +19,10 @@
 		type ColumnDef
 	} from '@tanstack/svelte-table';
 	import { formatBytes, type BookInfo } from '$lib/api';
+	import { formatLabel } from '$lib/catalog';
 	import TablePager from '$lib/components/TablePager.svelte';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
-	import { formatColor, formatLabel } from '$lib/library-stats';
+	import { formatColor } from '$lib/library-stats';
 	import { savedPageSize } from '$lib/pagesize';
 	import { percentOf } from '$lib/perf';
 

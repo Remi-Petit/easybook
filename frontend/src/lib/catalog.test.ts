@@ -4,6 +4,7 @@ import {
 	childBooks,
 	childFolders,
 	folderUrl,
+	formatLabel,
 	level,
 	matchesQuery,
 	parentOf,
@@ -164,6 +165,13 @@ describe('segments', () => {
 			{ name: 'Chainsaw Man', rel: 'mangas/Chainsaw Man' }
 		]);
 		expect(segments('')).toEqual([]);
+	});
+});
+
+describe('formatLabel', () => {
+	it('écrit le format comme une extension', () => {
+		expect(formatLabel('cbz')).toBe('CBZ');
+		expect(formatLabel('epub')).toBe('EPUB');
 	});
 });
 

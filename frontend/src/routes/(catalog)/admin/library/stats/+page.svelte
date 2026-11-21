@@ -2,17 +2,13 @@
 	import { onMount } from 'svelte';
 	import { formatBytes, type BookInfo } from '$lib/api';
 	import { call, errorKey } from '$lib/auth';
+	import { formatLabel } from '$lib/catalog';
 	import BarList from '$lib/components/BarList.svelte';
 	import Donut from '$lib/components/Donut.svelte';
 	import SegmentBar from '$lib/components/SegmentBar.svelte';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
-	import {
-		folderColor,
-		formatColor,
-		formatLabel,
-		type LibraryDetail
-	} from '$lib/library-stats';
+	import { folderColor, formatColor, type LibraryDetail } from '$lib/library-stats';
 	import { percentOf } from '$lib/perf';
 	import BooksTable from './BooksTable.svelte';
 
