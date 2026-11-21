@@ -20,39 +20,26 @@ services:
       # L'API n'écoute que dans le conteneur ; l'interface exige une connexion.
       - "${EASYBOOK_PORT:-5100}:8080"
     environment:
-      # Production : la connexion directe au fournisseur d'identité et les
-      # boutons de connexion rapide du mode `dev` restent désactivés.
-      EASYBOOK_MODE: prod
       # Administrateur créé au premier démarrage (base de comptes vide).
-      EASYBOOK_ADMIN_EMAIL: ${EASYBOOK_ADMIN_EMAIL:-admin@easybook.local}
-      # Vide : mot de passe tiré au hasard, affiché **une seule fois** dans les
-      # journaux (à changer dès la première connexion).
+      EASYBOOK_ADMIN_EMAIL: ${EASYBOOK_ADMIN_EMAIL}
+      # Vide : mot de passe tiré au hasard, affiché **une seule fois** dans les journaux (à changer dès la première connexion).
       EASYBOOK_ADMIN_PASSWORD: ${EASYBOOK_ADMIN_PASSWORD:-}
-      # Single sign-on OpenID Connect : vide = désactivé. L'émetteur est
-      # l'adresse que voit le **navigateur** ; `DISCOVERY_URL` est celle que joint
-      # easybook (vide : l'émetteur).
+      # Configuration OIDC (facultative) : si l'un de ces champs est vide, le SSO est désactivé.
       EASYBOOK_OIDC_ISSUER: ${EASYBOOK_OIDC_ISSUER:-}
       EASYBOOK_OIDC_DISCOVERY_URL: ${EASYBOOK_OIDC_DISCOVERY_URL:-}
       EASYBOOK_OIDC_CLIENT_ID: ${EASYBOOK_OIDC_CLIENT_ID:-}
       EASYBOOK_OIDC_CLIENT_SECRET: ${EASYBOOK_OIDC_CLIENT_SECRET:-}
       EASYBOOK_OIDC_REDIRECT_URL: ${EASYBOOK_OIDC_REDIRECT_URL:-}
       EASYBOOK_OIDC_LABEL: ${EASYBOOK_OIDC_LABEL:-Single sign-on}
-      # Politique de liaison, fermée par défaut : un compte OIDC inconnu est
-      # refusé tant qu'un administrateur ne l'a pas lié (page Comptes).
-      EASYBOOK_OIDC_AUTO_CREATE: ${EASYBOOK_OIDC_AUTO_CREATE:-false}
-      EASYBOOK_OIDC_LINK_BY_EMAIL: ${EASYBOOK_OIDC_LINK_BY_EMAIL:-false}
+      # True : création automatique d'un compte Easybook pour un utilisateur OIDC inconnu (sinon, il faut créer le compte manuellement dans l'interface).
+      EASYBOOK_OIDC_AUTO_CREATE: ${EASYBOOK_OIDC_AUTO_CREATE:-true}
+      # True : lier automatiquement un compte Easybook existant à un utilisateur OIDC inconnu (sinon, il faut lier le compte manuellement dans l'interface).
+      EASYBOOK_OIDC_LINK_BY_EMAIL: ${EASYBOOK_OIDC_LINK_BY_EMAIL:-true}
+      # Autonomie : `true` autorise chaque personne connectée à lier elle-même
+      # son compte à une identité du fournisseur (page Mon compte). Sinon, seuls
+      # les administrateurs peuvent le faire (page Comptes).
       EASYBOOK_OIDC_SELF_LINK: ${EASYBOOK_OIDC_SELF_LINK:-false}
     volumes:
-      # La bibliothèque : lue **et** écrite (création de catégories, dépôt de
-      # livres depuis l'interface). Chemin relatif à **ce dossier** par défaut
-      # (`docker/books`) — jamais celui du dépôt ; `EASYBOOK_BOOKS` permet de
-      # pointer ailleurs (ex. `/srv/easybook/books` sur un serveur).
-      #
-      # Sous Docker Desktop (Windows/macOS), le système de fichiers de l'hôte ne
-      # remonte aucun événement inotify : l'interface ne se rafraîchit alors pas
-      # toute seule quand un livre est ajouté **depuis l'hôte** (les ajouts faits
-      # dans l'interface, eux, sont diffusés directement).
-      #
       # Le conteneur tourne sous l'utilisateur `node` (uid 1000) : sous Linux, ce
       # dossier doit lui appartenir (`chown -R 1000:1000 books`) pour que le
       # dépôt de livres fonctionne.
