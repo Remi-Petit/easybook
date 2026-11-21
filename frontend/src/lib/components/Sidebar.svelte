@@ -104,6 +104,13 @@
 				>
 					<span class="name">{t('nav.performance')}</span>
 				</a>
+				<a
+					class="nav-item"
+					href="/admin/library/stats"
+					aria-current={active('/admin/library') ? 'page' : undefined}
+				>
+					<span class="name">{t('nav.stats')}</span>
+				</a>
 			{/if}
 		</nav>
 

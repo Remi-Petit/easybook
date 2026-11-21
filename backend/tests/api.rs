@@ -195,6 +195,33 @@ async fn performance_history_aggregates_stored_measurements() {
 }
 
 #[tokio::test]
+async fn library_stats_describe_the_catalog() {
+    let (_dir, app) = library();
+    // Le résumé est calculé avec le catalogue, pas à la première lecture.
+    let (status, _) = json(&app, "/api/books").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = json(&app, "/api/admin/library/stats").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["totals"]["books"], 4);
+    // `mangas` et `mangas/sous` : les dossiers du catalogue, tous niveaux.
+    assert_eq!(body["totals"]["folders"], 2);
+    assert_eq!(body["totals"]["unreadable"], 0);
+    assert_eq!(body["formats"].as_array().unwrap().len(), 3);
+    assert_eq!(body["largest"].as_array().unwrap().len(), 4);
+    let folders: Vec<&str> = body["folders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["name"].as_str().unwrap())
+        .collect();
+    // Regroupement par dossier parent : la racine compte pour un.
+    assert!(folders.contains(&"mangas"));
+    assert!(folders.contains(&"mangas/sous"));
+    assert!(folders.contains(&""));
+}
+
+#[tokio::test]
 async fn storage_summarizes_the_library_and_the_data() {
     let (_dir, app) = library();
     // Le résumé de la bibliothèque est calculé en même temps que le catalogue.

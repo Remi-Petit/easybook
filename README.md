@@ -245,6 +245,7 @@ sources C++ avec le projet.
 | `GET /api/admin/performance` | mémoire et CPU du conteneur, process par process (page *Administration → Performances*, administrateurs) |
 | `GET /api/admin/performance/history?range=` | historique agrégé (`3m`, `1h`, `24h`, `7d`, `30d`), servi par tranches d'au plus ~800 points |
 | `GET /api/admin/storage` | occupation disque : livres, couvertures, comptages de pages, bases et code (onglet *Stockage*) |
+| `GET /api/admin/library/stats` | chiffres de la bibliothèque : totaux, formats, dossiers et plus gros livres (page *Administration → Statistiques*) |
 | `GET /api/chapter?path=&index=` | document d'un chapitre (HTML, URL réécrites) |
 | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 | `GET /api/page?path=&index=` | page d'une bande dessinée |

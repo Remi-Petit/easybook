@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { formatBytes, formatDateTime } from '$lib/api';
 	import BarList from '$lib/components/BarList.svelte';
@@ -18,7 +19,11 @@
 	} from '$lib/perf.svelte';
 
 	type Tab = 'ram' | 'cpu' | 'storage';
-	let tab = $state<Tab>('ram');
+	/** Onglet ouvert à l'arrivée : `?tab=storage` ramène à la bonne vue. */
+	const wanted = page.url.searchParams.get('tab');
+	let tab = $state<Tab>(
+		wanted === 'storage' || wanted === 'cpu' || wanted === 'ram' ? wanted : 'ram'
+	);
 
 	const tabs = [
 		{ id: 'ram', label: 'perf.tab.ram' },
@@ -725,6 +730,7 @@
 									total: formatNumber(storage.library.books)
 								})}
 							</p>
+							<a class="card-more" href="/admin/library/stats">{t('perf.storage.more')}</a>
 						</section>
 					</div>
 
@@ -856,6 +862,7 @@
 						<p class="stat-hint">
 							{t('perf.storage.largestHint', { rest: formatBytes(restBytes) })}
 						</p>
+						<a class="card-more" href="/admin/library/stats">{t('perf.storage.more')}</a>
 					</section>
 				{/if}
 			</div>

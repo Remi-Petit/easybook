@@ -1623,6 +1623,11 @@ code {
 	gap: 18px;
 }
 
+/* Trois chiffres côte à côte : la même grille, un cran plus serrée. */
+.perf-grid.compact {
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
 .perf-card {
 	min-width: 0;
 	padding: 18px 20px 20px;
@@ -1712,6 +1717,18 @@ code {
 	border-top: 1px solid var(--line);
 	color: var(--muted);
 	font-size: 13px;
+}
+
+/* Pied de card : le lien vers la page qui détaille ce que la card résume. */
+.card-more {
+	display: inline-block;
+	margin-top: 10px;
+	color: var(--accent);
+	font-size: 12.5px;
+}
+
+.card-more:hover {
+	text-decoration: underline;
 }
 
 .chart {
@@ -1810,8 +1827,10 @@ code {
 
 .segment-bar span {
 	height: 100%;
-    /* Les largeurs en pourcentage laissent un cheveu vide après arrondi. */
-    flex: 1 1 auto;
+	/* Les largeurs en pourcentage laissent un cheveu vide après arrondi. */
+	flex: 1 1 auto;
+}
+
 .segment-bar span + span {
 	border-left: 2px solid var(--panel);
 }

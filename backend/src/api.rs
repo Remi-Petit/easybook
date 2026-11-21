@@ -17,6 +17,7 @@
 //! | `GET /api/admin/performance` | mémoire et CPU du conteneur, par process |
 //! | `GET /api/admin/performance/history?range=` | historique agrégé (3m, 1h, 24h, 7d, 30d) |
 //! | `GET /api/admin/storage` | espace disque : bibliothèque, couvertures, bases, code |
+//! | `GET /api/admin/library/stats` | chiffres de la bibliothèque : formats, dossiers, gros livres |
 //! | `GET /api/chapter?path=&index=` | document d'un chapitre (HTML réécrit) |
 //! | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 //! | `GET /api/page?path=&index=` | page d'une bande dessinée (image) |
@@ -79,6 +80,8 @@ struct Snapshot {
     notice: Utf8Bytes,
     /// Résumé de la bibliothèque, calculé une fois par scan.
     library: storage::Library,
+    /// Chiffres de la bibliothèque pour la page des statistiques.
+    library_detail: storage::LibraryDetail,
 }
 
 impl Snapshot {
@@ -87,8 +90,11 @@ impl Snapshot {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         json.hash(&mut hasher);
         let tag = format!("{:016x}-{:x}", hasher.finish(), json.len());
+        // Un seul parcours du catalogue sert les deux vues (résumé + détail).
+        let library_detail = storage::library_detail(&json);
         Self {
-            library: storage::library_stats(&json),
+            library: library_detail.summary(),
+            library_detail,
             text: Utf8Bytes::from(json),
             notice: Utf8Bytes::from(format!(r#"{{"etag":"{tag}"}}"#)),
             etag: format!("\"{tag}\"").into(),
@@ -235,6 +241,18 @@ impl AppState {
             .unwrap_or_default()
     }
 
+    /// Chiffres complets de la bibliothèque (page des statistiques).
+    pub fn library_detail(&self) -> storage::LibraryDetail {
+        self.snapshot
+            .read()
+            .ok()
+            .and_then(|slot| {
+                slot.as_ref()
+                    .map(|snapshot| snapshot.library_detail.clone())
+            })
+            .unwrap_or_default()
+    }
+
     /// Place le cache disque des couvertures ailleurs que sous la racine.
     #[must_use]
     pub fn with_cache_dir(mut self, dir: impl Into<PathBuf>) -> Self {
@@ -310,6 +328,7 @@ pub fn routes(state: AppState) -> Router {
             get(get_performance_history),
         )
         .route("/api/admin/storage", get(get_storage))
+        .route("/api/admin/library/stats", get(get_library_stats))
         .route("/api/chapter", get(get_chapter))
         .route("/api/asset", get(get_asset))
         .route("/api/page", get(get_page))
@@ -393,6 +412,18 @@ async fn get_storage(State(state): State<AppState>) -> Response {
         Ok(storage) => ([(header::CACHE_CONTROL, "no-store")], Json(storage)).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
+}
+
+/// `GET /api/admin/library/stats` — chiffres de la bibliothèque : totaux,
+/// répartition par format et par dossier, plus gros livres.
+///
+/// Tout vient du catalogue déjà en mémoire : aucun parcours de dossier.
+async fn get_library_stats(State(state): State<AppState>) -> Response {
+    (
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(state.library_detail()),
+    )
+        .into_response()
 }
 
 /// `GET /api/books` — catalogue complet.

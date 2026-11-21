@@ -26,16 +26,24 @@ pub struct Library {
 }
 
 /// Un livre du résumé : de quoi nommer ce qui pèse le plus lourd.
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LargestBook {
     /// Chemin relatif à la racine (`Chainsaw Man/T01.cbz`).
     pub rel: String,
     pub size: u64,
+    /// Format reconnu (`cbz`, `epub`, `cbr`, `pdf`).
+    pub format: String,
+    /// `null` quand le livre n'a pas pu être ouvert.
+    pub pages: Option<u64>,
 }
 
 /// Nombre de livres détaillés dans le résumé.
 const LARGEST: usize = 5;
+/// Nombre de livres détaillés sur la page des statistiques.
+const LARGEST_DETAIL: usize = 20;
+/// Nombre de dossiers détaillés sur la page des statistiques.
+const TOP_FOLDERS: usize = 12;
 
 #[derive(Serialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
@@ -96,35 +104,174 @@ pub struct Storage {
 
 /// Résume le catalogue sérialisé (`{ books: [{ rel, size, pages }] }`).
 pub fn library_stats(catalog_json: &str) -> Library {
+    library_detail(catalog_json).summary()
+}
+
+/// Chiffres de la bibliothèque pour la page des statistiques.
+#[derive(Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryDetail {
+    pub totals: Totals,
+    /// Un poste par format, du plus lourd au plus léger.
+    pub formats: Vec<FormatStats>,
+    /// Les plus gros dossiers (livres regroupés par dossier parent).
+    pub folders: Vec<FolderStats>,
+    /// Les plus gros livres.
+    pub largest: Vec<LargestBook>,
+}
+
+#[derive(Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Totals {
+    pub books: u64,
+    pub bytes: u64,
+    /// Somme des pages connues.
+    pub pages: u64,
+    /// Livres dont le nombre de pages a pu être compté.
+    pub with_pages: u64,
+    /// Livres d'un format que ce serveur ne sait pas ouvrir (CBR).
+    pub unreadable: u64,
+    /// Dossiers du catalogue, tous niveaux confondus.
+    pub folders: u64,
+}
+
+#[derive(Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FormatStats {
+    /// `cbz`, `epub`, `cbr`, `pdf`.
+    pub format: String,
+    pub books: u64,
+    pub bytes: u64,
+    pub pages: u64,
+    pub with_pages: u64,
+    pub unreadable: u64,
+}
+
+#[derive(Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderStats {
+    /// Chemin relatif du dossier parent (`""` à la racine).
+    pub name: String,
+    pub books: u64,
+    pub bytes: u64,
+    pub pages: u64,
+}
+
+/// Lit le catalogue sérialisé une fois et en tire tous les chiffres.
+pub fn library_detail(catalog_json: &str) -> LibraryDetail {
+    use std::collections::BTreeMap;
+
     let Ok(catalog) = serde_json::from_str::<serde_json::Value>(catalog_json) else {
-        return Library::default();
+        return LibraryDetail::default();
     };
     let Some(books) = catalog.get("books").and_then(|books| books.as_array()) else {
-        return Library::default();
+        return LibraryDetail::default();
     };
-    let mut library = Library {
-        books: books.len() as u64,
-        ..Library::default()
+
+    let mut detail = LibraryDetail {
+        totals: Totals {
+            folders: catalog
+                .get("folders")
+                .and_then(|folders| folders.as_array())
+                .map_or(0, |folders| folders.len() as u64),
+            ..Totals::default()
+        },
+        ..LibraryDetail::default()
     };
+    let mut formats: BTreeMap<String, FormatStats> = BTreeMap::new();
+    let mut folders: BTreeMap<String, FolderStats> = BTreeMap::new();
+
     for book in books {
-        let size = book.get("size").and_then(|size| size.as_u64()).unwrap_or(0);
-        library.bytes += size;
-        if let Some(pages) = book.get("pages").and_then(|pages| pages.as_u64()) {
-            library.with_pages += 1;
-            library.pages += pages;
+        let text = |field: &str| book.get(field).and_then(|value| value.as_str());
+        let rel = text("rel").unwrap_or_default();
+        let size = book
+            .get("size")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        let pages = book.get("pages").and_then(|value| value.as_u64());
+        let format = text("format").unwrap_or("?");
+        let unreadable = !book
+            .get("readable")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
+
+        detail.totals.books += 1;
+        detail.totals.bytes += size;
+        if let Some(pages) = pages {
+            detail.totals.with_pages += 1;
+            detail.totals.pages += pages;
         }
-        if let Some(rel) = book.get("rel").and_then(|rel| rel.as_str()) {
-            library.largest.push(LargestBook {
+        if unreadable {
+            detail.totals.unreadable += 1;
+        }
+
+        // Un poste par format : ce qui pèse et ce qui reste illisible.
+        let format_stats = formats
+            .entry(format.to_string())
+            .or_insert_with(|| FormatStats {
+                format: format.to_string(),
+                ..FormatStats::default()
+            });
+        format_stats.books += 1;
+        format_stats.bytes += size;
+        if unreadable {
+            format_stats.unreadable += 1;
+        }
+        if let Some(pages) = pages {
+            format_stats.with_pages += 1;
+            format_stats.pages += pages;
+        }
+
+        // Regroupement par dossier parent : une série = une ligne.
+        let parent = rel.rsplit_once('/').map_or("", |(dir, _)| dir);
+        let folder_stats = folders
+            .entry(parent.to_string())
+            .or_insert_with(|| FolderStats {
+                name: parent.to_string(),
+                ..FolderStats::default()
+            });
+        folder_stats.books += 1;
+        folder_stats.bytes += size;
+        folder_stats.pages += pages.unwrap_or(0);
+
+        if !rel.is_empty() {
+            detail.largest.push(LargestBook {
                 rel: rel.to_string(),
                 size,
+                format: format.to_string(),
+                pages,
             });
         }
     }
-    library
+
+    detail.formats = formats.into_values().collect();
+    detail
+        .formats
+        .sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.format.cmp(&b.format)));
+    detail.folders = folders.into_values().collect();
+    detail
+        .folders
+        .sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.name.cmp(&b.name)));
+    detail.folders.truncate(TOP_FOLDERS);
+    detail
         .largest
         .sort_by_key(|book| std::cmp::Reverse(book.size));
-    library.largest.truncate(LARGEST);
-    library
+    detail.largest.truncate(LARGEST_DETAIL);
+    detail
+}
+
+impl LibraryDetail {
+    /// Résumé compact de l'onglet Stockage : les grands totaux et les cinq
+    /// plus gros livres.
+    pub fn summary(&self) -> Library {
+        Library {
+            books: self.totals.books,
+            with_pages: self.totals.with_pages,
+            pages: self.totals.pages,
+            bytes: self.totals.bytes,
+            largest: self.largest.iter().take(LARGEST).cloned().collect(),
+        }
+    }
 }
 
 /// Rassemble les chiffres du disque. `library` vient du catalogue en mémoire.
@@ -268,23 +415,75 @@ mod tests {
         assert_eq!(library.pages, 10);
         assert_eq!(library.bytes, 175);
         // Du plus lourd au plus léger : la bibliothèque dit ce qui pèse.
+        let largest: Vec<(&str, u64)> = library
+            .largest
+            .iter()
+            .map(|book| (book.rel.as_str(), book.size))
+            .collect();
         assert_eq!(
-            library.largest,
-            vec![
-                LargestBook {
-                    rel: "a/T02.cbz".into(),
-                    size: 100
-                },
-                LargestBook {
-                    rel: "a/T01.cbz".into(),
-                    size: 50
-                },
-                LargestBook {
-                    rel: "b/T03.cbz".into(),
-                    size: 25
-                }
-            ]
+            largest,
+            vec![("a/T02.cbz", 100), ("a/T01.cbz", 50), ("b/T03.cbz", 25)]
         );
+    }
+
+    #[test]
+    fn detail_groups_by_format_and_parent_folder() {
+        let detail = library_detail(
+            r#"{
+                "total": 3,
+                "folders": [{"rel":"mangas"},{"rel":"mangas/Chainsaw Man"}],
+                "books": [
+                    {"rel":"mangas/Chainsaw Man/T01.cbz","format":"cbz","readable":true,"size":300,"pages":180},
+                    {"rel":"mangas/Chainsaw Man/T02.cbr","format":"cbr","readable":false,"size":200,"pages":null},
+                    {"rel":"notes.epub","format":"epub","readable":true,"size":10,"pages":5}
+                ]
+            }"#,
+        );
+        assert_eq!(detail.totals.books, 3);
+        assert_eq!(detail.totals.bytes, 510);
+        assert_eq!(detail.totals.pages, 185);
+        assert_eq!(detail.totals.with_pages, 2);
+        assert_eq!(detail.totals.unreadable, 1);
+        assert_eq!(detail.totals.folders, 2);
+
+        // Formats classés par poids : cbz (300), cbr (200), epub (10).
+        let formats: Vec<(&str, u64, u64)> = detail
+            .formats
+            .iter()
+            .map(|entry| (entry.format.as_str(), entry.books, entry.bytes))
+            .collect();
+        assert_eq!(
+            formats,
+            vec![("cbz", 1, 300), ("cbr", 1, 200), ("epub", 1, 10)]
+        );
+        assert_eq!(detail.formats[1].unreadable, 1);
+
+        // Dossiers parents : la série, puis la racine du livre isolé.
+        let folders: Vec<(&str, u64, u64)> = detail
+            .folders
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.books, entry.bytes))
+            .collect();
+        assert_eq!(folders, vec![("mangas/Chainsaw Man", 2, 500), ("", 1, 10)]);
+    }
+
+    #[test]
+    fn detail_carries_the_pages_and_format_of_the_biggest_books() {
+        let detail = library_detail(
+            r#"{"books":[
+                {"rel":"b/big.cbz","format":"cbz","size":900,"pages":40},
+                {"rel":"a/small.cbr","format":"cbr","size":100,"pages":null}
+            ]}"#,
+        );
+        assert_eq!(detail.largest[0].rel, "b/big.cbz");
+        assert_eq!(detail.largest[0].format, "cbz");
+        assert_eq!(detail.largest[0].pages, Some(40));
+        assert_eq!(detail.largest[1].pages, None);
+        // Le résumé de l'onglet Stockage reprend les mêmes chiffres.
+        let summary = detail.summary();
+        assert_eq!(summary.books, 2);
+        assert_eq!(summary.bytes, 1000);
+        assert_eq!(summary.largest.len(), 2);
     }
 
     #[test]

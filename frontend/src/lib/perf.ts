@@ -114,6 +114,10 @@ export type StorageBook = {
 	/** Chemin relatif à la racine (`Chainsaw Man/T01.cbz`). */
 	rel: string;
 	size: number;
+	/** Format reconnu (`cbz`, `epub`, `cbr`, `pdf`). */
+	format: string;
+	/** `null` quand le livre n'a pas pu être ouvert. */
+	pages: number | null;
 };
 
 /** Résumé de la bibliothèque, tiré du catalogue en mémoire. */
