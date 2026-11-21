@@ -1,29 +1,42 @@
 // Envoi de la position de lecture au serveur.
 //
-// Le lecteur (BD, PDF, EPUB) signale chaque changement de page ; on **groupe**
-// les envois : tourner dix pages d'affilée ne doit pas produire dix écritures.
-// Trois secondes après la dernière page, la position retenue (la plus récente
-// par livre) part en une requête. Quitter la page vide la file, pour ne pas
-// perdre la dernière position.
+// Le lecteur (BD, PDF, EPUB) signale chaque changement de page. Le **premier**
+// changement après un silence part tout de suite (l'administrateur le voit en
+// moins d'une seconde) ; une rafale de pages est groupée en une seule écriture
+// demi-seconde plus tard. Quitter la page vide la file, pour ne pas perdre la
+// dernière position.
 //
-// La position locale (`localStorage`) reste la référence hors ligne : si l'envoi
-// échoue, la reprise de lecture fonctionne comme avant.
+// La position locale (`localStorage`) reste la référence hors ligne ; le magasin
+// `reading` est mis à jour tout de suite, pour que la couverture soit juste au
+// retour dans le catalogue, sans attendre le serveur.
 
 import { call } from './auth';
+import { notePosition } from './reading.svelte';
 
-/** Délai d'envoi groupé, en millisecondes. */
-export const DELAY = 3000;
+/** Fenêtre de regroupement, en millisecondes. */
+export const DELAY = 500;
 
 type Position = { path: string; page: number; pages: number };
 
 const pending = new Map<string, Position>();
 let timer: ReturnType<typeof setTimeout> | null = null;
+let lastFlush = 0;
 
-/** Signale la position courante dans un livre (l'envoi est différé). */
+/** Signale la position courante dans un livre. */
 export function reportPosition(path: string, page: number, pages: number): void {
 	if (!path || !Number.isFinite(page)) return;
-	pending.set(path, { path, page: Math.max(0, Math.round(page)), pages: Math.max(0, Math.round(pages)) });
-	if (timer === null) timer = setTimeout(flushPositions, DELAY);
+	const position = {
+		path,
+		page: Math.max(0, Math.round(page)),
+		pages: Math.max(0, Math.round(pages))
+	};
+	pending.set(path, position);
+	// L'interface sait déjà où l'on en est : les couvertures suivent sans réseau.
+	notePosition(path, position.page, position.pages);
+	if (timer !== null) return;
+	// Premier changement : tout de suite. Les suivants : à la fin de la fenêtre.
+	const wait = Math.max(0, DELAY - (Date.now() - lastFlush));
+	timer = setTimeout(flushPositions, wait);
 }
 
 /** Envoie tout de suite ce qui attend (quitter la page, onglet masqué). */
@@ -32,6 +45,7 @@ export function flushPositions(): void {
 		clearTimeout(timer);
 		timer = null;
 	}
+	lastFlush = Date.now();
 	for (const position of pending.values()) {
 		// L'échec est sans conséquence : la position locale est déjà à jour.
 		void call('POST', '/api/read/progress', position);

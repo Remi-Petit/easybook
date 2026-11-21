@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { pageUrl, pageWidth } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
-	import { reportPosition } from '$lib/progress';
+	import { flushPositions, reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
 
 	let {
@@ -35,6 +35,10 @@
 	const atStart = $derived(index <= 0);
 	const atEnd = $derived(index >= pages - 1);
 	const source = $derived(pageUrl(rel, index, modified, width));
+
+	// Revenir au catalogue est une navigation **interne** : ni `pagehide` ni
+	// changement de visibilité. La dernière page doit donc partir maintenant.
+	onDestroy(() => flushPositions());
 
 	function go(target: number) {
 		if (target < 0 || target >= pages) return;

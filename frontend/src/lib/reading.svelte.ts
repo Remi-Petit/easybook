@@ -37,7 +37,37 @@ export async function loadReading(): Promise<void> {
 	const result = await call<ReadingHistory>('GET', '/api/read/history?limit=60');
 	// 401 (pas de compte) ou API injoignable : on garde ce qui est affiché.
 	if (!result.ok) return;
-	reading.items = result.data.recent;
+
+	// Une position locale plus récente (envoi encore en vol) n'est pas écrasée
+	// par une réponse partie avant elle.
+	const merged = new Map(result.data.recent.map((item) => [item.book, item]));
+	for (const item of reading.items) {
+		const served = merged.get(item.book);
+		if (!served || item.updatedAt > served.updatedAt) merged.set(item.book, item);
+	}
+	reading.items = [...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+	reading.loaded = true;
+}
+
+/**
+ * Enregistre une position **localement**, sans attendre le serveur.
+ *
+ * C'est ce qui rend la couverture juste dès qu'on revient dans le catalogue :
+ * la navigation est instantanée, l'écriture réseau ne l'est pas.
+ */
+export function notePosition(rel: string, page: number, pages: number): void {
+	const current = reading.items.find((item) => item.book === rel);
+	const now = Math.floor(Date.now() / 1000);
+	const entry: BookProgress = {
+		book: rel,
+		title: current?.title ?? (rel.split('/').pop() ?? rel).replace(/\.[^.]+$/, ''),
+		format: current?.format ?? '',
+		page,
+		pages,
+		startedAt: current?.startedAt ?? now,
+		updatedAt: now
+	};
+	reading.items = [entry, ...reading.items.filter((item) => item.book !== rel)];
 	reading.loaded = true;
 }
 

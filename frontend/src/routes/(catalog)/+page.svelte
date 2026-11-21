@@ -3,13 +3,8 @@
 	import BookCard from '$lib/components/BookCard.svelte';
 	import LibraryBrowser from '$lib/components/LibraryBrowser.svelte';
 	import { library, reload } from '$lib/library.svelte';
-	import { reading, startReading } from '$lib/reading.svelte';
-	import { onMount } from 'svelte';
+	import { reading } from '$lib/reading.svelte';
 	import { t } from '$lib/i18n/state.svelte';
-
-	// La position de chaque livre vient de l'historique du compte : la rangée et
-	// les barres de progression des couvertures sont servies par la même requête.
-	onMount(() => startReading());
 
 	/**
 	 * Les lectures en cours, du plus récent au plus ancien, dans l'ordre du

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { chapterUrl, type BookDetail } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
-	import { reportPosition } from '$lib/progress';
+	import { flushPositions, reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
 
 	let {
@@ -30,6 +30,10 @@
 
 	const atStart = $derived(index <= 0);
 	const atEnd = $derived(index >= chapters.length - 1);
+
+	// Revenir au catalogue est une navigation **interne** : ni `pagehide` ni
+	// changement de visibilité. Le dernier chapitre doit donc partir maintenant.
+	onDestroy(() => flushPositions());
 
 	function go(target: number) {
 		if (target < 0 || target >= chapters.length) return;

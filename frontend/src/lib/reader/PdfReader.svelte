@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 	import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 	import { rawUrl } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
-	import { reportPosition } from '$lib/progress';
+	import { flushPositions, reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
 
 	let {
@@ -60,6 +60,10 @@
 		reportPosition(rel, target, pages);
 		stage?.scrollTo({ top: 0, left: 0 });
 	}
+
+	// Revenir au catalogue est une navigation **interne** : ni `pagehide` ni
+	// changement de visibilité. La dernière page doit donc partir maintenant.
+	onDestroy(() => flushPositions());
 
 	function setZoom(step: number) {
 		zoomStep = Math.min(ZOOMS.length - 1, Math.max(0, step));
