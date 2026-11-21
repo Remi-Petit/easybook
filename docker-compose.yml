@@ -39,9 +39,10 @@ services:
       # livres depuis l'interface).
       #
       # Sous Docker Desktop (Windows/macOS), le système de fichiers de l'hôte ne
-      # remonte aucun événement inotify : l'interface ne se rafraîchit alors pas
-      # toute seule quand un livre est ajouté **depuis l'hôte** (les ajouts faits
-      # dans l'interface, eux, sont diffusés directement).
+      # remonte aucun événement inotify : c'est le contrôle périodique du
+      # backend (empreinte du dossier, toutes les secondes) qui détecte alors
+      # les livres ajoutés ou supprimés **depuis l'hôte**. Les ajouts faits dans
+      # l'interface, eux, sont diffusés directement.
       - ./books:/books
       # Les comptes (SQLite) : à garder entre deux conteneurs, sinon les
       # utilisateurs et les liaisons OIDC disparaissent avec lui.

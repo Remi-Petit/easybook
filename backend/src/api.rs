@@ -51,8 +51,9 @@ use tower_http::services::ServeFile;
 ///
 /// Le watcher rediffuse à chaque changement ; ce délai ne sert qu'à absorber
 /// une rafale de requêtes (chargement de page, plusieurs onglets) sans refaire
-/// un parcours complet du dossier à chaque fois. Ce n'est pas un sondage : rien
-/// ne tourne en tâche de fond.
+/// un parcours complet du dossier à chaque fois. Le seul travail de fond est le
+/// contrôle de cohérence de `main` (voir `SWEEP_INTERVAL`), qui ne relance un
+/// scan que si le dossier a réellement changé.
 const SNAPSHOT_TTL: Duration = Duration::from_secs(2);
 
 /// Battement de cœur du WebSocket : un `Ping` à cet intervalle, et la connexion est
@@ -126,6 +127,10 @@ pub struct AppState {
     auth: Option<Arc<AuthState>>,
     /// Historique des performances ; `None` : enregistrement désactivé.
     history: Option<Arc<perf_history::History>>,
+    /// Nombre de rediffusions du catalogue (watcher ou contrôle périodique).
+    /// Le contrôle périodique de `main` s'en sert pour ne pas rediffuser un
+    /// changement que le watcher a déjà traité entre deux de ses passages.
+    broadcasts: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl AppState {
@@ -144,6 +149,7 @@ impl AppState {
             resizes: Arc::new(Semaphore::new(config::resize().max_concurrent)),
             auth: None,
             history: None,
+            broadcasts: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 
@@ -213,6 +219,20 @@ impl AppState {
     /// Racine courante de la bibliothèque.
     pub fn root(&self) -> PathBuf {
         self.root.as_ref().clone()
+    }
+
+    /// Nombre de WebSocket ouverts, c'est-à-dire de clients à prévenir d'un
+    /// changement de la bibliothèque.
+    pub fn listeners(&self) -> usize {
+        self.ws.receiver_count()
+    }
+
+    /// Nombre de rediffusions du catalogue depuis le démarrage.
+    ///
+    /// Une empreinte changée accompagnée d'une rediffusion plus récente a déjà
+    /// été poussée par le watcher : le contrôle périodique n'a rien à refaire.
+    pub fn broadcasts(&self) -> u64 {
+        self.broadcasts.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Dossier du cache disque des couvertures.
@@ -490,6 +510,9 @@ fn store_snapshot(state: &AppState) -> Snapshot {
 /// Scanne et prévient les clients WebSocket (appelé par le watcher).
 pub fn broadcast_snapshot(state: &AppState) {
     let snapshot = store_snapshot(state);
+    state
+        .broadcasts
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // Aucun client à l'écoute n'est pas une erreur : le catalogue reste en
     // cache pour la prochaine requête HTTP.
     let _ = state.ws.send(snapshot.notice);

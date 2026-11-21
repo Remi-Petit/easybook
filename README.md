@@ -68,7 +68,11 @@ easybook/
   minuterie (une animation CSS de `100 %` à `0`) : le message n'est retiré qu'à sa
   fin, et le survol la met en pause pour laisser le temps de lire.
 - Le dossier est **surveillé** (`notify`) : un fichier ajouté, renommé ou
-  supprimé est poussé aux navigateurs par WebSocket. **Pas de sondage.**
+  supprimé est poussé aux navigateurs par WebSocket. Un contrôle périodique
+  (toutes les secondes, métadonnées seules) prend le relais là où le système de
+  fichiers ne remonte aucun événement — le dossier d'un hôte monté sous Docker
+  Desktop, par exemple : un ajout ou une suppression faits depuis l'hôte
+  apparaissent quand même **sans rechargement**.
 - Un livre est reconnu à son **extension** ; son contenu n'est lu qu'au moment
   où on l'ouvre — sauf le **nombre de pages**, compté une fois au scan puis
   gardé en mémoire (`pages.rs`), parce que chaque carte l'affiche.

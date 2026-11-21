@@ -61,8 +61,17 @@ export function start(): void {
 	window.addEventListener('pageshow', revive);
 }
 
-/** Reconnexion immédiate, sauf si la socket est déjà ouverte ou en train de s'ouvrir. */
+/**
+ * Reconnexion immédiate et rattrapage du catalogue.
+ *
+ * Un onglet en arrière-plan est gelé par le navigateur : il peut manquer des
+ * avis **sans** que sa socket paraisse fermée. Le `GET` conditionnel ci-dessus
+ * rattrape donc toujours (un 304 quand rien n'a changé) — c'est ce qui fait
+ * apparaître un livre ajouté depuis l'hôte dès qu'on regarde l'onglet, au lieu
+ * d'attendre un clic.
+ */
 function revive(): void {
+	void refresh();
 	if (socket && socket.readyState <= WebSocket.OPEN) return;
 	attempt = 0;
 	connect();

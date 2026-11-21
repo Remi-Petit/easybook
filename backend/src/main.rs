@@ -3,10 +3,13 @@
 //! Le serveur ne fait que deux choses : décrire ce que contient `books/`, et
 //! servir le contenu des livres. Le dossier est **surveillé** : un fichier
 //! ajouté, renommé ou supprimé est poussé aux navigateurs par WebSocket, sans
-//! rechargement de page et sans sondage.
+//! rechargement de page. Là où le système de fichiers ne remonte rien (dossier
+//! d'un hôte monté sous Docker Desktop), un contrôle périodique de l'empreinte
+//! du dossier prend le relais : voir [`sweep`].
 
 use easybook::{
-    accounts, api, auth, config, formats, pages, perf, perf_history, readings, thumbnail, watcher,
+    accounts, api, auth, config, formats, library, pages, perf, perf_history, readings, thumbnail,
+    watcher,
 };
 use notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, new_debouncer};
@@ -206,16 +209,38 @@ async fn run(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
     std::thread::spawn({
         let state = state.clone();
         let root = root.clone();
+        let warm = warm_tx.clone();
         move || {
-            if let Err(e) = watch(root, state, warm_tx) {
+            if let Err(e) = watch(root, state, warm) {
                 eprintln!("Erreur watcher : {e}");
             }
         }
     });
 
+    // Contrôle de cohérence : voir `SWEEP_INTERVAL`.
+    std::thread::spawn({
+        let state = state.clone();
+        let root = root.clone();
+        move || sweep(root, state, warm_tx)
+    });
+
     server.await?;
     Ok(())
 }
+
+/// Intervalle du contrôle de cohérence du dossier des livres.
+///
+/// Le watcher réagit en quelques centaines de millisecondes — mais seulement là
+/// où le système de fichiers remonte des événements. Le dossier d'un hôte
+/// monté dans un conteneur Docker Desktop (Windows, macOS) n'en remonte
+/// **aucun** : ce contrôle compare alors l'empreinte du dossier (voir
+/// [`library::fingerprint`]) pour ne pas laisser passer un ajout ou une
+/// suppression faits depuis l'hôte.
+const SWEEP_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Plafond du contrôle, quand un parcours du dossier devient cher : ce thread
+/// ne doit jamais consacrer plus d'un vingtième de son temps à surveiller.
+const SWEEP_MAX: Duration = Duration::from_secs(30);
 
 /// Ouvre la base des comptes et exige une connexion (`auth.enabled`).
 ///
@@ -365,6 +390,47 @@ fn canonical_root(path: PathBuf) -> PathBuf {
         }
     }
     path
+}
+
+/// Compare régulièrement l'empreinte du dossier et rediffuse s'il a changé.
+///
+/// Filet de sécurité du watcher : un système de fichiers muet (montage d'un
+/// dossier hôte sous Docker Desktop) ne prévient de rien. Le parcours ne fait
+/// que lire des métadonnées, et il est sauté tant qu'aucun onglet n'écoute :
+/// la prochaine comparaison, au retour d'un client, rattrapera les changements.
+fn sweep(root: PathBuf, state: api::AppState, warm: std::sync::mpsc::Sender<()>) {
+    let mut known = library::fingerprint(&root);
+    let mut broadcasts = state.broadcasts();
+    let mut pause = SWEEP_INTERVAL;
+
+    loop {
+        std::thread::sleep(pause);
+
+        if state.listeners() == 0 {
+            continue;
+        }
+
+        let started = std::time::Instant::now();
+        let seen = library::fingerprint(&root);
+        // Un parcours lent (très grosse bibliothèque, disque réseau) espace les
+        // contrôles : vingt fois sa durée, entre une seconde et trente.
+        pause = (started.elapsed() * 20).clamp(SWEEP_INTERVAL, SWEEP_MAX);
+
+        let latest = state.broadcasts();
+        if seen == known || latest != broadcasts {
+            // Rien n'a bougé, ou le watcher a déjà rediffusé ce changement :
+            // on se resynchronise sans rien renvoyer.
+            known = seen;
+            broadcasts = latest;
+            continue;
+        }
+
+        known = seen;
+        println!("Changement détecté hors watcher : catalogue rediffusé");
+        api::broadcast_snapshot(&state);
+        broadcasts = state.broadcasts();
+        let _ = warm.send(());
+    }
 }
 
 /// Surveille la bibliothèque et rediffuse le catalogue à chaque changement.

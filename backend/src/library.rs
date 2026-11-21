@@ -196,6 +196,66 @@ fn title_of(name: &str) -> String {
     }
 }
 
+/// Une ligne par entrée visible : chemin relatif, est-ce un dossier, taille,
+/// date de modification en secondes.
+type Stamp = (String, bool, u64, u64);
+
+/// Empreinte bon marché de ce que le catalogue verrait.
+///
+/// Elle sert de filet de sécurité au watcher : certains montages ne remontent
+/// **aucun** événement système (le dossier d'un hôte monté sous Docker Desktop,
+/// par exemple). Comparer cette empreinte à intervalle régulier détecte alors
+/// les ajouts, suppressions et remplacements. Seules les métadonnées sont lues,
+/// jamais le contenu des livres.
+pub fn fingerprint(root: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+
+    let mut entries: Vec<Stamp> = Vec::new();
+    collect(root, root, &mut entries);
+    // L'ordre de `read_dir` n'est pas garanti : on trie pour une empreinte stable.
+    entries.sort();
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    entries.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn collect(root: &Path, dir: &Path, entries: &mut Vec<Stamp>) {
+    let Ok(list) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in list.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Mêmes règles que `walk` : un caché ou un lien n'apparaît pas dans le
+        // catalogue, il ne doit pas faire bouger l'empreinte.
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_symlink() {
+            continue;
+        }
+
+        let path = entry.path();
+        let meta = entry.metadata().ok();
+        let size = meta.as_ref().map_or(0, |meta| meta.len());
+        // Secondes, comme le reste du scan : la sous-seconde d'un fichier qui
+        // vient d'être écrit peut encore bouger, sans que le catalogue change.
+        let when = meta
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map_or(0, |elapsed| elapsed.as_secs());
+        entries.push((relative(root, &path), kind.is_dir(), size, when));
+
+        if kind.is_dir() {
+            collect(root, &path, entries);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,5 +301,29 @@ mod tests {
         let scan = scan(Path::new("ce-dossier-n-existe-pas"));
         assert_eq!(scan.total, 0);
         assert!(scan.books.is_empty());
+    }
+
+    #[test]
+    fn fingerprint_follows_additions_and_removals() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("Manga")).unwrap();
+        fs::write(root.join("Manga/T1.cbz"), b"x").unwrap();
+
+        let empty = fingerprint(root);
+        assert_eq!(fingerprint(root), empty, "l'empreinte est stable");
+
+        // Un livre déposé à la racine change l'empreinte.
+        fs::write(root.join("racine.epub"), b"x").unwrap();
+        let added = fingerprint(root);
+        assert_ne!(added, empty);
+
+        // Un caché ne change rien : il n'est pas dans le catalogue.
+        fs::write(root.join(".DS_Store"), b"x").unwrap();
+        assert_eq!(fingerprint(root), added);
+
+        // La suppression du livre se voit aussi.
+        fs::remove_file(root.join("racine.epub")).unwrap();
+        assert_eq!(fingerprint(root), empty);
     }
 }
