@@ -57,7 +57,7 @@
 			const direction = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
 			if (!direction) return;
 
-			const cards = [...node.querySelectorAll<HTMLElement>('.card')];
+			const cards = [...node.querySelectorAll<HTMLElement>('.card-hit')];
 			const index = cards.indexOf(document.activeElement as HTMLElement);
 
 			// Focus sur une carte : on passe à la voisine, la ligne suit.

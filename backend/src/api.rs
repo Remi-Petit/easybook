@@ -372,7 +372,10 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/raw", get(get_raw))
         // Historique de lecture : la position du lecteur, et ce qu'en voit un
         // administrateur. Le préfixe `/api/admin/` suffit à exiger le rôle.
-        .route("/api/read/progress", post(save_progress))
+        .route(
+            "/api/read/progress",
+            post(save_progress).delete(forget_progress),
+        )
         .route("/api/read/history", get(get_my_reading))
         .route(
             "/api/admin/users/{id}/read/history",
@@ -1434,6 +1437,46 @@ async fn save_progress(
     let notify = user_id.clone();
     match tokio::task::spawn_blocking(move || progress.save(&user_id, &entry)).await {
         Ok(Ok(())) => {
+            // Les administrateurs regardent peut-être la page d'historique.
+            if let Some(auth) = state.auth() {
+                auth.notify_reading(&notify);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ProgressQuery {
+    /// Chemin du livre dans la bibliothèque (comme le catalogue).
+    path: String,
+}
+
+/// `DELETE /api/read/progress?path=` — oublie la position du livre connecté.
+///
+/// C'est « marquer comme non lu » : la position et les sessions du livre
+/// partent, la couverture redevient vierge et le temps de lecture cesse de
+/// compter ce livre.
+async fn forget_progress(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+    Query(query): Query<ProgressQuery>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    // Un chemin inventé n'efface rien : le livre doit exister.
+    if file_in(&state.root(), &query.path).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let user_id = user.id.clone();
+    let notify = user_id.clone();
+    let book = query.path;
+    match tokio::task::spawn_blocking(move || progress.forget(&user_id, &book)).await {
+        Ok(Ok(_)) => {
             // Les administrateurs regardent peut-être la page d'historique.
             if let Some(auth) = state.auth() {
                 auth.notify_reading(&notify);

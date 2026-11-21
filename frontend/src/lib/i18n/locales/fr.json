@@ -75,8 +75,13 @@
 		"one": "{count} fichier ignoré (format inconnu)",
 		"other": "{count} fichiers ignorés (format inconnu)"
 	},
-	"card.series": "série",
-	"card.noBooks": "aucun livre",
+	"card.series": "série",	"card.actionsBook": "Actions du livre",
+	"card.actionsSeries": "Actions de la série",
+	"card.markRead": "Marquer comme lu",
+	"card.markUnread": "Marquer comme non lu",
+	"card.markedRead": "Marqué comme lu",
+	"card.markedUnread": "Marqué comme non lu",
+	"card.noPages": "Nombre de pages inconnu : impossible de marquer ce livre comme lu",	"card.noBooks": "aucun livre",
 	"card.pages": {
 		"one": "{count} page",
 		"other": "{count} pages"

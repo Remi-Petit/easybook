@@ -243,6 +243,26 @@ impl Progress {
         tx.commit()
     }
 
+    /// Oublie la position d'un livre : il redevient « non lu ».
+    ///
+    /// Les sessions du livre partent avec elle — sinon le temps de lecture
+    /// continuerait de compter un livre effacé de l'historique. Rend le nombre
+    /// de positions supprimées (`0` si le livre n'avait pas été commencé).
+    pub fn forget(&self, user: &str, book: &str) -> rusqlite::Result<usize> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM reading_sessions WHERE user_id = ?1 AND book = ?2",
+            params![user, book],
+        )?;
+        let removed = tx.execute(
+            "DELETE FROM reading_progress WHERE user_id = ?1 AND book = ?2",
+            params![user, book],
+        )?;
+        tx.commit()?;
+        Ok(removed)
+    }
+
     /// La position d'un utilisateur dans un livre, si elle existe.
     pub fn position(&self, user: &str, book: &str) -> rusqlite::Result<Option<BookProgress>> {
         let conn = self.lock();
@@ -573,6 +593,22 @@ mod tests {
 
         assert_eq!(progress.summary("u1", 0).unwrap().seconds, 90);
         assert_eq!(progress.summary("u2", 0).unwrap().seconds, 0);
+    }
+
+    #[test]
+    fn a_book_can_be_marked_unread() {
+        let progress = Progress::open_in_memory().unwrap();
+        progress.save("u1", &entry("a.cbz", 9, 10)).unwrap();
+        progress.save("u1", &entry("b.cbz", 3, 10)).unwrap();
+
+        assert_eq!(progress.forget("u1", "a.cbz").unwrap(), 1);
+        let summary = progress.summary("u1", 0).unwrap();
+        assert_eq!(summary.books, 1, "le livre oublié ne compte plus");
+        assert_eq!(summary.finished, 0);
+        // La session du livre part avec sa position : le temps ne compte plus.
+        assert_eq!(progress.sessions("u1", Window::all()).unwrap().len(), 1);
+        // Oublier deux fois ne casse rien.
+        assert_eq!(progress.forget("u1", "a.cbz").unwrap(), 0);
     }
 
     #[test]

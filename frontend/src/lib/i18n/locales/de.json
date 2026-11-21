@@ -76,6 +76,13 @@
 		"other": "{count} Dateien übersprungen (unbekanntes Format)"
 	},
 	"card.series": "Serie",
+	"card.actionsBook": "Aktionen für das Buch",
+	"card.actionsSeries": "Aktionen für die Reihe",
+	"card.markRead": "Als gelesen markieren",
+	"card.markUnread": "Als ungelesen markieren",
+	"card.markedRead": "Als gelesen markiert",
+	"card.markedUnread": "Als ungelesen markiert",
+	"card.noPages": "Seitenzahl unbekannt: das Buch kann nicht als gelesen markiert werden",
 	"card.noBooks": "kein Buch",
 	"card.pages": {
 		"one": "{count} Seite",

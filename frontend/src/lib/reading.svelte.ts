@@ -79,6 +79,16 @@ export function progressOf(rel: string): BookProgress | undefined {
 }
 
 /**
+ * Oublie la position d'un livre (« marquer comme non lu »).
+ *
+ * La couverture redevient vierge tout de suite ; le serveur est prévenu par
+ * l'appelant, qui a déjà supprimé la position de son côté.
+ */
+export function forgetPosition(rel: string): void {
+	reading.items = reading.items.filter((item) => item.book !== rel);
+}
+
+/**
  * Le livre ouvert dans le lecteur, ou `null` en le quittant.
  *
  * Sert à la rangée « poursuivre la lecture » : un livre **terminé** en disparaît,

@@ -76,6 +76,13 @@
 		"other": "{count} archivos omitidos (formato desconocido)"
 	},
 	"card.series": "serie",
+	"card.actionsBook": "Acciones del libro",
+	"card.actionsSeries": "Acciones de la saga",
+	"card.markRead": "Marcar como leído",
+	"card.markUnread": "Marcar como no leído",
+	"card.markedRead": "Marcado como leído",
+	"card.markedUnread": "Marcado como no leído",
+	"card.noPages": "Número de páginas desconocido: no se puede marcar como leído",
 	"card.noBooks": "ningún libro",
 	"card.pages": {
 		"one": "{count} página",

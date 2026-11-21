@@ -75,8 +75,13 @@
 		"one": "{count} file skipped (unknown format)",
 		"other": "{count} files skipped (unknown format)"
 	},
-	"card.series": "series",
-	"card.noBooks": "no book",
+	"card.series": "series",	"card.actionsBook": "Book actions",
+	"card.actionsSeries": "Series actions",
+	"card.markRead": "Mark as read",
+	"card.markUnread": "Mark as unread",
+	"card.markedRead": "Marked as read",
+	"card.markedUnread": "Marked as unread",
+	"card.noPages": "Page count unknown: this book cannot be marked as read",	"card.noBooks": "no book",
 	"card.pages": {
 		"one": "{count} page",
 		"other": "{count} pages"

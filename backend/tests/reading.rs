@@ -172,6 +172,53 @@ async fn the_history_follows_the_limit_and_zero_means_everything() {
 }
 
 #[tokio::test]
+async fn a_reader_can_mark_a_book_unread() {
+    let site = site();
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    std::fs::write(site.dir.path().join("T1.cbz"), b"x").unwrap();
+    let reader = site.session_for(&alice);
+    site.post(
+        "/api/read/progress",
+        Some(&reader),
+        position("T1.cbz", 9, 10),
+    )
+    .await;
+
+    let reply = site
+        .request(
+            "DELETE",
+            "/api/read/progress?path=T1.cbz",
+            Some(&reader),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT);
+
+    let history = site.get("/api/read/history", Some(&reader)).await.json();
+    assert_eq!(history["summary"]["books"], 0);
+    assert_eq!(history["recent"].as_array().unwrap().len(), 0);
+
+    // Un chemin qui n'existe pas n'efface rien.
+    let missing = site
+        .request(
+            "DELETE",
+            "/api/read/progress?path=inconnu.cbz",
+            Some(&reader),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+
+    // Sans session, rien n'est effacé.
+    let anonymous = site
+        .request("DELETE", "/api/read/progress?path=T1.cbz", None, None, &[])
+        .await;
+    assert_eq!(anonymous.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn an_unknown_account_is_not_found() {
     let site = site();
     let admin = site.admin().await;

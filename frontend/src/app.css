@@ -907,6 +907,7 @@ code {
 }
 
 .card {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	background: var(--panel);
@@ -916,6 +917,88 @@ code {
 	transition:
 		transform 140ms ease,
 		border-color 140ms ease;
+}
+
+/* Toute la carte ouvre le livre (ou la série) : un lien étiré, sous le menu. */
+.card-hit {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	border-radius: inherit;
+}
+
+/* Les « trois points » d'une carte : visibles au survol et au clavier, en bas à
+   gauche de la couverture. Le menu s'ouvre dans la couverture. */
+.card-menu {
+	position: static;
+}
+
+.card-dots {
+	position: absolute;
+	left: 8px;
+	bottom: 12px;
+	z-index: 3;
+	display: grid;
+	place-items: center;
+	width: 26px;
+	height: 26px;
+	background: rgba(8, 8, 12, 0.78);
+	border: 1px solid rgba(255, 255, 255, 0.14);
+	border-radius: 8px;
+	color: var(--text);
+	opacity: 0;
+	transition:
+		opacity 120ms ease,
+		background 120ms ease;
+}
+
+.card:hover .card-dots,
+.card:focus-within .card-dots {
+	opacity: 1;
+}
+
+.card-dots:hover {
+	background: rgba(22, 22, 30, 0.95);
+}
+
+/* Pas de survol au tactile : les points restent visibles. */
+@media (hover: none) {
+	.card-dots {
+		opacity: 1;
+	}
+}
+
+.card-pop {
+	position: absolute;
+	left: 8px;
+	right: 8px;
+	bottom: 44px;
+	z-index: 4;
+	display: grid;
+	gap: 2px;
+	padding: 6px;
+	background: rgba(20, 20, 27, 0.96);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+.card-pop button {
+	padding: 6px 8px;
+	border-radius: 6px;
+	color: var(--text);
+	font-size: 12.5px;
+	line-height: 1.25;
+	text-align: left;
+}
+
+.card-pop button:hover:not(:disabled) {
+	background: var(--accent-soft);
+}
+
+.card-pop button:disabled {
+	opacity: 0.45;
+	cursor: default;
 }
 
 @media (hover: hover) {
