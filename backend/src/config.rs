@@ -180,11 +180,34 @@ pub struct Performance {
     /// `false` : aucune mesure enregistrée (la page reste en direct).
     pub enabled: bool,
     /// Fréquence d'enregistrement côté serveur, en secondes.
+    #[serde(deserialize_with = "seconds")]
     pub sample_secs: u64,
     /// Durée de conservation, en jours (plafonnée à 30).
+    #[serde(deserialize_with = "days")]
     pub retention_days: u32,
     /// Fréquence de rafraîchissement de la page, en secondes.
+    #[serde(deserialize_with = "seconds")]
     pub live_secs: u64,
+}
+
+/// Nombre de secondes lu sans faire échouer tout le fichier : une valeur
+/// négative, NaN ou démesurée retombe dans les bornes au lieu de rejeter la
+/// configuration entière (c'est [`Performance::sanitized`] qui applique le
+/// minimum).
+fn seconds<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = f64::deserialize(deserializer)?;
+    Ok(value.clamp(0.0, u64::MAX as f64).round() as u64)
+}
+
+/// Idem pour un nombre de jours, borné au type `u32`.
+fn days<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(seconds(deserializer)?.min(u64::from(u32::MAX)) as u32)
 }
 
 impl Default for Performance {
@@ -550,6 +573,42 @@ mod tests {
         assert_eq!(zero.sample_secs, 1);
         assert_eq!(zero.retention_days, 1);
         assert_eq!(zero.live_secs, 1);
+    }
+
+    #[test]
+    fn a_partial_performance_section_keeps_the_other_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(&path, "performance:\n  enabled: false\n").unwrap();
+
+        let performance = Config::load_from(&path).performance;
+        assert!(!performance.enabled);
+        // Les champs absents gardent les valeurs par défaut, pas zéro.
+        assert_eq!(performance.sample_secs, 10);
+        assert_eq!(performance.retention_days, 30);
+        assert_eq!(performance.live_secs, 2);
+    }
+
+    #[test]
+    fn negative_or_huge_values_do_not_throw_the_file_away() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(
+            &path,
+            "books_root: /livres\nperformance:\n  sample_secs: -10\n  retention_days: -5\n  live_secs: 1e30\n",
+        )
+        .unwrap();
+
+        let config = Config::load_from(&path);
+        // Le reste du fichier survit à une valeur absurde.
+        assert_eq!(config.books_root, "/livres");
+        assert_eq!(config.performance.sample_secs, 0);
+        assert_eq!(config.performance.retention_days, 0);
+        assert_eq!(config.performance.live_secs, u64::MAX);
+        let fixed = config.performance.sanitized();
+        assert_eq!(fixed.sample_secs, 1);
+        assert_eq!(fixed.retention_days, 1);
+        assert_eq!(fixed.live_secs, 60);
     }
 
     #[test]
