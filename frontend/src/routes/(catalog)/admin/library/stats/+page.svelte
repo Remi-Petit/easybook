@@ -288,7 +288,11 @@
 						onSelect={openCategory === null ? openFolder : undefined}
 					/>
 					<div>
-						<BarList bars={shownFolders} format={formatBytes} />
+						<BarList
+							bars={shownFolders}
+							format={formatBytes}
+							onSelect={openCategory === null ? openFolder : undefined}
+						/>
 						{#if folderNodes.length > COLLAPSED}
 							<button
 								type="button"

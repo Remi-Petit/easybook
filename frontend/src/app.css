@@ -1948,6 +1948,29 @@ code {
 	list-style: none;
 }
 
+/* Ligne de barres cliquable : même dessin, la teinte accent au survol. */
+.bar-row {
+    display: block;
+    width: 100%;
+    padding: 0;
+    text-align: left;
+}
+
+.bar-row .bar-label {
+    transition: color 120ms ease;
+}
+
+.bar-row:hover .bar-label,
+.bar-row:focus-visible .bar-label {
+    color: var(--accent);
+}
+
+.bar-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: 4px;
+}
+
 .bar-head {
 	display: flex;
 	justify-content: space-between;
