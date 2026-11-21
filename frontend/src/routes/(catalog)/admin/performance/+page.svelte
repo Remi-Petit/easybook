@@ -6,7 +6,7 @@
 	import SegmentBar from '$lib/components/SegmentBar.svelte';
 	import StackedArea from '$lib/components/StackedArea.svelte';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
-	import { bookName, colorFor, formatDuration, formatPercent, processLabel } from '$lib/perf';
+	import { bookName, colorFor, formatDuration, formatPercent, percentOf, processLabel } from '$lib/perf';
 	import {
 		DEFAULT_INTERVAL_MS,
 		RANGES,
@@ -179,11 +179,75 @@
 	const guardShare = $derived(apiCpuSecs > 0 ? (guardSecs / apiCpuSecs) * 100 : 0);
 	const guardAvgMs = $derived(app && app.guardCalls > 0 ? (guardSecs * 1000) / app.guardCalls : 0);
 
-	// Stockage : tout ce que l'application pose sur le disque, livres compris.
+	// Stockage : deux niveaux de lecture — l'application face aux livres, puis
+	// ce qui compose l'application elle-même.
 	const databaseBytes = $derived(
 		(storage?.databases ?? []).reduce((total, database) => total + database.totalBytes, 0)
 	);
-	const footprint = $derived(storage ? storage.totalBytes + storage.library.bytes : 0);
+	/** Part d'un poste dans un total, déjà mise en forme (`0,1 %`). */
+	const share = (part: number, total: number) =>
+		percentOf(total > 0 ? (part / total) * 100 : 0);
+	/** Les livres pèsent-ils plus que tout le reste ? La réponse en un regard. */
+	const diskSegments = $derived(
+		storage
+			? [
+					{
+						key: 'library',
+						label: t('perf.storage.library'),
+						value: storage.library.bytes,
+						color: '#5cc98a'
+					},
+					{
+						key: 'app',
+						label: t('perf.storage.appOnly'),
+						value: storage.appBytes,
+						color: colorFor('easybook')
+					}
+				]
+			: []
+	);
+	/** Ce qui prend de la place dans l'application : code, bases, caches. */
+	const appSegments = $derived(
+		storage
+			? [
+					{
+						key: 'binary',
+						label: t('perf.storage.binary'),
+						value: storage.app.binaryBytes,
+						color: colorFor('easybook')
+					},
+					{
+						key: 'ui',
+						label: t('perf.storage.ui'),
+						value: storage.app.uiBuildBytes ?? 0,
+						color: colorFor('node')
+					},
+					{
+						key: 'databases',
+						label: t('perf.storage.databases'),
+						value: databaseBytes,
+						color: '#6aa5e0'
+					},
+					{
+						key: 'covers',
+						label: t('perf.storage.covers'),
+						value: storage.covers.diskBytes,
+						color: '#b98ae0'
+					},
+					{
+						key: 'pages',
+						label: t('perf.storage.pageCache'),
+						value: storage.pages.fileBytes,
+						color: '#4cc3c9'
+					}
+				]
+			: []
+	);
+	/** Ce que les cinq plus gros livres laissent aux autres. */
+	const largestBytes = $derived(
+		(storage?.library.largest ?? []).reduce((total, book) => total + book.size, 0)
+	);
+	const restBytes = $derived(storage ? Math.max(0, storage.library.bytes - largestBytes) : 0);
 </script>
 
 <svelte:head>
@@ -589,15 +653,63 @@
 				{:else}
 					<div class="perf-grid">
 						<section class="perf-card perf-stat">
-							<h2>{t('perf.storage.dataTotal')}</h2>
-							<p class="stat-value">{formatBytes(footprint)}</p>
+							<h2>{t('perf.storage.diskTotal')}</h2>
+							<p class="stat-value">{formatBytes(storage.totalBytes)}</p>
 							<p class="stat-sub">
-								{t('perf.storage.dataParts', {
-									library: formatBytes(storage.library.bytes),
-									data: formatBytes(storage.totalBytes)
+								{t('perf.storage.appShare', {
+									size: formatBytes(storage.appBytes),
+									share: share(storage.appBytes, storage.totalBytes)
 								})}
 							</p>
-							<p class="stat-hint">{t('perf.storage.dataHint')}</p>
+							<SegmentBar
+								segments={diskSegments}
+								format={formatBytes}
+								shareFormat={percentOf}
+								label={t('perf.storage.diskTotal')}
+							/>
+							<p class="stat-hint">{t('perf.storage.diskHint')}</p>
+						</section>
+
+						<section class="perf-card perf-stat">
+							<h2>{t('perf.storage.appBreakdown')}</h2>
+							<p class="stat-value">{formatBytes(storage.appBytes)}</p>
+							<p class="stat-sub">
+								{t('perf.storage.appParts', {
+									code: formatBytes(storage.codeBytes),
+									data: formatBytes(storage.dataBytes)
+								})}
+							</p>
+							<SegmentBar
+								segments={appSegments}
+								format={formatBytes}
+								shareFormat={percentOf}
+								label={t('perf.storage.appBreakdown')}
+							/>
+							<p class="stat-hint">{t('perf.storage.breakdownHint')}</p>
+						</section>
+					</div>
+
+					<div class="perf-grid">
+						<section class="perf-card">
+							<h2>
+								{t('perf.storage.app')}
+								<span class="perf-count">
+									{t('perf.storage.ofApp', {
+										share: share(storage.codeBytes, storage.appBytes)
+									})}
+								</span>
+							</h2>
+							<p class="stat-line">
+								<span>{t('perf.storage.binary')}</span>
+								<span>{formatBytes(storage.app.binaryBytes)}</span>
+							</p>
+							{#if storage.app.uiBuildBytes !== null}
+								<p class="stat-line">
+									<span>{t('perf.storage.ui')}</span>
+									<span>{formatBytes(storage.app.uiBuildBytes)}</span>
+								</p>
+							{/if}
+							<p class="stat-hint">{t('perf.storage.appHint')}</p>
 						</section>
 
 						<section class="perf-card perf-stat">
@@ -618,7 +730,14 @@
 
 					<div class="perf-grid">
 						<section class="perf-card">
-							<h2>{t('perf.storage.covers')}</h2>
+							<h2>
+								{t('perf.storage.covers')}
+								<span class="perf-count">
+									{t('perf.storage.ofApp', {
+										share: share(storage.covers.diskBytes, storage.appBytes)
+									})}
+								</span>
+							</h2>
 							<p class="stat-line">
 								<span>{t('perf.storage.coversDisk')}</span>
 								<span>
@@ -641,7 +760,14 @@
 						</section>
 
 						<section class="perf-card">
-							<h2>{t('perf.storage.pageCache')}</h2>
+							<h2>
+								{t('perf.storage.pageCache')}
+								<span class="perf-count">
+									{t('perf.storage.ofApp', {
+										share: share(storage.pages.fileBytes, storage.appBytes)
+									})}
+								</span>
+							</h2>
 							<p class="stat-line">
 								<span>{t('perf.storage.pageCacheFile')}</span>
 								<span>{formatBytes(storage.pages.fileBytes)}</span>
@@ -659,7 +785,11 @@
 					<section class="perf-card">
 						<h2>
 							{t('perf.storage.databases')}
-							<span class="perf-count">{formatBytes(databaseBytes)}</span>
+							<span class="perf-count">
+								{t('perf.storage.ofApp', {
+									share: share(databaseBytes, storage.appBytes)
+								})}
+							</span>
 						</h2>
 						<div class="table-wrap">
 							<table class="perf-table">
@@ -681,24 +811,51 @@
 										</tr>
 									{/each}
 								</tbody>
+								<tfoot>
+									<tr>
+										<td>{t('perf.storage.total')}</td>
+										<td></td>
+										<td></td>
+										<td>{formatBytes(databaseBytes)}</td>
+									</tr>
+								</tfoot>
 							</table>
 						</div>
 						<p class="stat-hint">{t('perf.storage.databasesHint')}</p>
 					</section>
 
 					<section class="perf-card">
-						<h2>{t('perf.storage.app')}</h2>
-						<p class="stat-line">
-							<span>{t('perf.storage.binary')}</span>
-							<span>{formatBytes(storage.app.binaryBytes)}</span>
+						<h2>
+							{t('perf.storage.largest')}
+							<span class="perf-count">
+								{t('perf.storage.ofLibrary', {
+									share: share(largestBytes, storage.library.bytes)
+								})}
+							</span>
+						</h2>
+						<div class="table-wrap">
+							<table class="perf-table">
+								<thead>
+									<tr>
+										<th>{t('perf.storage.book')}</th>
+										<th>{t('perf.storage.size')}</th>
+										<th>{t('perf.storage.share')}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each storage.library.largest as book (book.rel)}
+										<tr>
+											<td title={book.rel}>{book.rel}</td>
+											<td>{formatBytes(book.size)}</td>
+											<td>{share(book.size, storage.library.bytes)}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+						<p class="stat-hint">
+							{t('perf.storage.largestHint', { rest: formatBytes(restBytes) })}
 						</p>
-						{#if storage.app.uiBuildBytes !== null}
-							<p class="stat-line">
-								<span>{t('perf.storage.ui')}</span>
-								<span>{formatBytes(storage.app.uiBuildBytes)}</span>
-							</p>
-						{/if}
-						<p class="stat-hint">{t('perf.storage.appHint')}</p>
 					</section>
 				{/if}
 			</div>

@@ -207,7 +207,17 @@ async fn storage_summarizes_the_library_and_the_data() {
     assert!(body["library"]["bytes"].as_u64().unwrap() > 0);
     assert_eq!(body["databases"].as_array().unwrap().len(), 2);
     assert!(body["app"]["binaryBytes"].as_u64().unwrap() > 0);
-    assert!(body["totalBytes"].as_u64().is_some());
+    // Les parts s'additionnent : l'application seule, puis les livres.
+    let number = |field: &str| body[field].as_u64().unwrap();
+    assert_eq!(
+        number("appBytes"),
+        number("dataBytes") + number("codeBytes")
+    );
+    assert_eq!(
+        number("totalBytes"),
+        number("appBytes") + body["library"]["bytes"].as_u64().unwrap()
+    );
+    assert!(!body["library"]["largest"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]

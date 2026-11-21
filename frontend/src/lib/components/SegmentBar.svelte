@@ -4,8 +4,15 @@
 	let {
 		segments,
 		format,
-		label
-	}: { segments: Segment[]; format: (value: number) => string; label: string } = $props();
+		label,
+		shareFormat = (percent: number) => `${Math.round(percent)} %`
+	}: {
+		segments: Segment[];
+		format: (value: number) => string;
+		label: string;
+		/** Mise en forme des parts (un poste peut être trop petit pour un entier). */
+		shareFormat?: (percent: number) => string;
+	} = $props();
 
 	const total = $derived(segments.reduce((sum, segment) => sum + segment.value, 0));
 	const share = (value: number) => (total > 0 ? (value / total) * 100 : 0);
@@ -30,7 +37,7 @@
 				<span class="legend-name">{segment.label}</span>
 				<span class="legend-value">
 					{format(segment.value)}
-					<span class="legend-share">{Math.round(share(segment.value))} %</span>
+					<span class="legend-share">{shareFormat(share(segment.value))}</span>
 				</span>
 			</li>
 		{/each}

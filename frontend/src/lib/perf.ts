@@ -109,6 +109,13 @@ export type PerfHistory = {
 	points: PerfHistoryPoint[];
 };
 
+/** Un des plus gros livres de la bibliothèque. */
+export type StorageBook = {
+	/** Chemin relatif à la racine (`Chainsaw Man/T01.cbz`). */
+	rel: string;
+	size: number;
+};
+
 /** Résumé de la bibliothèque, tiré du catalogue en mémoire. */
 export type StorageLibrary = {
 	books: number;
@@ -117,6 +124,8 @@ export type StorageLibrary = {
 	/** Somme des pages connues (chapitres pour un EPUB). */
 	pages: number;
 	bytes: number;
+	/** Les plus gros livres, du plus lourd au plus léger. */
+	largest: StorageBook[];
 };
 
 /** Miniatures JPEG sur disque et en mémoire. */
@@ -160,7 +169,13 @@ export type Storage = {
 	pages: StoragePages;
 	databases: StorageDatabase[];
 	app: StorageApp;
-	/** Bases + couvertures + comptages. */
+	/** Bases + couvertures + comptages : ce que l'application se garde. */
+	dataBytes: number;
+	/** Binaire de l'API + build de l'interface. */
+	codeBytes: number;
+	/** Données + code : l'application seule, hors livres. */
+	appBytes: number;
+	/** Application + livres : tout ce que l'installation occupe. */
 	totalBytes: number;
 };
 
@@ -358,6 +373,14 @@ export function colorFor(name: string): string {
 /** Pourcentage lisible (`12,4 %`). */
 export function formatPercent(value: number): string {
 	return `${formatNumber(value, value >= 10 ? 0 : 1)} %`;
+}
+
+/**
+ * Part d'un tout, lisible même quand elle est minuscule : `0 %` laisserait
+ * croire à rien du tout, alors qu'un poste de quelques kilo-octets existe.
+ */
+export function percentOf(percent: number): string {
+	return percent > 0 && percent < 0.1 ? `< ${formatPercent(0.1)}` : formatPercent(percent);
 }
 
 /** Durée CPU cumulée (`42 s`, `3 min 12 s`, `2 h 05 min`). */

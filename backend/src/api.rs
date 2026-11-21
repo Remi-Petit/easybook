@@ -231,7 +231,7 @@ impl AppState {
         self.snapshot
             .read()
             .ok()
-            .and_then(|slot| slot.as_ref().map(|snapshot| snapshot.library))
+            .and_then(|slot| slot.as_ref().map(|snapshot| snapshot.library.clone()))
             .unwrap_or_default()
     }
 

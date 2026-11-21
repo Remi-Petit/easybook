@@ -7,6 +7,7 @@ import {
 	bookName,
 	formatSampleTime,
 	historyToSamples,
+	percentOf,
 	type PerfSnapshot
 } from './perf';
 
@@ -139,6 +140,18 @@ suite('colorFor', () => {
 	it('est stable', () => {
 		expect(colorFor('inconnu')).toBe(colorFor('inconnu'));
 		expect(colorFor('easybook')).toBe('#e0a54a');
+	});
+});
+
+suite('percentOf', () => {
+	it('garde deux chiffres utiles selon la taille de la part', () => {
+		expect(percentOf(82)).toBe('82 %');
+		expect(percentOf(4.1)).toBe('4,1 %');
+	});
+
+	it("n'affiche pas 0 % pour un poste qui existe", () => {
+		expect(percentOf(0.008)).toBe('< 0,1 %');
+		expect(percentOf(0)).toBe('0 %');
 	});
 });
 

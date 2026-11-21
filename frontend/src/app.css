@@ -1810,8 +1810,8 @@ code {
 
 .segment-bar span {
 	height: 100%;
-}
-
+    /* Les largeurs en pourcentage laissent un cheveu vide après arrondi. */
+    flex: 1 1 auto;
 .segment-bar span + span {
 	border-left: 2px solid var(--panel);
 }

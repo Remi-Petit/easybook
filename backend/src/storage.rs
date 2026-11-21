@@ -11,7 +11,7 @@ use crate::config;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
-#[derive(Serialize, Debug, Default, Clone, Copy)]
+#[derive(Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Library {
     pub books: u64,
@@ -21,7 +21,21 @@ pub struct Library {
     pub pages: u64,
     /// Taille des fichiers de livres.
     pub bytes: u64,
+    /// Les plus gros livres, du plus lourd au plus léger.
+    pub largest: Vec<LargestBook>,
 }
+
+/// Un livre du résumé : de quoi nommer ce qui pèse le plus lourd.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LargestBook {
+    /// Chemin relatif à la racine (`Chainsaw Man/T01.cbz`).
+    pub rel: String,
+    pub size: u64,
+}
+
+/// Nombre de livres détaillés dans le résumé.
+const LARGEST: usize = 5;
 
 #[derive(Serialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
@@ -70,11 +84,17 @@ pub struct Storage {
     pub pages: Pages,
     pub databases: Vec<Database>,
     pub app: App,
-    /// Bases + couvertures + comptages ; la bibliothèque et le code sont à part.
+    /// Bases + couvertures + comptages : ce que l'application se garde.
+    pub data_bytes: u64,
+    /// Binaire de l'API + build de l'interface : le programme lui-même.
+    pub code_bytes: u64,
+    /// `data_bytes` + `code_bytes` : l'application seule, hors livres.
+    pub app_bytes: u64,
+    /// `app_bytes` + livres : tout ce que l'installation occupe.
     pub total_bytes: u64,
 }
 
-/// Résume le catalogue sérialisé (`{ books: [{ size, pages }] }`).
+/// Résume le catalogue sérialisé (`{ books: [{ rel, size, pages }] }`).
 pub fn library_stats(catalog_json: &str) -> Library {
     let Ok(catalog) = serde_json::from_str::<serde_json::Value>(catalog_json) else {
         return Library::default();
@@ -87,12 +107,23 @@ pub fn library_stats(catalog_json: &str) -> Library {
         ..Library::default()
     };
     for book in books {
-        library.bytes += book.get("size").and_then(|size| size.as_u64()).unwrap_or(0);
+        let size = book.get("size").and_then(|size| size.as_u64()).unwrap_or(0);
+        library.bytes += size;
         if let Some(pages) = book.get("pages").and_then(|pages| pages.as_u64()) {
             library.with_pages += 1;
             library.pages += pages;
         }
+        if let Some(rel) = book.get("rel").and_then(|rel| rel.as_str()) {
+            library.largest.push(LargestBook {
+                rel: rel.to_string(),
+                size,
+            });
+        }
     }
+    library
+        .largest
+        .sort_by_key(|book| std::cmp::Reverse(book.size));
+    library.largest.truncate(LARGEST);
     library
 }
 
@@ -108,14 +139,20 @@ pub fn collect(data_dir: &Path, cache_dir: &Path, library: Library) -> Storage {
         .iter()
         .map(|database| database.total_bytes)
         .sum::<u64>();
-    let total_bytes = database_bytes + covers.disk_bytes + pages.file_bytes;
+    let app = app();
+    let code_bytes = app.binary_bytes + app.ui_build_bytes.unwrap_or(0);
+    let data_bytes = database_bytes + covers.disk_bytes + pages.file_bytes;
+    let app_bytes = data_bytes + code_bytes;
     Storage {
+        total_bytes: app_bytes + library.bytes,
         library,
         covers,
         pages,
         databases,
-        app: app(),
-        total_bytes,
+        app,
+        data_bytes,
+        code_bytes,
+        app_bytes,
     }
 }
 
@@ -220,12 +257,46 @@ mod tests {
     #[test]
     fn sums_the_catalog() {
         let library = library_stats(
-            r#"{"books":[{"size":100,"pages":10},{"size":50,"pages":null},{"size":25}]}"#,
+            r#"{"books":[
+                {"rel":"a/T02.cbz","size":100,"pages":10},
+                {"rel":"a/T01.cbz","size":50,"pages":null},
+                {"rel":"b/T03.cbz","size":25}
+            ]}"#,
         );
         assert_eq!(library.books, 3);
         assert_eq!(library.with_pages, 1);
         assert_eq!(library.pages, 10);
         assert_eq!(library.bytes, 175);
+        // Du plus lourd au plus léger : la bibliothèque dit ce qui pèse.
+        assert_eq!(
+            library.largest,
+            vec![
+                LargestBook {
+                    rel: "a/T02.cbz".into(),
+                    size: 100
+                },
+                LargestBook {
+                    rel: "a/T01.cbz".into(),
+                    size: 50
+                },
+                LargestBook {
+                    rel: "b/T03.cbz".into(),
+                    size: 25
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_only_the_five_biggest_books() {
+        let books: Vec<String> = (0..8)
+            .map(|index| format!(r#"{{"rel":"{index}.cbz","size":{}}}"#, index + 1))
+            .collect();
+        let library = library_stats(&format!(r#"{{"books":[{}]}}"#, books.join(",")));
+        assert_eq!(library.largest.len(), 5);
+        assert_eq!(library.largest[0].rel, "7.cbz");
+        // Somme de tous les livres, pas seulement des plus gros.
+        assert_eq!(library.bytes, (1..=8).sum::<u64>());
     }
 
     #[test]
