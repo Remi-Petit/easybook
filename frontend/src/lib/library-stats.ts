@@ -63,3 +63,26 @@ export function formatColor(format: string): string {
 export function formatLabel(format: string): string {
 	return format.toUpperCase();
 }
+
+/**
+ * Couleur d'un dossier, prise par rang : les douze dossiers listés ont ainsi
+ * douze teintes distinctes, dans les barres comme dans le camembert.
+ */
+const FOLDER_COLORS = [
+	'#e0a54a',
+	'#5cc98a',
+	'#6aa5e0',
+	'#b98ae0',
+	'#e0715c',
+	'#4cc3c9',
+	'#d9d36a',
+	'#8f8fe0',
+	'#e08fc0',
+	'#7ad1a0',
+	'#d1a07a',
+	'#9aa7c9'
+];
+
+export function folderColor(index: number): string {
+	return FOLDER_COLORS[index % FOLDER_COLORS.length];
+}
