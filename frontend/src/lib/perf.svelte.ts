@@ -11,6 +11,7 @@ import {
 	type PerfSnapshot,
 	type Range,
 	type Sample,
+	type Storage,
 	type View
 } from './perf';
 
@@ -37,7 +38,9 @@ export const perf = $state({
 	history: null as PerfHistory | null,
 	historyError: null as string | null,
 	historyLoading: false,
-	range: 'live' as 'live' | Range
+	range: 'live' as 'live' | Range,
+	storage: null as Storage | null,
+	storageError: null as string | null
 });
 
 let previous: PerfSnapshot | null = null;
@@ -129,6 +132,19 @@ export function selectRange(range: 'live' | Range): void {
 		return;
 	}
 	void loadHistory(range);
+}
+
+/** Lit l'occupation disque ; rien n'est gardé côté serveur, d'où l'appel direct. */
+export async function loadStorage(): Promise<void> {
+	try {
+		const response = await fetch(`${apiBase()}/api/admin/storage`, { cache: 'no-store' });
+		if (!response.ok) throw new Error(String(response.status));
+		perf.storage = (await response.json()) as Storage;
+		perf.storageError = null;
+	} catch (error) {
+		perf.storageError = error instanceof Error ? error.message : String(error);
+		perf.storage = null;
+	}
 }
 
 /** Démarre les mesures ; rend la fonction qui les arrête. */

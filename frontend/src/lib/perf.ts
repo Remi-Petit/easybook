@@ -109,6 +109,61 @@ export type PerfHistory = {
 	points: PerfHistoryPoint[];
 };
 
+/** Résumé de la bibliothèque, tiré du catalogue en mémoire. */
+export type StorageLibrary = {
+	books: number;
+	/** Livres dont le nombre de pages a pu être compté. */
+	withPages: number;
+	/** Somme des pages connues (chapitres pour un EPUB). */
+	pages: number;
+	bytes: number;
+};
+
+/** Miniatures JPEG sur disque et en mémoire. */
+export type StorageCovers = {
+	diskFiles: number;
+	diskBytes: number;
+	memoryEntries: number;
+	memoryBytes: number;
+	/** Plafond du cache mémoire (`limits.cover_cache`). */
+	memoryBudget: number;
+};
+
+/** Cache disque des nombres de pages (`pages.json`). */
+export type StoragePages = {
+	fileBytes: number;
+	/** Comptages en mémoire. */
+	entries: number;
+	/** Plafond du cache (`limits.page_counts`). */
+	capacity: number;
+};
+
+export type StorageDatabase = {
+	name: string;
+	bytes: number;
+	walBytes: number;
+	shmBytes: number;
+	totalBytes: number;
+};
+
+/** Empreinte du code déployé. */
+export type StorageApp = {
+	binaryBytes: number;
+	/** Build de l'interface à côté de l'API, si trouvé. */
+	uiBuildBytes: number | null;
+};
+
+/** Espace disque de l'application (`GET /api/admin/storage`). */
+export type Storage = {
+	library: StorageLibrary;
+	covers: StorageCovers;
+	pages: StoragePages;
+	databases: StorageDatabase[];
+	app: StorageApp;
+	/** Bases + couvertures + comptages. */
+	totalBytes: number;
+};
+
 /** Un livre lu en ce moment. */
 export type PerfReading = {
 	rel: string;

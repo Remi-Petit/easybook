@@ -195,6 +195,22 @@ async fn performance_history_aggregates_stored_measurements() {
 }
 
 #[tokio::test]
+async fn storage_summarizes_the_library_and_the_data() {
+    let (_dir, app) = library();
+    // Le résumé de la bibliothèque est calculé en même temps que le catalogue.
+    let (status, _) = json(&app, "/api/books").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = json(&app, "/api/admin/storage").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["library"]["books"], 4);
+    assert!(body["library"]["bytes"].as_u64().unwrap() > 0);
+    assert_eq!(body["databases"].as_array().unwrap().len(), 2);
+    assert!(body["app"]["binaryBytes"].as_u64().unwrap() > 0);
+    assert!(body["totalBytes"].as_u64().is_some());
+}
+
+#[tokio::test]
 async fn performance_lists_the_books_being_read() {
     let (_dir, app) = library();
     let (status, _, _) = call(&app, "/api/page?path=mangas%2FT1.cbz&index=0").await;

@@ -154,6 +154,7 @@ async fn run(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
         _ => state,
     };
 
+    let state = state.with_data_dir(accounts_dir(&root));
     let state = enable_accounts(state, &root)?;
     let state = attach_history(state, &root);
 

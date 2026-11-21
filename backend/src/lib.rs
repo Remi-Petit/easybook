@@ -13,6 +13,7 @@
 //! - [`resize`] : planches réduites à la largeur de l'écran.
 //! - [`pages`] : nombre de pages d'un livre (comptage, cache).
 //! - [`perf_history`] : historique des mesures RAM/CPU (SQLite, 30 jours max).
+//! - [`storage`] : espace disque (bibliothèque, couvertures, bases, code).
 //! - [`watcher`] : interprétation des événements du système de fichiers.
 //! - [`config`] : configuration (`config.yml`).
 
@@ -31,6 +32,7 @@ pub mod perf_history;
 pub mod readings;
 pub mod resize;
 pub mod rewrite;
+pub mod storage;
 pub mod thumbnail;
 pub mod watcher;
 pub mod write;

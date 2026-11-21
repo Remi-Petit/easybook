@@ -11,23 +11,35 @@
 		DEFAULT_INTERVAL_MS,
 		RANGES,
 		WINDOW_MS,
+		loadStorage,
 		perf,
 		selectRange,
 		watchPerformance
 	} from '$lib/perf.svelte';
 
-	type Tab = 'ram' | 'cpu';
+	type Tab = 'ram' | 'cpu' | 'storage';
 	let tab = $state<Tab>('ram');
 
 	const tabs = [
 		{ id: 'ram', label: 'perf.tab.ram' },
-		{ id: 'cpu', label: 'perf.tab.cpu' }
+		{ id: 'cpu', label: 'perf.tab.cpu' },
+		{ id: 'storage', label: 'perf.tab.storage' }
 	] as const;
 
 	onMount(() => watchPerformance());
 
+	// L'occupation disque change lentement (et coûte deux parcours de dossiers) :
+	// une lecture à l'ouverture de l'onglet, puis un rafraîchissement par minute.
+	$effect(() => {
+		if (tab !== 'storage') return;
+		void loadStorage();
+		const timer = setInterval(() => void loadStorage(), 60_000);
+		return () => clearInterval(timer);
+	});
+
 	const snapshot = $derived(perf.snapshot);
 	const view = $derived(perf.view);
+	const storage = $derived(perf.storage);
 	const memory = $derived(snapshot?.memory ?? null);
 	const liveSeconds = $derived(snapshot?.settings?.liveSecs ?? DEFAULT_INTERVAL_MS / 1000);
 	/** 2 s ou 0,5 s : une décimale seulement quand c'est utile. */
@@ -166,6 +178,12 @@
 	const hashSecs = $derived((app?.hashUsec ?? 0) / 1e6);
 	const guardShare = $derived(apiCpuSecs > 0 ? (guardSecs / apiCpuSecs) * 100 : 0);
 	const guardAvgMs = $derived(app && app.guardCalls > 0 ? (guardSecs * 1000) / app.guardCalls : 0);
+
+	// Stockage : tout ce que l'application pose sur le disque, livres compris.
+	const databaseBytes = $derived(
+		(storage?.databases ?? []).reduce((total, database) => total + database.totalBytes, 0)
+	);
+	const footprint = $derived(storage ? storage.totalBytes + storage.library.bytes : 0);
 </script>
 
 <svelte:head>
@@ -194,7 +212,11 @@
 <div class="page">
 	<section class="intro">
 		<h1>{t('perf.title')}</h1>
-		<p>{t('perf.subtitle', { seconds: liveSecondsLabel })}</p>
+		<p>
+			{tab === 'storage'
+				? t('perf.storage.subtitle')
+				: t('perf.subtitle', { seconds: liveSecondsLabel })}
+		</p>
 	</section>
 
 	{#if perf.error && !view}
@@ -453,7 +475,7 @@
 					</div>
 				</section>
 			</div>
-		{:else}
+		{:else if tab === 'cpu'}
 			<div class="perf-panel" role="tabpanel" id="panel-cpu" aria-labelledby="tab-cpu">
 				<div class="perf-grid">
 					<section class="perf-card perf-stat">
@@ -557,6 +579,128 @@
 						</table>
 					</div>
 				</section>
+			</div>
+		{:else}
+			<div class="perf-panel" role="tabpanel" id="panel-storage" aria-labelledby="tab-storage">
+				{#if perf.storageError}
+					<p class="notice">{t('perf.storage.error', { error: perf.storageError })}</p>
+				{:else if !storage}
+					<p class="notice">{t('perf.storage.loading')}</p>
+				{:else}
+					<div class="perf-grid">
+						<section class="perf-card perf-stat">
+							<h2>{t('perf.storage.dataTotal')}</h2>
+							<p class="stat-value">{formatBytes(footprint)}</p>
+							<p class="stat-sub">
+								{t('perf.storage.dataParts', {
+									library: formatBytes(storage.library.bytes),
+									data: formatBytes(storage.totalBytes)
+								})}
+							</p>
+							<p class="stat-hint">{t('perf.storage.dataHint')}</p>
+						</section>
+
+						<section class="perf-card perf-stat">
+							<h2>{t('perf.storage.library')}</h2>
+							<p class="stat-value">{formatBytes(storage.library.bytes)}</p>
+							<p class="stat-sub">
+								{t('perf.books', { count: storage.library.books })} ·
+								{t('perf.storage.pagesCount', { count: storage.library.pages })}
+							</p>
+							<p class="stat-hint">
+								{t('perf.storage.libraryHint', {
+									known: formatNumber(storage.library.withPages),
+									total: formatNumber(storage.library.books)
+								})}
+							</p>
+						</section>
+					</div>
+
+					<div class="perf-grid">
+						<section class="perf-card">
+							<h2>{t('perf.storage.covers')}</h2>
+							<p class="stat-line">
+								<span>{t('perf.storage.coversDisk')}</span>
+								<span>
+									{formatBytes(storage.covers.diskBytes)} · {t('perf.entries', {
+										count: storage.covers.diskFiles
+									})}
+								</span>
+							</p>
+							<p class="stat-line">
+								<span>{t('perf.storage.coversMemory')}</span>
+								<span>
+									{formatBytes(storage.covers.memoryBytes)} · {t('perf.entries', {
+										count: storage.covers.memoryEntries
+									})}
+								</span>
+							</p>
+							<p class="stat-hint">
+								{t('perf.storage.coversHint', { budget: formatBytes(storage.covers.memoryBudget) })}
+							</p>
+						</section>
+
+						<section class="perf-card">
+							<h2>{t('perf.storage.pageCache')}</h2>
+							<p class="stat-line">
+								<span>{t('perf.storage.pageCacheFile')}</span>
+								<span>{formatBytes(storage.pages.fileBytes)}</span>
+							</p>
+							<p class="stat-line">
+								<span>{t('perf.storage.pageCacheEntries')}</span>
+								<span>
+									{formatNumber(storage.pages.entries)} / {formatNumber(storage.pages.capacity)}
+								</span>
+							</p>
+							<p class="stat-hint">{t('perf.storage.pageCacheHint')}</p>
+						</section>
+					</div>
+
+					<section class="perf-card">
+						<h2>
+							{t('perf.storage.databases')}
+							<span class="perf-count">{formatBytes(databaseBytes)}</span>
+						</h2>
+						<div class="table-wrap">
+							<table class="perf-table">
+								<thead>
+									<tr>
+										<th>{t('perf.storage.database')}</th>
+										<th>{t('perf.storage.main')}</th>
+										<th>{t('perf.storage.wal')}</th>
+										<th>{t('perf.storage.total')}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each storage.databases as database (database.name)}
+										<tr>
+											<td>{database.name}</td>
+											<td>{formatBytes(database.bytes)}</td>
+											<td>{formatBytes(database.walBytes)}</td>
+											<td>{formatBytes(database.totalBytes)}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+						<p class="stat-hint">{t('perf.storage.databasesHint')}</p>
+					</section>
+
+					<section class="perf-card">
+						<h2>{t('perf.storage.app')}</h2>
+						<p class="stat-line">
+							<span>{t('perf.storage.binary')}</span>
+							<span>{formatBytes(storage.app.binaryBytes)}</span>
+						</p>
+						{#if storage.app.uiBuildBytes !== null}
+							<p class="stat-line">
+								<span>{t('perf.storage.ui')}</span>
+								<span>{formatBytes(storage.app.uiBuildBytes)}</span>
+							</p>
+						{/if}
+						<p class="stat-hint">{t('perf.storage.appHint')}</p>
+					</section>
+				{/if}
 			</div>
 		{/if}
 	{/if}
