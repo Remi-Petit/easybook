@@ -3359,8 +3359,23 @@ a.link-more {
 }
 
 .user-link {
-	display: grid;
+	display: flex;
+	align-items: center;
+	gap: 10px;
 	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/* Initiales ou visage : rond, net, et jamais déformé par un nom long. */
+.avatar {
+	flex: none;
+	border-radius: 50%;
+	background: var(--panel);
+}
+
+/* Nom et rôle empilés : ils restent lisibles à côté de l'avatar. */
+.user-text {
+	display: grid;
 	min-width: 0;
 }
 
