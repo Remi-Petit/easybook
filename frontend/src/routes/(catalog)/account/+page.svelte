@@ -14,9 +14,9 @@
 	} from '$lib/auth';
 	import BookCard from '$lib/components/BookCard.svelte';
 	import PasswordField from '$lib/components/PasswordField.svelte';
-	import { t } from '$lib/i18n/state.svelte';
+	import { formatNumber, t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
-	import { isFinished } from '$lib/progress';
+	import { completedSeries, isFinished } from '$lib/progress';
 	import { notify } from '$lib/toasts.svelte';
 
 	let { data }: { data: { session: Session } } = $props();
@@ -52,6 +52,9 @@
 	// Les livres terminés : la liste du compte, un peu plus longue que celle du
 	// magasin partagé (60 entrées) — on redemande jusqu'à 200 au serveur.
 	let finished = $state<BookProgress[]>([]);
+	// Les chiffres du compte (`summary`) viennent de la même réponse : ils
+	// portent sur **toutes** les lectures, pas seulement les 200 dernières.
+	let summary = $state<ReadingHistory['summary'] | null>(null);
 	let readingLoaded = $state(false);
 
 	onMount(async () => {
@@ -63,6 +66,7 @@
 
 		const result = await call<ReadingHistory>('GET', '/api/read/history?limit=200');
 		if (result.ok) {
+			summary = result.data.summary;
 			finished = result.data.recent.filter((entry) => isFinished(entry.page, entry.pages));
 		}
 		readingLoaded = true;
@@ -75,6 +79,21 @@
 			return book ? [book] : [];
 		})
 	);
+
+	/** Séries terminées : les dossiers dont tous les livres sont finis. */
+	const series = $derived(completedSeries(library.books, finished));
+
+	/** « 2 h 05 », « 47 min », « 12 s » : une durée se lit d'un coup d'œil. */
+	function duration(seconds: number): string {
+		const total = Math.max(0, Math.round(seconds));
+		if (total < 60) return t('account.reading.duration.seconds', { count: total });
+		const minutes = Math.round(total / 60);
+		if (minutes < 60) return t('account.reading.duration.minutes', { count: minutes });
+		return t('account.reading.duration.hours', {
+			hours: formatNumber(Math.floor(minutes / 60)),
+			minutes: String(minutes % 60).padStart(2, '0')
+		});
+	}
 
 	async function changePassword(event: SubmitEvent) {
 		event.preventDefault();
@@ -140,6 +159,24 @@
 		<div id="account-panel" class="tab-panel" role="tabpanel" aria-labelledby="account-tab-{tab}">
 			<div class="admin-stack">
 				{#if tab === 'reading'}
+					<div class="perf-grid compact">
+						<section class="perf-card perf-stat">
+							<h2>{t('account.reading.kpi.books')}</h2>
+							<p class="stat-value">{formatNumber(summary?.finished ?? 0)}</p>
+						</section>
+						<section class="perf-card perf-stat">
+							<h2>{t('account.reading.kpi.time')}</h2>
+							<p class="stat-value">{duration(summary?.seconds ?? 0)}</p>
+						</section>
+						<section class="perf-card perf-stat">
+							<h2>{t('account.reading.kpi.series')}</h2>
+							<p class="stat-value">{formatNumber(series.done)}</p>
+							<p class="stat-sub">
+								{t('account.reading.kpi.seriesTotal', { count: series.total })}
+							</p>
+						</section>
+					</div>
+
 					<section class="panel-card">
 						<h2>
 							{t('account.reading.title')}

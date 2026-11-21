@@ -86,6 +86,9 @@ pub struct Summary {
     pub finished: i64,
     /// Pages (ou chapitres) cumulés : une approximation de l'effort de lecture.
     pub pages: i64,
+    /// Temps de lecture cumulé, en secondes : la durée de chaque session
+    /// (voir `sessions`), les unes derrière les autres.
+    pub seconds: i64,
     /// Dernière activité, `0` si l'utilisateur n'a jamais lu.
     pub last_at: i64,
 }
@@ -279,10 +282,11 @@ impl Progress {
         Ok(rows)
     }
 
-    /// Les chiffres d'un utilisateur (une seule passe sur la table).
+    /// Les chiffres d'un utilisateur : une requête par table (les deux sont
+    /// indexées sur `user_id`).
     pub fn summary(&self, user: &str) -> rusqlite::Result<Summary> {
         let conn = self.lock();
-        conn.query_row(
+        let mut summary = conn.query_row(
             "SELECT COUNT(*),
                     COALESCE(SUM(CASE WHEN pages > 0 AND page + 1 >= pages THEN 1 ELSE 0 END), 0),
                     COALESCE(SUM(page + 1), 0),
@@ -295,10 +299,21 @@ impl Progress {
                     books: row.get(0)?,
                     finished: row.get(1)?,
                     pages: row.get(2)?,
+                    seconds: 0,
                     last_at: row.get(3)?,
                 })
             },
-        )
+        )?;
+        // Une session dure de sa première à sa dernière position : les silences
+        // de plus de `IDLE_SECS` n'en font pas partie, ils ouvrent une session.
+        summary.seconds = conn.query_row(
+            "SELECT COALESCE(SUM(MAX(last_at - started_at, 0)), 0)
+               FROM reading_sessions
+              WHERE user_id = ?1",
+            params![user],
+            |row| row.get(0),
+        )?;
+        Ok(summary)
     }
 
     /// Tout ce qu'affiche la page d'administration, en une fois.
@@ -411,9 +426,30 @@ mod tests {
         assert_eq!(summary.finished, 1);
         assert_eq!(summary.pages, 11);
         assert!(summary.last_at > 0);
+        // Deux positions dans deux livres : deux sessions, chacune d'une durée
+        // nulle ici (une seule position) — le temps ne s'invente pas.
+        assert_eq!(summary.seconds, 0);
 
         // Chaque utilisateur ne voit que ses lignes.
         assert_eq!(progress.recent("u2", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn summary_adds_up_the_time_spent_reading() {
+        let progress = Progress::open_in_memory().unwrap();
+        progress.save("u1", &entry("a.cbz", 1, 10)).unwrap();
+        progress.save("u2", &entry("c.cbz", 4, 10)).unwrap();
+        // La session de `u1` a duré 90 s : on la vieillit d'autant.
+        progress
+            .lock()
+            .execute(
+                "UPDATE reading_sessions SET started_at = last_at - 90 WHERE user_id = 'u1'",
+                [],
+            )
+            .unwrap();
+
+        assert_eq!(progress.summary("u1").unwrap().seconds, 90);
+        assert_eq!(progress.summary("u2").unwrap().seconds, 0);
     }
 
     #[test]

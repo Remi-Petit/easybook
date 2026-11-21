@@ -12,6 +12,7 @@
 
 import type { BookInfo } from './api';
 import { call, type BookProgress } from './auth';
+import { parentOf } from './catalog';
 import { notePosition } from './reading.svelte';
 
 /** Fenêtre de regroupement, en millisecondes. */
@@ -98,6 +99,44 @@ export function seriesProgress(
 		if (entry && isFinished(entry.page, entry.pages)) done += 1;
 	}
 	return { done, total: books.length };
+}
+
+/** Une série, c'est au moins deux tomes : un dossier qui n'en range qu'un n'en est pas une. */
+export const SERIES_MIN_BOOKS = 2;
+
+/**
+ * Séries terminées : un dossier dont **tous** les livres sont finis.
+ *
+ * Chaque livre est rattaché au dossier qui le range (`parentOf`) — un livre,
+ * un seul dossier — donc une catégorie et ses sous-dossiers ne se comptent pas
+ * deux fois. Les livres posés à la racine n'appartiennent à aucune série, et un
+ * dossier qui ne range qu'un livre n'est pas une série (voir `SERIES_MIN_BOOKS`).
+ */
+export function completedSeries(
+	books: BookInfo[],
+	items: BookProgress[]
+): { done: number; total: number } {
+	const finished = new Set(
+		items.filter((item) => isFinished(item.page, item.pages)).map((item) => item.book)
+	);
+	const series = new Map<string, { done: number; total: number }>();
+	for (const book of books) {
+		const folder = parentOf(book.rel);
+		if (!folder) continue;
+		const entry = series.get(folder) ?? { done: 0, total: 0 };
+		entry.total += 1;
+		if (finished.has(book.rel)) entry.done += 1;
+		series.set(folder, entry);
+	}
+
+	let done = 0;
+	let total = 0;
+	for (const entry of series.values()) {
+		if (entry.total < SERIES_MIN_BOOKS) continue;
+		total += 1;
+		if (entry.done === entry.total) done += 1;
+	}
+	return { done, total };
 }
 
 if (typeof window !== 'undefined') {

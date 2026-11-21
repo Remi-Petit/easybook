@@ -89,7 +89,8 @@ export type ReadingSession = {
 
 /** Ce que rend `GET /api/admin/users/{id}/read/history`. */
 export type ReadingHistory = {
-	summary: { books: number; finished: number; pages: number; lastAt: number };
+	/** `seconds` : temps de lecture cumulé, sessions additionnées. */
+	summary: { books: number; finished: number; pages: number; seconds: number; lastAt: number };
 	recent: BookProgress[];
 	sessions: ReadingSession[];
 };

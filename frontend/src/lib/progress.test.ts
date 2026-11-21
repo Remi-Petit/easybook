@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BookInfo } from './api';
 import type { BookProgress } from './auth';
-import { inProgress, isFinished, percentRead, seriesProgress } from './progress';
+import { completedSeries, inProgress, isFinished, percentRead, seriesProgress } from './progress';
 
 describe('percentRead', () => {
 	it('compte la page courante déjà lue', () => {
@@ -107,5 +107,66 @@ describe('seriesProgress', () => {
 		const books = [book('t1.cbz')];
 		const items = [entry('autre/t9.cbz', 99, 100)];
 		expect(seriesProgress(books, items)).toEqual({ done: 0, total: 1 });
+	});
+});
+
+describe('completedSeries', () => {
+	const book = (rel: string): BookInfo => ({
+		rel,
+		name: rel,
+		folder: '',
+		format: 'cbz',
+		readable: true,
+		size: 1,
+		modified: 1,
+		pages: 100,
+		title: rel
+	});
+
+	const entry = (book: string, page: number, pages: number): BookProgress => ({
+		book,
+		title: book,
+		format: 'cbz',
+		page,
+		pages,
+		startedAt: 1,
+		updatedAt: 2
+	});
+
+	it('compte une série quand tous ses tomes sont finis', () => {
+		const books = [book('mangas/A/T1.cbz'), book('mangas/A/T2.cbz')];
+		const items = [entry('mangas/A/T1.cbz', 99, 100), entry('mangas/A/T2.cbz', 99, 100)];
+		expect(completedSeries(books, items)).toEqual({ done: 1, total: 1 });
+	});
+
+	it('laisse une série en cours dès qu’un tome manque', () => {
+		const books = [book('mangas/A/T1.cbz'), book('mangas/A/T2.cbz')];
+		const items = [entry('mangas/A/T1.cbz', 99, 100), entry('mangas/A/T2.cbz', 40, 100)];
+		expect(completedSeries(books, items)).toEqual({ done: 0, total: 1 });
+	});
+
+	it('ne prend pas un dossier d’un seul livre pour une série', () => {
+		const books = [book('mangas/One-shot.cbz'), book('mangas/A/T1.cbz'), book('mangas/A/T2.cbz')];
+		const items = [entry('mangas/One-shot.cbz', 99, 100)];
+		// Le dossier `mangas` ne range qu'un livre : seule `mangas/A` est une série.
+		expect(completedSeries(books, items)).toEqual({ done: 0, total: 1 });
+	});
+
+	it('ignore les livres posés à la racine', () => {
+		const books = [book('Seul.cbz')];
+		const items = [entry('Seul.cbz', 99, 100)];
+		expect(completedSeries(books, items)).toEqual({ done: 0, total: 0 });
+	});
+
+	it('rattache chaque livre à un seul dossier, pas à ses ancêtres', () => {
+		const books = [
+			book('mangas/A/T1.cbz'),
+			book('mangas/A/T2.cbz'),
+			book('mangas/A/Bonus/Art.cbz'),
+			book('mangas/A/Bonus/Guide.cbz')
+		];
+		const items = books.map((item) => entry(item.rel, 99, 100));
+		// Deux dossiers rangent des livres : la série et son recueil bonus.
+		expect(completedSeries(books, items)).toEqual({ done: 2, total: 2 });
 	});
 });

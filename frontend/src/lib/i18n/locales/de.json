@@ -366,6 +366,16 @@
 	"account.tab.reading": "Lesen",
 	"account.reading.title": "Gelesene Bücher",
 	"account.reading.empty": "Noch kein Buch beendet.",
+	"account.reading.kpi.books": "Gelesene Bücher",
+	"account.reading.kpi.time": "Lesezeit",
+	"account.reading.kpi.series": "Abgeschlossene Reihen",
+	"account.reading.kpi.seriesTotal": {
+		"one": "von {count} Reihe",
+		"other": "von {count} Reihen"
+	},
+	"account.reading.duration.seconds": "{count} s",
+	"account.reading.duration.minutes": "{count} Min.",
+	"account.reading.duration.hours": "{hours} Std. {minutes}",
 	"account.password.none": "Dieses Konto meldet sich nur über den Identitätsanbieter an. Sie können zusätzlich ein Passwort festlegen.",
 	"account.password.current": "Aktuelles Passwort",
 	"account.password.new": "Neues Passwort",

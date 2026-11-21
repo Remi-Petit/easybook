@@ -366,6 +366,16 @@
 	"account.tab.reading": "Lectura",
 	"account.reading.title": "Libros terminados",
 	"account.reading.empty": "Aún no hay ningún libro terminado.",
+	"account.reading.kpi.books": "Libros leídos",
+	"account.reading.kpi.time": "Tiempo de lectura",
+	"account.reading.kpi.series": "Sagas terminadas",
+	"account.reading.kpi.seriesTotal": {
+		"one": "de {count} saga",
+		"other": "de {count} sagas"
+	},
+	"account.reading.duration.seconds": "{count} s",
+	"account.reading.duration.minutes": "{count} min",
+	"account.reading.duration.hours": "{hours} h {minutes}",
 	"account.password.none": "Esta cuenta inicia sesión solo con el proveedor de identidad. También puede definir una contraseña.",
 	"account.password.current": "Contraseña actual",
 	"account.password.new": "Nueva contraseña",
