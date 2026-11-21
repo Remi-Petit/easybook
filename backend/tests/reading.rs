@@ -219,6 +219,85 @@ async fn a_reader_can_mark_a_book_unread() {
 }
 
 #[tokio::test]
+async fn a_reader_can_pin_a_book_and_a_series() {
+    let site = site();
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    std::fs::write(site.dir.path().join("T1.cbz"), b"x").unwrap();
+    std::fs::create_dir_all(site.dir.path().join("mangas")).unwrap();
+    let reader = site.session_for(&alice);
+
+    let empty = site.get("/api/read/pins", Some(&reader)).await;
+    assert_eq!(empty.status, StatusCode::OK);
+    assert_eq!(empty.json().as_array().unwrap().len(), 0);
+
+    for path in ["T1.cbz", "mangas"] {
+        let reply = site
+            .request(
+                "PUT",
+                &format!("/api/read/pins?path={path}"),
+                Some(&reader),
+                None,
+                &[],
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::NO_CONTENT, "{path}");
+    }
+
+    let pins = site.get("/api/read/pins", Some(&reader)).await.json();
+    let pins = pins.as_array().unwrap();
+    assert_eq!(pins.len(), 2);
+    // La plus récente d'abord : le dossier vient d'être épinglé.
+    assert_eq!(pins[0]["item"], "mangas");
+    assert_eq!(pins[0]["title"], "mangas");
+    assert_eq!(pins[1]["item"], "T1.cbz");
+    assert_eq!(pins[1]["title"], "T1");
+
+    // Détacher, puis un chemin inconnu : rien à épingler.
+    let removed = site
+        .request(
+            "DELETE",
+            "/api/read/pins?path=T1.cbz",
+            Some(&reader),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(removed.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        site.get("/api/read/pins", Some(&reader))
+            .await
+            .json()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let missing = site
+        .request(
+            "PUT",
+            "/api/read/pins?path=inconnu",
+            Some(&reader),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+
+    // Les épingles sont personnelles.
+    let other = site.add_user("bob", Role::User, Some(PASSWORD));
+    let other = site.session_for(&other);
+    assert_eq!(
+        site.get("/api/read/pins", Some(&other))
+            .await
+            .json()
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
+#[tokio::test]
 async fn an_unknown_account_is_not_found() {
     let site = site();
     let admin = site.admin().await;

@@ -42,6 +42,14 @@ fn now() -> i64 {
         .map_or(0, |elapsed| elapsed.as_secs() as i64)
 }
 
+/// L'instant en millisecondes : deux épingles de suite se départagent même
+/// dans la même seconde.
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as i64)
+}
+
 /// Ce qu'un lecteur envoie : sa position dans un livre.
 #[derive(Debug, Clone)]
 pub struct Entry {
@@ -104,6 +112,17 @@ pub struct History {
     pub summary: Summary,
     pub recent: Vec<BookProgress>,
     pub sessions: Vec<Session>,
+}
+
+/// Un livre ou une série épinglé « à regarder plus tard ».
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Pin {
+    /// Chemin du livre ou du dossier dans la bibliothèque.
+    pub item: String,
+    /// Titre retenu à l'épinglage : un repli, le catalogue fait mieux.
+    pub title: String,
+    pub pinned_at: i64,
 }
 
 /// La tranche d'historique demandée.
@@ -180,7 +199,17 @@ impl Progress {
                  pages      INTEGER NOT NULL
              );
              CREATE INDEX IF NOT EXISTS reading_sessions_user
-                 ON reading_sessions(user_id, last_at DESC);",
+                 ON reading_sessions(user_id, last_at DESC);
+             CREATE TABLE IF NOT EXISTS reading_pins(
+                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                 user_id   TEXT NOT NULL,
+                 item      TEXT NOT NULL,
+                 title     TEXT NOT NULL,
+                 pinned_at INTEGER NOT NULL,
+                 UNIQUE (user_id, item)
+             );
+             CREATE INDEX IF NOT EXISTS reading_pins_recent
+                 ON reading_pins(user_id, pinned_at DESC);",
         )?;
         Ok(Self {
             conn: Mutex::new(conn),
@@ -243,8 +272,7 @@ impl Progress {
         tx.commit()
     }
 
-    /// Oublie la position d'un livre : il redevient « non lu ».
-    ///
+    /// Oublie la position d'un livre : il redevient « non lu ».    ///
     /// Les sessions du livre partent avec elle — sinon le temps de lecture
     /// continuerait de compter un livre effacé de l'historique. Rend le nombre
     /// de positions supprimées (`0` si le livre n'avait pas été commencé).
@@ -406,6 +434,55 @@ impl Progress {
             )?,
         })
     }
+
+    /// Les épingles de `user`, de la plus récente à la plus ancienne.
+    pub fn pins(&self, user: &str) -> rusqlite::Result<Vec<Pin>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT item, title, pinned_at
+               FROM reading_pins
+              WHERE user_id = ?1
+              ORDER BY pinned_at DESC, id DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![user], |row| {
+                Ok(Pin {
+                    item: row.get(0)?,
+                    title: row.get(1)?,
+                    pinned_at: row.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Épingle un livre ou une série. Déjà épinglé : l'épingle repart en tête
+    /// (elle est réécrite, donc son identifiant croît) sans être dédoublée.
+    pub fn pin(&self, user: &str, item: &str, title: &str) -> rusqlite::Result<()> {
+        let item = clip(item);
+        let title = clip(title);
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM reading_pins WHERE user_id = ?1 AND item = ?2",
+            params![user, item],
+        )?;
+        tx.execute(
+            "INSERT INTO reading_pins (user_id, item, title, pinned_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![user, item, title, now_ms()],
+        )?;
+        tx.commit()
+    }
+
+    /// Détache une épingle. Rend `true` si elle existait.
+    pub fn unpin(&self, user: &str, item: &str) -> rusqlite::Result<bool> {
+        let removed = self.lock().execute(
+            "DELETE FROM reading_pins WHERE user_id = ?1 AND item = ?2",
+            params![user, item],
+        )?;
+        Ok(removed > 0)
+    }
 }
 
 /// Tronque un texte envoyé par le client (nom de fichier, titre) et remplace
@@ -433,7 +510,11 @@ impl Progress {
                  book TEXT NOT NULL, title TEXT NOT NULL, started_at INTEGER NOT NULL,
                  last_at INTEGER NOT NULL, end_page INTEGER NOT NULL,
                  pages INTEGER NOT NULL);
-             CREATE INDEX reading_sessions_user ON reading_sessions(user_id, last_at DESC);",
+             CREATE INDEX reading_sessions_user ON reading_sessions(user_id, last_at DESC);
+             CREATE TABLE reading_pins(
+                 id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL,
+                 item TEXT NOT NULL, title TEXT NOT NULL, pinned_at INTEGER NOT NULL,
+                 UNIQUE (user_id, item));",
         )?;
         Ok(Self {
             conn: Mutex::new(conn),
@@ -609,6 +690,29 @@ mod tests {
         assert_eq!(progress.sessions("u1", Window::all()).unwrap().len(), 1);
         // Oublier deux fois ne casse rien.
         assert_eq!(progress.forget("u1", "a.cbz").unwrap(), 0);
+    }
+
+    #[test]
+    fn pins_are_kept_per_user_and_newest_first() {
+        let progress = Progress::open_in_memory().unwrap();
+        progress.pin("u1", "mangas/A", "A").unwrap();
+        progress.pin("u1", "mangas/A/T1.cbz", "T1").unwrap();
+        progress.pin("u2", "autre.cbz", "Autre").unwrap();
+
+        let mine = progress.pins("u1").unwrap();
+        assert_eq!(mine.len(), 2);
+        assert_eq!(mine[0].item, "mangas/A/T1.cbz", "la plus récente d'abord");
+        assert_eq!(progress.pins("u2").unwrap().len(), 1);
+
+        // Épingler deux fois ne dédouble pas : l'épingle remonte en tête.
+        progress.pin("u1", "mangas/A", "A").unwrap();
+        let mine = progress.pins("u1").unwrap();
+        assert_eq!(mine.len(), 2);
+        assert_eq!(mine[0].item, "mangas/A");
+
+        assert!(progress.unpin("u1", "mangas/A").unwrap());
+        assert!(!progress.unpin("u1", "mangas/A").unwrap());
+        assert_eq!(progress.pins("u1").unwrap().len(), 1);
     }
 
     #[test]

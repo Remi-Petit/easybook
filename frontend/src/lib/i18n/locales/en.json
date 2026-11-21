@@ -18,6 +18,7 @@
 	"home.in": "in",
 	"home.live": "live",
 	"home.continue": "Continue reading",
+	"home.watchLater": "Watch later",
 	"rail.previous": "Scroll left",
 	"rail.next": "Scroll right",
 	"search.placeholder": "Filter by title, series, format…",
@@ -81,7 +82,9 @@
 	"card.markUnread": "Mark as unread",
 	"card.markedRead": "Marked as read",
 	"card.markedUnread": "Marked as unread",
-	"card.noPages": "Page count unknown: this book cannot be marked as read",	"card.noBooks": "no book",
+	"card.noPages": "Page count unknown: this book cannot be marked as read",
+	"card.pin": "Pin",
+	"card.unpin": "Unpin",	"card.noBooks": "no book",
 	"card.pages": {
 		"one": "{count} page",
 		"other": "{count} pages"

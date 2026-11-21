@@ -378,6 +378,10 @@ pub fn routes(state: AppState) -> Router {
         )
         .route("/api/read/history", get(get_my_reading))
         .route(
+            "/api/read/pins",
+            get(get_pins).put(pin_item).delete(unpin_item),
+        )
+        .route(
             "/api/admin/users/{id}/read/history",
             get(get_reading_history),
         )
@@ -1483,6 +1487,83 @@ async fn forget_progress(
             }
             StatusCode::NO_CONTENT.into_response()
         }
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct PinQuery {
+    /// Chemin du livre ou du dossier dans la bibliothèque.
+    path: String,
+}
+
+/// Titre d'une épingle, tiré du disque : un livre a le titre que lui donne le
+/// catalogue, un dossier son nom. `None` si le chemin n'existe pas.
+fn pin_title(root: &Path, rel: &str) -> Option<String> {
+    if let Some(path) = file_in(root, rel) {
+        return Some(library::title_of(path.file_name()?.to_str()?));
+    }
+    // La racine entière n'est pas une série : on ne l'épingle pas.
+    if rel.is_empty() {
+        return None;
+    }
+    folder_in(root, rel)?;
+    Some(rel.rsplit('/').next()?.to_string())
+}
+
+/// `GET /api/read/pins` — les livres et séries « à regarder plus tard ».
+async fn get_pins(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return (StatusCode::NOT_FOUND, "historique désactivé").into_response();
+    };
+    let id = user.id.clone();
+    match tokio::task::spawn_blocking(move || progress.pins(&id)).await {
+        Ok(Ok(pins)) => ([(header::CACHE_CONTROL, "no-store")], Json(pins)).into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+/// `PUT /api/read/pins?path=` — épingle un livre ou une série.
+async fn pin_item(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+    Query(query): Query<PinQuery>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    // Ce qui n'existe pas ne s'épingle pas — et le titre vient du disque.
+    let Some(title) = pin_title(&state.root(), &query.path) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let id = user.id.clone();
+    let item = query.path;
+    match tokio::task::spawn_blocking(move || progress.pin(&id, &item, &title)).await {
+        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+/// `DELETE /api/read/pins?path=` — détache une épingle.
+async fn unpin_item(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+    Query(query): Query<PinQuery>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    let id = user.id.clone();
+    let item = query.path;
+    match tokio::task::spawn_blocking(move || progress.unpin(&id, &item)).await {
+        Ok(Ok(_)) => StatusCode::NO_CONTENT.into_response(),
         Ok(Err(e)) => internal_error(e).into_response(),
         Err(e) => internal_error(e).into_response(),
     }

@@ -18,6 +18,7 @@
 	"home.in": "en",
 	"home.live": "en directo",
 	"home.continue": "Continuar la lectura",
+	"home.watchLater": "Para más tarde",
 	"rail.previous": "Desplazar a la izquierda",
 	"rail.next": "Desplazar a la derecha",
 	"search.placeholder": "Filtrar por título, serie, formato…",
@@ -83,6 +84,8 @@
 	"card.markedRead": "Marcado como leído",
 	"card.markedUnread": "Marcado como no leído",
 	"card.noPages": "Número de páginas desconocido: no se puede marcar como leído",
+	"card.pin": "Fijar",
+	"card.unpin": "Quitar",
 	"card.noBooks": "ningún libro",
 	"card.pages": {
 		"one": "{count} página",

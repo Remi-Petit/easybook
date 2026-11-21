@@ -6,6 +6,7 @@
 	import { progressOf } from '$lib/reading.svelte';
 	import { notify } from '$lib/toasts.svelte';
 	import CardMenu from '$lib/components/CardMenu.svelte';
+	import PinButton from '$lib/components/PinButton.svelte';
 
 	let { book }: { book: BookInfo } = $props();
 
@@ -26,21 +27,25 @@
 	// déclarer aucune. L'API répond alors 404 : on bascule sur un repli.
 	let failed = $state(false);
 
-	const menu = $derived([
-		{
-			id: 'read',
-			label: t('card.markRead'),
-			disabled: finished || !canMarkRead(book),
-			hint: canMarkRead(book) ? undefined : t('card.noPages'),
-			run: () => mark('read')
-		},
-		{
-			id: 'unread',
-			label: t('card.markUnread'),
-			disabled: !started,
-			run: () => mark('unread')
-		}
-	]);
+	const menu = $derived(
+		finished
+			? [
+					{
+						id: 'unread',
+						label: t('card.markUnread'),
+						run: () => mark('unread')
+					}
+				]
+			: canMarkRead(book)
+				? [
+						{
+							id: 'read',
+							label: t('card.markRead'),
+							run: () => mark('read')
+						}
+					]
+				: []
+	);
 
 	async function mark(what: 'read' | 'unread') {
 		const outcome = await markBook(book, what === 'read');
@@ -68,6 +73,7 @@
 			</span>
 		{/if}
 		<CardMenu label={t('card.actionsBook')} items={menu} />
+		<PinButton item={book.rel} title={book.title} />
 	</span>
 
 	<span class="body">

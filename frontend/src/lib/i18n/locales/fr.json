@@ -18,6 +18,7 @@
 	"home.in": "dans",
 	"home.live": "en temps réel",
 	"home.continue": "Poursuivre la lecture",
+	"home.watchLater": "À regarder plus tard",
 	"rail.previous": "Faire défiler vers la gauche",
 	"rail.next": "Faire défiler vers la droite",
 	"search.placeholder": "Filtrer par titre, série, format…",
@@ -81,7 +82,9 @@
 	"card.markUnread": "Marquer comme non lu",
 	"card.markedRead": "Marqué comme lu",
 	"card.markedUnread": "Marqué comme non lu",
-	"card.noPages": "Nombre de pages inconnu : impossible de marquer ce livre comme lu",	"card.noBooks": "aucun livre",
+	"card.noPages": "Nombre de pages inconnu : impossible de marquer ce livre comme lu",
+	"card.pin": "Épingler",
+	"card.unpin": "Détacher",	"card.noBooks": "aucun livre",
 	"card.pages": {
 		"one": "{count} page",
 		"other": "{count} pages"

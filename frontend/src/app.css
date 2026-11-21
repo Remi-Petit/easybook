@@ -935,7 +935,7 @@ code {
 
 .card-dots {
 	position: absolute;
-	left: 8px;
+	right: 8px;
 	bottom: 12px;
 	z-index: 3;
 	display: grid;
@@ -952,18 +952,54 @@ code {
 		background 120ms ease;
 }
 
+/* L'épingle : en bas à gauche, au survol — et toujours visible quand l'élément
+   est épinglé, pour qu'on voie ce qui est dans « à regarder plus tard ». */
+.card-pin {
+	position: absolute;
+	left: 8px;
+	bottom: 12px;
+	z-index: 3;
+	display: grid;
+	place-items: center;
+	width: 26px;
+	height: 26px;
+	background: rgba(8, 8, 12, 0.78);
+	border: 1px solid rgba(255, 255, 255, 0.14);
+	border-radius: 8px;
+	color: var(--muted);
+	opacity: 0;
+	transition:
+		opacity 120ms ease,
+		color 120ms ease,
+		background 120ms ease;
+}
+
+.card-pin.pinned {
+	opacity: 1;
+	color: var(--accent);
+}
+
 .card:hover .card-dots,
-.card:focus-within .card-dots {
+.card:focus-within .card-dots,
+.card:hover .card-pin,
+.card:focus-within .card-pin {
 	opacity: 1;
 }
 
-.card-dots:hover {
+.card-dots:hover,
+.card-pin:hover {
 	background: rgba(22, 22, 30, 0.95);
+	color: var(--text);
 }
 
-/* Pas de survol au tactile : les points restent visibles. */
+.card-pin.pinned:hover {
+	color: var(--accent);
+}
+
+/* Pas de survol au tactile : les commandes restent visibles. */
 @media (hover: none) {
-	.card-dots {
+	.card-dots,
+	.card-pin {
 		opacity: 1;
 	}
 }

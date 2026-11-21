@@ -2,6 +2,7 @@
 	import { coverUrl, type BookInfo, type FolderInfo } from '$lib/api';
 	import { folderUrl, subtreeBooks } from '$lib/catalog';
 	import CardMenu from '$lib/components/CardMenu.svelte';
+	import PinButton from '$lib/components/PinButton.svelte';
 	import { t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
 	import { isFinished, seriesProgress } from '$lib/progress';
@@ -34,25 +35,18 @@
 		return entry ? isFinished(entry.page, entry.pages) : false;
 	};
 
-	// « Lu » n'a de sens que s'il reste au moins un tome à marquer ; « non lu »
-	// que si un tome de la série a été commencé.
+	// « Lu » n'a de sens que s'il reste un tome à marquer ; « non lu » quand la
+	// série est entièrement lue. Une seule action, celle qui s'applique.
 	const anyLeftToRead = $derived(books.some((book) => canMarkRead(book) && !isDone(book.rel)));
-	const anyStarted = $derived(books.some((book) => reading.items.some((item) => item.book === book.rel)));
+	const allDone = $derived(books.length > 0 && books.every((book) => isDone(book.rel)));
 
-	const menu = $derived([
-		{
-			id: 'read',
-			label: t('card.markRead'),
-			disabled: !anyLeftToRead,
-			run: () => mark(true)
-		},
-		{
-			id: 'unread',
-			label: t('card.markUnread'),
-			disabled: !anyStarted,
-			run: () => mark(false)
-		}
-	]);
+	const menu = $derived(
+		allDone
+			? [{ id: 'unread', label: t('card.markUnread'), run: () => mark(false) }]
+			: anyLeftToRead
+				? [{ id: 'read', label: t('card.markRead'), run: () => mark(true) }]
+				: []
+	);
 
 	async function mark(read: boolean) {
 		const outcome = await markSeries(library.books, folder.rel, read);
@@ -81,6 +75,7 @@
 			</span>
 		{/if}
 		<CardMenu label={t('card.actionsSeries')} items={menu} />
+		<PinButton item={folder.rel} title={folder.name} />
 	</span>
 
 	<span class="body">

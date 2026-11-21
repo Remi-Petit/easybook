@@ -17,6 +17,7 @@
 	import { t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
 	import { formatColor } from '$lib/library-stats';
+	import { startPins } from '$lib/pins.svelte';
 	import { loadReading, startReading } from '$lib/reading.svelte';
 	/** Les deux groupes que l'on peut afficher : des séries ou des livres. */
 	type Kind = 'series' | 'books';
@@ -160,6 +161,7 @@
 	onMount(() => {
 		startReading();
 		void loadReading();
+		startPins();
 	});
 
 	/** La barre, pour refermer ses menus de l'extérieur. */

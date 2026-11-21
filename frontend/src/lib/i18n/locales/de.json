@@ -18,6 +18,7 @@
 	"home.in": "in",
 	"home.live": "in Echtzeit",
 	"home.continue": "Weiterlesen",
+	"home.watchLater": "Später ansehen",
 	"rail.previous": "Nach links blättern",
 	"rail.next": "Nach rechts blättern",
 	"search.placeholder": "Nach Titel, Serie, Format filtern…",
@@ -83,6 +84,8 @@
 	"card.markedRead": "Als gelesen markiert",
 	"card.markedUnread": "Als ungelesen markiert",
 	"card.noPages": "Seitenzahl unbekannt: das Buch kann nicht als gelesen markiert werden",
+	"card.pin": "Anheften",
+	"card.unpin": "Lösen",
 	"card.noBooks": "kein Buch",
 	"card.pages": {
 		"one": "{count} Seite",
