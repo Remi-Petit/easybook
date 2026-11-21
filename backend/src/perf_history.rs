@@ -594,4 +594,14 @@ mod tests {
         // Un échantillonnage lent ne descend pas sous sa propre période.
         assert_eq!(step_for(3_600_000, 300_000), 300_000);
     }
+
+    #[test]
+    fn a_30_second_sampling_still_fills_every_window() {
+        // Changer sample_secs ne casse pas les tranches : elles s'adaptent.
+        assert_eq!(step_for(3 * 60_000, 30_000), 30_000); // 6 points
+        assert_eq!(step_for(3_600_000, 30_000), 30_000); // 120 points
+        assert_eq!(step_for(86_400_000, 30_000), 120_000); // 720 points
+        assert_eq!(step_for(7 * 86_400_000, 30_000), 900_000); // 672 points
+        assert_eq!(step_for(30 * 86_400_000, 30_000), 3_600_000); // 720 points
+    }
 }
