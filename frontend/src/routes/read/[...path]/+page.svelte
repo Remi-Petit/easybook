@@ -4,6 +4,7 @@
 	import { bookUrl, rawUrl, type BookDetail } from '$lib/api';
 	import { folderUrl, parentOf } from '$lib/catalog';
 	import { t } from '$lib/i18n/state.svelte';
+	import { setCurrentBook } from '$lib/reading.svelte';
 	import ComicReader from '$lib/reader/ComicReader.svelte';
 	import EpubReader from '$lib/reader/EpubReader.svelte';
 	import PdfReader from '$lib/reader/PdfReader.svelte';
@@ -30,6 +31,16 @@
 		};
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
+	});
+
+	// L'interface sait quel livre est ouvert : il reste dans « poursuivre la
+	// lecture » même terminé, tant qu'on ne l'a pas quitté. L'effet suit aussi
+	// un passage d'un livre à l'autre sans démonter la page.
+	$effect(() => {
+		const path = rel;
+		if (!path) return;
+		setCurrentBook(path);
+		return () => setCurrentBook(null);
 	});
 
 	// Le sommaire est relu à chaque changement de livre : c'est une lecture

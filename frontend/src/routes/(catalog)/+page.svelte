@@ -3,6 +3,7 @@
 	import BookCard from '$lib/components/BookCard.svelte';
 	import LibraryBrowser from '$lib/components/LibraryBrowser.svelte';
 	import { library, reload } from '$lib/library.svelte';
+	import { inProgress } from '$lib/progress';
 	import { reading } from '$lib/reading.svelte';
 	import { t } from '$lib/i18n/state.svelte';
 
@@ -11,7 +12,7 @@
 	 * serveur — un livre retiré du dossier disparaît de la rangée.
 	 */
 	const continuing = $derived(
-		reading.items.flatMap((entry) => {
+		inProgress(reading.items, reading.current).flatMap((entry) => {
 			const book = library.books.find((candidate) => candidate.rel === entry.book);
 			return book ? [book] : [];
 		})

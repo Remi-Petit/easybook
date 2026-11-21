@@ -15,6 +15,8 @@ import { call, type BookProgress, type ReadingHistory } from './auth';
 export const reading = $state({
 	/** Du plus récemment lu au plus ancien. */
 	items: [] as BookProgress[],
+	/** Le livre ouvert dans le lecteur, s'il y en a un. */
+	current: null as string | null,
 	loaded: false
 });
 
@@ -74,4 +76,15 @@ export function notePosition(rel: string, page: number, pages: number): void {
 /** La position enregistrée d'un livre, s'il a été commencé. */
 export function progressOf(rel: string): BookProgress | undefined {
 	return reading.items.find((item) => item.book === rel);
+}
+
+/**
+ * Le livre ouvert dans le lecteur, ou `null` en le quittant.
+ *
+ * Sert à la rangée « poursuivre la lecture » : un livre **terminé** en disparaît,
+ * sauf celui qu'on est encore en train de lire (on ne quitte pas un livre qu'on
+ * vient de finir dans la seconde).
+ */
+export function setCurrentBook(rel: string | null): void {
+	reading.current = rel;
 }

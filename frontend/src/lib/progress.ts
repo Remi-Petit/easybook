@@ -10,7 +10,7 @@
 // `reading` est mis à jour tout de suite, pour que la couverture soit juste au
 // retour dans le catalogue, sans attendre le serveur.
 
-import { call } from './auth';
+import { call, type BookProgress } from './auth';
 import { notePosition } from './reading.svelte';
 
 /** Fenêtre de regroupement, en millisecondes. */
@@ -58,6 +58,26 @@ export function percentRead(page: number, pages: number): number | null {
 	if (!Number.isFinite(page) || !Number.isFinite(pages) || pages <= 0) return null;
 	const fraction = (page + 1) / pages;
 	return Math.max(0, Math.min(100, Math.round(fraction * 100)));
+}
+
+/**
+ * Le livre est-il terminé ? La dernière page enregistrée est la dernière.
+ *
+ * Un total inconnu (`0`) ne permet pas de conclure : le livre reste en cours.
+ */
+export function isFinished(page: number, pages: number): boolean {
+	return Number.isFinite(page) && Number.isFinite(pages) && pages > 0 && page + 1 >= pages;
+}
+
+/**
+ * Les livres à proposer dans « poursuivre la lecture ».
+ *
+ * Un livre terminé en sort, **sauf** celui qui est encore ouvert dans le
+ * lecteur (`current`) : on ne fait pas disparaître un livre sous les yeux de
+ * celui qui vient d'en lire la dernière page.
+ */
+export function inProgress(items: BookProgress[], current: string | null): BookProgress[] {
+	return items.filter((item) => !isFinished(item.page, item.pages) || item.book === current);
 }
 
 if (typeof window !== 'undefined') {
