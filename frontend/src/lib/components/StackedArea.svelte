@@ -69,6 +69,16 @@
 	}
 
 	const shown = $derived(hover ?? (times.length > 0 ? times.length - 1 : null));
+
+	/** Durée couverte, en unité lisible : « 3 min », « 24 h », « 30 j ». */
+	const spanLabel = $derived.by(() => {
+		const minutes = windowMs / 60_000;
+		if (minutes < 60) return `${formatNumber(minutes, 1)} ${t('perf.unit.minute')}`;
+		const hours = minutes / 60;
+		if (hours < 48) return `${formatNumber(hours, hours < 10 ? 1 : 0)} ${t('perf.unit.hour')}`;
+		const days = hours / 24;
+		return `${formatNumber(days, days < 10 ? 1 : 0)} ${t('perf.unit.day')}`;
+	});
 </script>
 
 <div class="chart" bind:clientWidth={width}>
@@ -97,7 +107,7 @@
 		{/if}
 
 		<text class="tick" x={PAD.left} y={height - 6} text-anchor="start">
-			−{formatNumber(windowMs / 60000, 1)} {t('perf.unit.minute')}
+			−{spanLabel}
 		</text>
 		<text class="tick" x={width - PAD.right} y={height - 6} text-anchor="end">{t('perf.now')}</text>
 	</svg>

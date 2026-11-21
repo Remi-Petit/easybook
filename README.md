@@ -243,6 +243,7 @@ sources C++ avec le projet.
 | `GET /api/book?path=` | fiche d'un livre (titre, chapitres ou nombre de pages) |
 | `GET /api/cover?path=&v=` | couverture, en vignette JPEG (`v` = date de modification, pour le cache) |
 | `GET /api/admin/performance` | mémoire et CPU du conteneur, process par process (page *Administration → Performances*, administrateurs) |
+| `GET /api/admin/performance/history?range=` | historique agrégé (`3m`, `1h`, `24h`, `7d`, `30d`), servi par tranches d'au plus ~800 points |
 | `GET /api/chapter?path=&index=` | document d'un chapitre (HTML, URL réécrites) |
 | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 | `GET /api/page?path=&index=` | page d'une bande dessinée |
@@ -399,6 +400,16 @@ limits:
   max_concurrent_reads: 64   # lectures de livre simultanées (les autres attendent)
   max_blocking_threads: 128  # threads bloquants du runtime Tokio
   open_archives: 16          # archives ZIP gardées ouvertes (0 : aucune)
+
+# Historique de la page Performances (SQLite, dans le volume de données).
+# Le serveur enregistre une mesure toutes les `sample_secs` et la garde
+# `retention_days` jours (30 au maximum) ; la page se rafraîchit toutes les
+# `live_secs`. `enabled: false` désactive l'enregistrement.
+performance:
+  enabled: true
+  sample_secs: 10
+  retention_days: 30
+  live_secs: 2
 ```
 
 L'image Docker embarque ce fichier (`/app/config.yml`) ; pour changer un plafond,
@@ -416,7 +427,7 @@ Variables d'environnement :
 | `PORT` | `8091` | port de l'API |
 | `PUBLIC_EASYBOOK_API` (frontend) | `http://<hôte>:8091` | adresse de l'API vue par le navigateur — `/` quand c'est le **même serveur** qui sert les deux (cas de l'image Docker) |
 | `EASYBOOK_MODE` | `prod` | `dev` : connexion directe à Keycloak depuis le formulaire (développement uniquement) |
-| `EASYBOOK_DATA_DIR` | `<books>/.easybook` | dossier de la base des comptes (`accounts.db`) — **à monter en volume** (`/data` dans l'image) |
+| `EASYBOOK_DATA_DIR` | `<books>/.easybook` | dossier des bases (`accounts.db`, `metrics.db`) — **à monter en volume** (`/data` dans l'image) |
 | `EASYBOOK_ADMIN_EMAIL`, `EASYBOOK_ADMIN_PASSWORD` | `admin@easybook.local`, aléatoire | administrateur créé au premier démarrage |
 
 ## Comptes et connexion
