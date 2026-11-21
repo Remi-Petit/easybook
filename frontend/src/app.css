@@ -365,6 +365,51 @@ code {
 	margin-top: 0;
 }
 
+/* La barre du catalogue : la recherche, puis les filtres (format, type). */
+.browse-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
+.browse-bar .search-box {
+	flex: 1 1 260px;
+	max-width: 420px;
+}
+
+/* Le champ porte l'icône : il réserve la place à sa gauche. */
+.browse-bar .search {
+	width: 100%;
+	max-width: none;
+	height: 42px;
+	padding: 0 14px 0 36px;
+}
+
+.browse-bar .tool-btn {
+	height: 42px;
+}
+
+/* « Tout effacer » tant qu'un filtre est posé. */
+.tool-btn.plain {
+	background: transparent;
+	border-color: transparent;
+	color: var(--muted);
+}
+
+.tool-btn.plain:hover {
+	border-color: var(--line);
+	color: var(--text);
+}
+
+/* Nombre de résultats d'un choix, aligné au bout du menu. */
+.menu-count {
+	margin-left: auto;
+	color: var(--muted);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
 .search:focus {
 	border-color: var(--accent);
 }
@@ -1778,11 +1823,6 @@ code {
 	overflow-x: auto;
 }
 
-/* Tags de format sous la barre de recherche : le groupe respire sous l'input. */
-.range-tabs.tags {
-	margin: 10px 0 0;
-}
-
 .range-tabs button:disabled {
 	cursor: default;
 	opacity: 0.45;
@@ -2528,6 +2568,16 @@ select option {
 
 .menu-pop input {
 	accent-color: var(--accent);
+}
+
+/* Un choix qui ne donnerait aucun résultat reste visible, mais inerte. */
+.menu-pop label.dimmed {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.menu-pop label.dimmed:hover {
+	background: none;
 }
 
 .table-scroll {
