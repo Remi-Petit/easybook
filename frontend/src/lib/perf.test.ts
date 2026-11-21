@@ -1,5 +1,15 @@
 import { describe as suite, expect, it } from 'vitest';
-import { describe, niceCeil, colorFor, toSample, bookName, type PerfSnapshot } from './perf';
+import {
+	describe,
+	niceCeil,
+	colorFor,
+	toSample,
+	bookName,
+	formatSampleTime,
+	historyToSamples,
+	percentOf,
+	type PerfSnapshot
+} from './perf';
 
 function snapshot(atMs: number, processes: PerfSnapshot['processes'], usec: number | null = null) {
 	return {
@@ -130,5 +140,73 @@ suite('colorFor', () => {
 	it('est stable', () => {
 		expect(colorFor('inconnu')).toBe(colorFor('inconnu'));
 		expect(colorFor('easybook')).toBe('#e0a54a');
+	});
+});
+
+suite('percentOf', () => {
+	it('garde deux chiffres utiles selon la taille de la part', () => {
+		expect(percentOf(82)).toBe('82 %');
+		expect(percentOf(4.1)).toBe('4,1 %');
+	});
+
+	it("n'affiche pas 0 % pour un poste qui existe", () => {
+		expect(percentOf(0.008)).toBe('< 0,1 %');
+		expect(percentOf(0)).toBe('0 %');
+	});
+});
+
+suite('historyToSamples', () => {
+	it("convertit les tranches et ne garde que la fenêtre demandée", () => {
+		const samples = historyToSamples(
+			[
+				{
+					atMs: 1_000,
+					memAvg: 10,
+					memMax: 12,
+					cpuPctAvg: 1,
+					cpuPctMax: 2,
+					groups: {
+						node: { rssAvg: 4, rssMax: 5, cpuPctAvg: 0.5, cpuPctMax: 1 }
+					}
+				},
+				{ atMs: 5_000, memAvg: 20, memMax: 22, cpuPctAvg: 2, cpuPctMax: 3, groups: {} }
+			],
+			2_000
+		);
+		expect(samples).toHaveLength(1);
+		expect(samples[0]).toMatchObject({ at: 5_000, memory: 20, cpuPct: 2, groups: {} });
+	});
+
+	it('garde les groupes avec leur moyenne', () => {
+		const [sample] = historyToSamples(
+			[
+				{
+					atMs: 5_000,
+					memAvg: 20,
+					memMax: 22,
+					cpuPctAvg: 2,
+					cpuPctMax: 3,
+					groups: {
+						node: { rssAvg: 4, rssMax: 5, cpuPctAvg: 0.5, cpuPctMax: 1 }
+					}
+				}
+			],
+			0
+		);
+		expect(sample.groups.node).toEqual({ rss: 4, cpuPct: 0.5 });
+	});
+});
+
+suite('formatSampleTime', () => {
+	const at = Date.UTC(2026, 10, 21, 14, 35, 20);
+
+	it("donne l'heure précise sur une fenêtre courte", () => {
+		expect(formatSampleTime(at, 3 * 60_000)).toMatch(/\d{2}:\d{2}:\d{2}/);
+	});
+
+	it("ajoute la date au-delà d'un jour", () => {
+		const label = formatSampleTime(at, 30 * 24 * 3_600_000);
+		expect(label).toMatch(/\d{4}/);
+		expect(label).toMatch(/\d{1,2}:\d{2}/);
 	});
 });

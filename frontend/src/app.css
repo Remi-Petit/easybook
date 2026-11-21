@@ -1623,6 +1623,75 @@ code {
 	gap: 18px;
 }
 
+/* Trois chiffres côte à côte : la même grille, un cran plus serrée. */
+.perf-grid.compact {
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+/* Card avec un camembert : l'anneau à gauche, son détail à droite. */
+.perf-split {
+	display: grid;
+	grid-template-columns: 168px minmax(0, 1fr);
+	gap: 22px;
+	align-items: center;
+}
+
+@media (max-width: 720px) {
+	.perf-split {
+		grid-template-columns: 1fr;
+	}
+}
+
+.donut {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 1;
+}
+
+.donut svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.donut-center {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2px;
+	text-align: center;
+	pointer-events: none;
+}
+
+.donut-total {
+	font-size: 15px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+.donut-caption {
+	color: var(--muted);
+	font-size: 11px;
+}
+
+/* Part cliquable : elle ouvre le détail qu'elle représente. */
+.donut .pickable {
+	cursor: pointer;
+	transition:
+		opacity 120ms ease,
+		stroke-width 120ms ease;
+}
+
+.donut .pickable:hover,
+.donut .pickable:focus-visible {
+	opacity: 0.8;
+	outline: none;
+	stroke-width: 16;
+}
+
 .perf-card {
 	min-width: 0;
 	padding: 18px 20px 20px;
@@ -1631,7 +1700,16 @@ code {
 	border-radius: var(--radius);
 }
 
-.perf-card h2 {
+/* Titre posé au-dessus d'un tableau qui n'est pas dans une card de stats. */
+.table-head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 18px 16px 0;
+}
+
+.perf-card h2,
+.table-head h2 {
 	display: flex;
 	align-items: center;
 	gap: 10px;
@@ -1650,6 +1728,49 @@ code {
 	font-size: 11px;
 	letter-spacing: 0;
 	text-transform: none;
+}
+
+/* Sélecteur de période de l'historique (direct, 1 h, 24 h, 7 j, 30 j). */
+.range-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0 0 14px;
+}
+
+.range-tabs button {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	color: var(--muted);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+.range-tabs button:hover {
+	border-color: var(--muted);
+	color: var(--text);
+}
+
+.range-tabs button[aria-pressed='true'] {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.range-tabs button:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* Le même groupe de pastilles, sans la marge de bas de page et sur une seule
+   ligne (défilement horizontal s'il manque de la place). */
+.range-tabs.flush {
+	flex-wrap: nowrap;
+	margin: 0;
+	overflow-x: auto;
 }
 
 .perf-stat .stat-value {
@@ -1682,10 +1803,63 @@ code {
 	font-size: 13px;
 }
 
+/* Pied de card : le lien vers la page qui détaille ce que la card résume. */
+.card-more {
+	display: inline-block;
+	margin-top: 10px;
+	color: var(--accent);
+	font-size: 12.5px;
+}
+
+.card-more:hover {
+	text-decoration: underline;
+}
+
+/* « Voir plus » d'un tableau tronqué : un bouton, pas un lien (il n'ouvre rien). */
+.more-toggle {
+	margin-top: 10px;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--accent);
+	font: inherit;
+	font-size: 12.5px;
+	cursor: pointer;
+}
+
+.more-toggle:hover {
+	text-decoration: underline;
+}
+
+.more-toggle:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.chart {
+	position: relative;
+}
+
 .chart svg {
 	display: block;
 	width: 100%;
 	touch-action: pan-y;
+}
+
+.chart-tip {
+	position: absolute;
+	z-index: 2;
+	padding: 4px 8px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--panel);
+	box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+	color: var(--text);
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	pointer-events: none;
+	transform: translateY(-50%);
 }
 
 .chart .gridline {
@@ -1758,6 +1932,8 @@ code {
 
 .segment-bar span {
 	height: 100%;
+	/* Les largeurs en pourcentage laissent un cheveu vide après arrondi. */
+	flex: 1 1 auto;
 }
 
 .segment-bar span + span {
@@ -1770,6 +1946,29 @@ code {
 	margin: 0;
 	padding: 0;
 	list-style: none;
+}
+
+/* Ligne de barres cliquable : même dessin, la teinte accent au survol. */
+.bar-row {
+    display: block;
+    width: 100%;
+    padding: 0;
+    text-align: left;
+}
+
+.bar-row .bar-label {
+    transition: color 120ms ease;
+}
+
+.bar-row:hover .bar-label,
+.bar-row:focus-visible .bar-label {
+    color: var(--accent);
+}
+
+.bar-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: 4px;
 }
 
 .bar-head {
@@ -1793,6 +1992,11 @@ code {
 
 .table-wrap {
 	overflow-x: auto;
+}
+
+/* Une barre segmentée suivie d'un tableau : le tableau n'est pas collé à elle. */
+.segments + .table-wrap {
+	margin-top: 16px;
 }
 
 .perf-table {
@@ -2161,6 +2365,14 @@ code {
 	font-size: 12px;
 }
 
+/* Un filtre à pastilles tient sur une ligne : il prend la largeur de la barre
+   au lieu d'une colonne de 220 px. */
+.filter.filter-wide {
+	min-width: 0;
+	max-width: none;
+	flex: 1 1 auto;
+}
+
 .filter-reset {
 	padding: 8px 4px;
 	color: var(--accent);
@@ -2466,6 +2678,36 @@ select option {
 .sort-mark {
 	font-size: 12px;
 	opacity: 0.7;
+}
+
+/* Tableau des livres : un chemin peut être long, il se tronque ; les chiffres
+   s'alignent à droite. Largeur fixée pour que la colonne cède la place. */
+.data-table.books-table {
+	min-width: 0;
+	table-layout: fixed;
+}
+
+.books-table [data-col='book'] {
+	width: 44%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.books-table [data-col='folder'] {
+	width: 16%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.books-table [data-col='pages'],
+.books-table [data-col='size'],
+.books-table [data-col='share'] {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.books-table tbody tr {
+	cursor: default;
 }
 
 .user-cell {

@@ -5,7 +5,9 @@
 //! ajouté, renommé ou supprimé est poussé aux navigateurs par WebSocket, sans
 //! rechargement de page et sans sondage.
 
-use easybook::{accounts, api, auth, config, formats, pages, readings, thumbnail, watcher};
+use easybook::{
+    accounts, api, auth, config, formats, pages, perf, perf_history, readings, thumbnail, watcher,
+};
 use notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, new_debouncer};
 use std::path::PathBuf;
@@ -152,7 +154,9 @@ async fn run(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
         _ => state,
     };
 
+    let state = state.with_data_dir(accounts_dir(&root));
     let state = enable_accounts(state, &root)?;
+    let state = attach_history(state, &root);
 
     // Les comptages de pages survivent au redémarrage (sinon chaque PDF est
     // relu en entier au premier scan).
@@ -271,6 +275,61 @@ fn enable_accounts(
         }
     }
     Ok(state.with_auth(auth))
+}
+
+/// Ouvre l'historique des performances et lance son échantillonneur.
+///
+/// La base vit à côté de celle des comptes (`metrics.db`) : même volume, même
+/// sauvegarde. Une erreur d'ouverture ne prive pas la page du direct.
+fn attach_history(state: api::AppState, root: &std::path::Path) -> api::AppState {
+    let settings = config::performance();
+    if !settings.enabled {
+        println!("Historique : désactivé (performance.enabled: false)");
+        return state;
+    }
+    let path = accounts_dir(root).join("metrics.db");
+    match perf_history::History::open(&path, &settings) {
+        Ok(history) => {
+            println!(
+                "Historique : {} (toutes les {} s, {} jours)",
+                path.display(),
+                settings.sample_secs,
+                settings.retention_days
+            );
+            let history = Arc::new(history);
+            spawn_history(state.clone(), Arc::clone(&history), settings.sample_secs);
+            state.with_history(history)
+        }
+        Err(e) => {
+            eprintln!("⚠️  Historique indisponible ({e}) : la page reste en direct.");
+            state
+        }
+    }
+}
+
+/// Enregistre une mesure toutes les `sample_secs`, avec les mêmes chiffres que
+/// la page (voir `api::AppState::detail`).
+fn spawn_history(state: api::AppState, history: Arc<perf_history::History>, sample_secs: u64) {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(sample_secs));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut previous: Option<perf::Snapshot> = None;
+        loop {
+            ticker.tick().await;
+            let detail = state.detail();
+            let Ok(snapshot) = tokio::task::spawn_blocking(move || perf::snapshot(detail)).await
+            else {
+                continue;
+            };
+            if let Some(before) = previous.as_ref()
+                && let Some(measurement) = perf_history::Measurement::between(before, &snapshot)
+                && let Err(e) = history.record(&measurement)
+            {
+                eprintln!("Historique : écriture impossible ({e})");
+            }
+            previous = Some(snapshot);
+        }
+    });
 }
 
 /// Dossier de la base des comptes : `EASYBOOK_DATA_DIR`, sinon `books/.easybook`.

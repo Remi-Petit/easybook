@@ -135,6 +135,112 @@ async fn performance_describes_this_process() {
 }
 
 #[tokio::test]
+async fn performance_history_is_absent_by_default() {
+    let (_dir, app) = library();
+    let (status, _) = json(&app, "/api/admin/performance/history?range=1h").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn performance_history_aggregates_stored_measurements() {
+    use easybook::{config, perf_history};
+
+    let dir = tempfile::tempdir().unwrap();
+    common::epub(dir.path());
+    let settings = config::Performance {
+        sample_secs: 60,
+        ..Default::default()
+    };
+    let history = std::sync::Arc::new(
+        perf_history::History::open(&dir.path().join("metrics.db"), &settings).unwrap(),
+    );
+    // Deux mesures dans la même minute, il y a deux minutes.
+    let base = perf_history::now_ms() / 60_000 * 60_000 - 120_000;
+    for (index, mem) in [(0_i64, 100_i64), (1, 140)] {
+        history
+            .record(&perf_history::Measurement {
+                at_ms: base + index * 10_000,
+                mem_total: mem,
+                mem_anon: mem / 2,
+                mem_file: mem / 4,
+                mem_kernel: 1,
+                cpu_pct: 5.0,
+                heap_live: 1_000,
+                sessions: 2,
+                sockets: 3,
+                groups: vec![perf_history::GroupMeasurement {
+                    name: "easybook".into(),
+                    rss: mem,
+                    cpu_pct: 5.0,
+                }],
+            })
+            .unwrap();
+    }
+    let (tx, _) = tokio::sync::broadcast::channel(4);
+    let app = api::routes(AppState::new(dir.path(), tx).with_history(history));
+
+    let (status, body) = json(&app, "/api/admin/performance/history?range=1h").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["range"], "1h");
+    assert_eq!(body["stepMs"], 60_000);
+    let points = body["points"].as_array().unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0]["memMax"], 140);
+    assert_eq!(points[0]["groups"]["easybook"]["rssMax"], 140);
+
+    // Fenêtre inconnue : la journée par défaut.
+    let (status, body) = json(&app, "/api/admin/performance/history?range=nope").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["range"], "24h");
+}
+
+#[tokio::test]
+async fn library_stats_describe_the_catalog() {
+    let (_dir, app) = library();
+    // Le résumé est calculé avec le catalogue, pas à la première lecture.
+    let (status, _) = json(&app, "/api/books").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = json(&app, "/api/admin/library/stats").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["totals"]["books"], 4);
+    // `mangas` et `mangas/sous` : les dossiers du catalogue, tous niveaux.
+    assert_eq!(body["totals"]["folders"], 2);
+    assert_eq!(body["totals"]["unreadable"], 0);
+    assert_eq!(body["formats"].as_array().unwrap().len(), 3);
+    // Le détail des dossiers est calculé par le navigateur (deux niveaux :
+    // catégorie, puis dossier d'une catégorie) à partir du catalogue.
+    assert!(body.get("folders").is_none());
+    assert!(body.get("largest").is_none());
+}
+
+#[tokio::test]
+async fn storage_summarizes_the_library_and_the_data() {
+    let (_dir, app) = library();
+    // Le résumé de la bibliothèque est calculé en même temps que le catalogue.
+    let (status, _) = json(&app, "/api/books").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = json(&app, "/api/admin/storage").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["library"]["books"], 4);
+    assert!(body["library"]["bytes"].as_u64().unwrap() > 0);
+    assert_eq!(body["databases"].as_array().unwrap().len(), 2);
+    assert!(body["app"]["binaryBytes"].as_u64().unwrap() > 0);
+    // Les parts s'additionnent : l'application seule, puis les livres.
+    let number = |field: &str| body[field].as_u64().unwrap();
+    assert_eq!(
+        number("appBytes"),
+        number("dataBytes") + number("codeBytes")
+    );
+    assert_eq!(
+        number("totalBytes"),
+        number("appBytes") + body["library"]["bytes"].as_u64().unwrap()
+    );
+    assert!(!body["library"]["largest"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn performance_lists_the_books_being_read() {
     let (_dir, app) = library();
     let (status, _, _) = call(&app, "/api/page?path=mangas%2FT1.cbz&index=0").await;

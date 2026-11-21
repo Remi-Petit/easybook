@@ -89,6 +89,21 @@ pub struct Detail {
     pub guard_usec: u64,
 }
 
+/// Réglages de l'historique, lus par la page (`config.yml`, section
+/// `performance`).
+#[derive(Serialize, Debug, Clone, Copy, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Settings {
+    /// `false` : aucune mesure enregistrée, la page reste en direct.
+    pub history: bool,
+    /// Fréquence d'enregistrement côté serveur, en secondes.
+    pub sample_secs: u64,
+    /// Fréquence de rafraîchissement de la page, en secondes (fraction acceptée).
+    pub live_secs: f64,
+    /// Durée de conservation, en jours.
+    pub retention_days: u32,
+}
+
 #[derive(Serialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -106,6 +121,8 @@ pub struct Snapshot {
     pub processes: Vec<Process>,
     pub app: App,
     pub readings: crate::readings::Overview,
+    /// Fréquences et rétention de l'historique.
+    pub settings: Settings,
 }
 
 pub fn snapshot(detail: Detail) -> Snapshot {
@@ -116,6 +133,7 @@ pub fn snapshot(detail: Detail) -> Snapshot {
     // compteurs du cgroup décrivent toute la machine, pas l'application.
     let memory = memory();
     let scoped = memory.is_some();
+    let performance = crate::config::performance();
     Snapshot {
         supported,
         at_ms: SystemTime::now()
@@ -151,6 +169,12 @@ pub fn snapshot(detail: Detail) -> Snapshot {
             hash_usec,
         },
         readings: crate::readings::overview(),
+        settings: Settings {
+            history: performance.enabled,
+            sample_secs: performance.sample_secs,
+            live_secs: performance.live_secs,
+            retention_days: performance.retention_days,
+        },
     }
 }
 

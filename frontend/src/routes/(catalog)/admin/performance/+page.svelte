@@ -1,27 +1,89 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { formatBytes } from '$lib/api';
+	import { formatBytes, formatDateTime } from '$lib/api';
 	import BarList from '$lib/components/BarList.svelte';
 	import InfoTip from '$lib/components/InfoTip.svelte';
 	import SegmentBar from '$lib/components/SegmentBar.svelte';
 	import StackedArea from '$lib/components/StackedArea.svelte';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
-	import { bookName, colorFor, formatDuration, formatPercent, processLabel } from '$lib/perf';
-	import { INTERVAL_MS, WINDOW_MS, perf, watchPerformance } from '$lib/perf.svelte';
+	import { bookName, colorFor, formatDuration, formatPercent, percentOf, processLabel } from '$lib/perf';
+	import {
+		DEFAULT_INTERVAL_MS,
+		RANGES,
+		WINDOW_MS,
+		loadStorage,
+		perf,
+		selectRange,
+		watchPerformance
+	} from '$lib/perf.svelte';
 
-	type Tab = 'ram' | 'cpu';
-	let tab = $state<Tab>('ram');
+	type Tab = 'ram' | 'cpu' | 'storage';
+	/** Onglet ouvert à l'arrivée : `?tab=storage` ramène à la bonne vue. */
+	const wanted = page.url.searchParams.get('tab');
+	let tab = $state<Tab>(
+		wanted === 'storage' || wanted === 'cpu' || wanted === 'ram' ? wanted : 'ram'
+	);
 
 	const tabs = [
 		{ id: 'ram', label: 'perf.tab.ram' },
-		{ id: 'cpu', label: 'perf.tab.cpu' }
+		{ id: 'cpu', label: 'perf.tab.cpu' },
+		{ id: 'storage', label: 'perf.tab.storage' }
 	] as const;
 
 	onMount(() => watchPerformance());
 
+	// L'occupation disque change lentement (et coûte deux parcours de dossiers) :
+	// une lecture à l'ouverture de l'onglet, puis un rafraîchissement par minute.
+	$effect(() => {
+		if (tab !== 'storage') return;
+		void loadStorage();
+		const timer = setInterval(() => void loadStorage(), 60_000);
+		return () => clearInterval(timer);
+	});
+
 	const snapshot = $derived(perf.snapshot);
 	const view = $derived(perf.view);
+	const storage = $derived(perf.storage);
 	const memory = $derived(snapshot?.memory ?? null);
+	const liveSeconds = $derived(snapshot?.settings?.liveSecs ?? DEFAULT_INTERVAL_MS / 1000);
+	/** 2 s ou 0,5 s : une décimale seulement quand c'est utile. */
+	const liveSecondsLabel = $derived(
+		formatNumber(liveSeconds, Number.isInteger(liveSeconds) ? 0 : 1)
+	);
+	const historyEnabled = $derived(snapshot?.settings?.history ?? false);
+	/** Horodatage de la mesure affichée, en infobulle sur les grands chiffres. */
+	const measuredAt = $derived(
+		snapshot
+			? t('perf.measuredAt', { time: formatDateTime(snapshot.atMs / 1000) })
+			: ''
+	);
+
+	/** Points de l'historique enregistré (vide tant qu'on est en direct). */
+	const historyPoints = $derived(perf.range === 'live' ? [] : (perf.history?.points ?? []));
+	const historyNames = $derived([
+		...new Set(historyPoints.flatMap((point) => Object.keys(point.groups)))
+	].sort());
+	const historyTimes = $derived(historyPoints.map((point) => point.atMs));
+	const historyWindow = $derived(
+		perf.history ? perf.history.toMs - perf.history.fromMs : WINDOW_MS
+	);
+	const historyRamSeries = $derived(
+		historyNames.map((name) => ({
+			key: name,
+			label: processLabel(name),
+			color: colorFor(name),
+			values: historyPoints.map((point) => point.groups[name]?.rssAvg ?? 0)
+		}))
+	);
+	const historyCpuSeries = $derived(
+		historyNames.map((name) => ({
+			key: name,
+			label: processLabel(name),
+			color: colorFor(name),
+			values: historyPoints.map((point) => point.groups[name]?.cpuPctAvg ?? 0)
+		}))
+	);
 
 	/** Programmes vus dans la fenêtre, dans un ordre fixe pour que les aires ne sautent pas. */
 	const names = $derived(
@@ -106,6 +168,12 @@
 	const cpuCapacity = $derived(snapshot ? (snapshot.cpuLimit ?? snapshot.cpus) : 1);
 	const ticksPerSecond = $derived(snapshot?.clockTicks ?? 100);
 	const minutes = $derived(formatNumber(WINDOW_MS / 60000));
+	/** Libellé de la période affichée : la fenêtre du direct, ou la tranche choisie. */
+	const rangeLabel = $derived(
+		perf.range === 'live'
+			? t('perf.window', { minutes })
+			: t(RANGES.find((entry) => entry.id === perf.range)?.label ?? 'perf.range.24h')
+	);
 
 	// Ce que l'API garde pour elle, et ce que ses sessions coûtent en CPU.
 	const app = $derived(snapshot?.app ?? null);
@@ -115,16 +183,109 @@
 	const hashSecs = $derived((app?.hashUsec ?? 0) / 1e6);
 	const guardShare = $derived(apiCpuSecs > 0 ? (guardSecs / apiCpuSecs) * 100 : 0);
 	const guardAvgMs = $derived(app && app.guardCalls > 0 ? (guardSecs * 1000) / app.guardCalls : 0);
+
+	// Stockage : deux niveaux de lecture — l'application face aux livres, puis
+	// ce qui compose l'application elle-même.
+	const databaseBytes = $derived(
+		(storage?.databases ?? []).reduce((total, database) => total + database.totalBytes, 0)
+	);
+	/** Part d'un poste dans un total, déjà mise en forme (`0,1 %`). */
+	const share = (part: number, total: number) =>
+		percentOf(total > 0 ? (part / total) * 100 : 0);
+	/** Les livres pèsent-ils plus que tout le reste ? La réponse en un regard. */
+	const diskSegments = $derived(
+		storage
+			? [
+					{
+						key: 'library',
+						label: t('perf.storage.library'),
+						value: storage.library.bytes,
+						color: '#5cc98a'
+					},
+					{
+						key: 'app',
+						label: t('perf.storage.appOnly'),
+						value: storage.appBytes,
+						color: colorFor('easybook')
+					}
+				]
+			: []
+	);
+	/** Ce qui prend de la place dans l'application : code, bases, caches. */
+	const appSegments = $derived(
+		storage
+			? [
+					{
+						key: 'binary',
+						label: t('perf.storage.binary'),
+						value: storage.app.binaryBytes,
+						color: colorFor('easybook')
+					},
+					{
+						key: 'ui',
+						label: t('perf.storage.ui'),
+						value: storage.app.uiBuildBytes ?? 0,
+						color: colorFor('node')
+					},
+					{
+						key: 'databases',
+						label: t('perf.storage.databases'),
+						value: databaseBytes,
+						color: '#6aa5e0'
+					},
+					{
+						key: 'covers',
+						label: t('perf.storage.covers'),
+						value: storage.covers.diskBytes,
+						color: '#b98ae0'
+					},
+					{
+						key: 'pages',
+						label: t('perf.storage.pageCache'),
+						value: storage.pages.fileBytes,
+						color: '#4cc3c9'
+					}
+				]
+			: []
+	);
+	/** Ce que les cinq plus gros livres laissent aux autres. */
+	const largestBytes = $derived(
+		(storage?.library.largest ?? []).reduce((total, book) => total + book.size, 0)
+	);
+	const restBytes = $derived(storage ? Math.max(0, storage.library.bytes - largestBytes) : 0);
 </script>
 
 <svelte:head>
 	<title>{t('perf.title')} · easybook</title>
 </svelte:head>
 
+{#snippet rangeTabs()}
+	{#if historyEnabled}
+		<div class="range-tabs" role="group" aria-label={t('perf.range.label')}>
+			{#each RANGES as entry (entry.id)}
+				<button
+					type="button"
+					aria-pressed={perf.range === entry.id}
+					title={entry.id === 'live'
+						? t('perf.range.liveHint', { seconds: liveSecondsLabel })
+						: undefined}
+					onclick={() => selectRange(entry.id)}
+				>
+					{t(entry.label)}
+				</button>
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
 <div class="page">
 	<section class="intro">
 		<h1>{t('perf.title')}</h1>
-		<p>{t('perf.subtitle', { seconds: INTERVAL_MS / 1000 })}</p>
+		<p>
+			{tab === 'storage'
+				? t('perf.storage.subtitle')
+				: t('perf.subtitle', { seconds: liveSecondsLabel })}
+		</p>
 	</section>
 
 	{#if perf.error && !view}
@@ -154,7 +315,7 @@
 				<div class="perf-grid">
 					<section class="perf-card perf-stat">
 						<h2>{t('perf.ram.total')}</h2>
-						<p class="stat-value">{formatBytes(view.memory)}</p>
+						<p class="stat-value" title={measuredAt}>{formatBytes(view.memory)}</p>
 						<p class="stat-sub">
 							{memory?.limit ? t('perf.ram.limit', { limit: formatBytes(memory.limit) }) : t('perf.ram.noLimit')}
 						</p>
@@ -177,15 +338,40 @@
 				<section class="perf-card">
 					<h2>
 						{t('perf.ram.history')}
-						<span class="perf-count">{t('perf.window', { minutes })}</span>
+						<span class="perf-count">{rangeLabel}</span>
 					</h2>
-					<StackedArea
-						times={ramTimes}
-						series={ramSeries}
-						format={formatBytes}
-						windowMs={WINDOW_MS}
-						label={t('perf.ram.history')}
-					/>
+					{@render rangeTabs()}
+					{#if perf.range === 'live'}
+						<StackedArea
+							times={ramTimes}
+							series={ramSeries}
+							format={formatBytes}
+							windowMs={WINDOW_MS}
+							label={t('perf.ram.history')}
+						/>
+					{:else if perf.historyError}
+						<p class="notice">{t('perf.history.error', { error: perf.historyError })}</p>
+					{:else if !perf.history}
+						<p class="notice">{t('perf.history.loading')}</p>
+					{:else if historyTimes.length === 0}
+						<p class="notice">{t('perf.history.empty')}</p>
+					{:else}
+						<StackedArea
+							times={historyTimes}
+							series={historyRamSeries}
+							format={formatBytes}
+							windowMs={historyWindow}
+							label={t('perf.ram.history')}
+						/>
+					{/if}
+					{#if historyEnabled && snapshot?.settings}
+						<p class="stat-hint">
+							{t('perf.history.hint', {
+								sample: formatNumber(snapshot.settings.sampleSecs),
+								days: formatNumber(snapshot.settings.retentionDays)
+							})}
+						</p>
+					{/if}
 				</section>
 
 				<div class="perf-grid">
@@ -358,12 +544,12 @@
 					</div>
 				</section>
 			</div>
-		{:else}
+		{:else if tab === 'cpu'}
 			<div class="perf-panel" role="tabpanel" id="panel-cpu" aria-labelledby="tab-cpu">
 				<div class="perf-grid">
 					<section class="perf-card perf-stat">
 						<h2>{t('perf.cpu.now')}</h2>
-						<p class="stat-value">{formatPercent(view.cpuPct ?? 0)}</p>
+						<p class="stat-value" title={measuredAt}>{formatPercent(view.cpuPct ?? 0)}</p>
 						<p class="stat-sub">{t('perf.cpu.ofCores', { count: Math.round(cpuCapacity * 10) / 10 })}</p>
 						<p class="stat-hint">{t('perf.cpu.hint')}</p>
 					</section>
@@ -398,15 +584,40 @@
 				<section class="perf-card">
 					<h2>
 						{t('perf.cpu.history')}
-						<span class="perf-count">{t('perf.window', { minutes })}</span>
+						<span class="perf-count">{rangeLabel}</span>
 					</h2>
-					<StackedArea
-						times={cpuTimes}
-						series={cpuSeries}
-						format={formatPercent}
-						windowMs={WINDOW_MS}
-						label={t('perf.cpu.history')}
-					/>
+					{@render rangeTabs()}
+					{#if perf.range === 'live'}
+						<StackedArea
+							times={cpuTimes}
+							series={cpuSeries}
+							format={formatPercent}
+							windowMs={WINDOW_MS}
+							label={t('perf.cpu.history')}
+						/>
+					{:else if perf.historyError}
+						<p class="notice">{t('perf.history.error', { error: perf.historyError })}</p>
+					{:else if !perf.history}
+						<p class="notice">{t('perf.history.loading')}</p>
+					{:else if historyTimes.length === 0}
+						<p class="notice">{t('perf.history.empty')}</p>
+					{:else}
+						<StackedArea
+							times={historyTimes}
+							series={historyCpuSeries}
+							format={formatPercent}
+							windowMs={historyWindow}
+							label={t('perf.cpu.history')}
+						/>
+					{/if}
+					{#if historyEnabled && snapshot?.settings}
+						<p class="stat-hint">
+							{t('perf.history.hint', {
+								sample: formatNumber(snapshot.settings.sampleSecs),
+								days: formatNumber(snapshot.settings.retentionDays)
+							})}
+						</p>
+					{/if}
 				</section>
 
 				<section class="perf-card">
@@ -437,6 +648,223 @@
 						</table>
 					</div>
 				</section>
+			</div>
+		{:else}
+			<div class="perf-panel" role="tabpanel" id="panel-storage" aria-labelledby="tab-storage">
+				{#if perf.storageError}
+					<p class="notice">{t('perf.storage.error', { error: perf.storageError })}</p>
+				{:else if !storage}
+					<p class="notice">{t('perf.storage.loading')}</p>
+				{:else}
+					<div class="perf-grid">
+						<section class="perf-card perf-stat">
+							<h2>{t('perf.storage.diskTotal')}</h2>
+							<p class="stat-value">{formatBytes(storage.totalBytes)}</p>
+							<p class="stat-sub">
+								{t('perf.storage.appShare', {
+									size: formatBytes(storage.appBytes),
+									share: share(storage.appBytes, storage.totalBytes)
+								})}
+							</p>
+							<SegmentBar
+								segments={diskSegments}
+								format={formatBytes}
+								shareFormat={percentOf}
+								label={t('perf.storage.diskTotal')}
+							/>
+							<p class="stat-hint">{t('perf.storage.diskHint')}</p>
+						</section>
+
+						<section class="perf-card perf-stat">
+							<h2>{t('perf.storage.appBreakdown')}</h2>
+							<p class="stat-value">{formatBytes(storage.appBytes)}</p>
+							<p class="stat-sub">
+								{t('perf.storage.appParts', {
+									code: formatBytes(storage.codeBytes),
+									data: formatBytes(storage.dataBytes)
+								})}
+							</p>
+							<SegmentBar
+								segments={appSegments}
+								format={formatBytes}
+								shareFormat={percentOf}
+								label={t('perf.storage.appBreakdown')}
+							/>
+							<p class="stat-hint">{t('perf.storage.breakdownHint')}</p>
+						</section>
+					</div>
+
+					<div class="perf-grid">
+						<section class="perf-card">
+							<h2>
+								{t('perf.storage.app')}
+								<span class="perf-count">
+									{t('perf.storage.ofApp', {
+										share: share(storage.codeBytes, storage.appBytes)
+									})}
+								</span>
+							</h2>
+							<p class="stat-line">
+								<span>{t('perf.storage.binary')}</span>
+								<span>{formatBytes(storage.app.binaryBytes)}</span>
+							</p>
+							{#if storage.app.uiBuildBytes !== null}
+								<p class="stat-line">
+									<span>{t('perf.storage.ui')}</span>
+									<span>{formatBytes(storage.app.uiBuildBytes)}</span>
+								</p>
+							{/if}
+							<p class="stat-hint">{t('perf.storage.appHint')}</p>
+						</section>
+
+						<section class="perf-card perf-stat">
+							<h2>{t('perf.storage.library')}</h2>
+							<p class="stat-value">{formatBytes(storage.library.bytes)}</p>
+							<p class="stat-sub">
+								{t('perf.books', { count: storage.library.books })} ·
+								{t('perf.storage.pagesCount', { count: storage.library.pages })}
+							</p>
+							<p class="stat-hint">
+								{t('perf.storage.libraryHint', {
+									known: formatNumber(storage.library.withPages),
+									total: formatNumber(storage.library.books)
+								})}
+							</p>
+							<a class="card-more" href="/admin/library/stats">{t('perf.storage.more')}</a>
+						</section>
+					</div>
+
+					<div class="perf-grid">
+						<section class="perf-card">
+							<h2>
+								{t('perf.storage.covers')}
+								<span class="perf-count">
+									{t('perf.storage.ofApp', {
+										share: share(storage.covers.diskBytes, storage.appBytes)
+									})}
+								</span>
+							</h2>
+							<p class="stat-line">
+								<span>{t('perf.storage.coversDisk')}</span>
+								<span>
+									{formatBytes(storage.covers.diskBytes)} · {t('perf.entries', {
+										count: storage.covers.diskFiles
+									})}
+								</span>
+							</p>
+							<p class="stat-line">
+								<span>{t('perf.storage.coversMemory')}</span>
+								<span>
+									{formatBytes(storage.covers.memoryBytes)} · {t('perf.entries', {
+										count: storage.covers.memoryEntries
+									})}
+								</span>
+							</p>
+							<p class="stat-hint">
+								{t('perf.storage.coversHint', { budget: formatBytes(storage.covers.memoryBudget) })}
+							</p>
+						</section>
+
+						<section class="perf-card">
+							<h2>
+								{t('perf.storage.pageCache')}
+								<span class="perf-count">
+									{t('perf.storage.ofApp', {
+										share: share(storage.pages.fileBytes, storage.appBytes)
+									})}
+								</span>
+							</h2>
+							<p class="stat-line">
+								<span>{t('perf.storage.pageCacheFile')}</span>
+								<span>{formatBytes(storage.pages.fileBytes)}</span>
+							</p>
+							<p class="stat-line">
+								<span>{t('perf.storage.pageCacheEntries')}</span>
+								<span>
+									{formatNumber(storage.pages.entries)} / {formatNumber(storage.pages.capacity)}
+								</span>
+							</p>
+							<p class="stat-hint">{t('perf.storage.pageCacheHint')}</p>
+						</section>
+					</div>
+
+					<section class="perf-card">
+						<h2>
+							{t('perf.storage.databases')}
+							<span class="perf-count">
+								{t('perf.storage.ofApp', {
+									share: share(databaseBytes, storage.appBytes)
+								})}
+							</span>
+						</h2>
+						<div class="table-wrap">
+							<table class="perf-table">
+								<thead>
+									<tr>
+										<th>{t('perf.storage.database')}</th>
+										<th>{t('perf.storage.main')}</th>
+										<th>{t('perf.storage.wal')}</th>
+										<th>{t('perf.storage.total')}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each storage.databases as database (database.name)}
+										<tr>
+											<td>{database.name}</td>
+											<td>{formatBytes(database.bytes)}</td>
+											<td>{formatBytes(database.walBytes)}</td>
+											<td>{formatBytes(database.totalBytes)}</td>
+										</tr>
+									{/each}
+								</tbody>
+								<tfoot>
+									<tr>
+										<td>{t('perf.storage.total')}</td>
+										<td></td>
+										<td></td>
+										<td>{formatBytes(databaseBytes)}</td>
+									</tr>
+								</tfoot>
+							</table>
+						</div>
+						<p class="stat-hint">{t('perf.storage.databasesHint')}</p>
+					</section>
+
+					<section class="perf-card">
+						<h2>
+							{t('perf.storage.largest')}
+							<span class="perf-count">
+								{t('perf.storage.ofLibrary', {
+									share: share(largestBytes, storage.library.bytes)
+								})}
+							</span>
+						</h2>
+						<div class="table-wrap">
+							<table class="perf-table">
+								<thead>
+									<tr>
+										<th>{t('perf.storage.book')}</th>
+										<th>{t('perf.storage.size')}</th>
+										<th>{t('perf.storage.share')}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each storage.library.largest as book (book.rel)}
+										<tr>
+											<td title={book.rel}>{book.rel}</td>
+											<td>{formatBytes(book.size)}</td>
+											<td>{share(book.size, storage.library.bytes)}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+						<p class="stat-hint">
+							{t('perf.storage.largestHint', { rest: formatBytes(restBytes) })}
+						</p>
+						<a class="card-more" href="/admin/library/stats">{t('perf.storage.more')}</a>
+					</section>
+				{/if}
 			</div>
 		{/if}
 	{/if}

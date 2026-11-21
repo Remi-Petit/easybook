@@ -4,7 +4,7 @@
 // instantanées (mémoire). Un taux CPU se calcule donc à partir de deux mesures
 // successives. Ce module ne touche ni au réseau ni à l'état : il se teste seul.
 
-import { formatNumber, t } from './i18n/state.svelte';
+import { formatNumber, intlLocale, t } from './i18n/state.svelte';
 
 export type PerfProcess = {
 	pid: number;
@@ -71,6 +71,116 @@ export type PerfSnapshot = {
 		/** Période du balayage du cache média : délai maximal avant restitution. */
 		mediaSweepSecs: number;
 	};
+	/** Fréquences et rétention de l'historique (`config.yml`, section performance). */
+	settings?: {
+		history: boolean;
+		sampleSecs: number;
+		liveSecs: number;
+		retentionDays: number;
+	};
+};
+
+/** Fenêtres d'historique servies par l'API. */
+export type Range = '3m' | '1h' | '24h' | '7d' | '30d';
+
+/** Un groupe de programmes dans une tranche d'historique. */
+export type PerfHistoryGroup = {
+	rssAvg: number;
+	rssMax: number;
+	cpuPctAvg: number;
+	cpuPctMax: number;
+};
+
+/** Une tranche de l'historique enregistré. */
+export type PerfHistoryPoint = {
+	atMs: number;
+	memAvg: number;
+	memMax: number;
+	cpuPctAvg: number;
+	cpuPctMax: number;
+	groups: Record<string, PerfHistoryGroup>;
+};
+
+export type PerfHistory = {
+	range: Range;
+	fromMs: number;
+	toMs: number;
+	stepMs: number;
+	points: PerfHistoryPoint[];
+};
+
+/** Un des plus gros livres de la bibliothèque. */
+export type StorageBook = {
+	/** Chemin relatif à la racine (`Chainsaw Man/T01.cbz`). */
+	rel: string;
+	size: number;
+	/** Format reconnu (`cbz`, `epub`, `cbr`, `pdf`). */
+	format: string;
+	/** `null` quand le livre n'a pas pu être ouvert. */
+	pages: number | null;
+};
+
+/** Résumé de la bibliothèque, tiré du catalogue en mémoire. */
+export type StorageLibrary = {
+	books: number;
+	/** Livres dont le nombre de pages a pu être compté. */
+	withPages: number;
+	/** Somme des pages connues (chapitres pour un EPUB). */
+	pages: number;
+	bytes: number;
+	/** Les plus gros livres, du plus lourd au plus léger. */
+	largest: StorageBook[];
+};
+
+/** Miniatures JPEG sur disque et en mémoire. */
+export type StorageCovers = {
+	diskFiles: number;
+	diskBytes: number;
+	memoryEntries: number;
+	memoryBytes: number;
+	/** Plafond du cache mémoire (`limits.cover_cache`). */
+	memoryBudget: number;
+};
+
+/** Cache disque des nombres de pages (`pages.json`). */
+export type StoragePages = {
+	fileBytes: number;
+	/** Comptages en mémoire. */
+	entries: number;
+	/** Plafond du cache (`limits.page_counts`). */
+	capacity: number;
+};
+
+export type StorageDatabase = {
+	name: string;
+	bytes: number;
+	walBytes: number;
+	shmBytes: number;
+	totalBytes: number;
+};
+
+/** Empreinte du code déployé. */
+export type StorageApp = {
+	binaryBytes: number;
+	/** Build de l'interface à côté de l'API, si trouvé. */
+	uiBuildBytes: number | null;
+};
+
+/** Espace disque de l'application (`GET /api/admin/storage`). */
+export type Storage = {
+	library: StorageLibrary;
+	covers: StorageCovers;
+	pages: StoragePages;
+	databases: StorageDatabase[];
+	app: StorageApp;
+	/** Bases + couvertures + comptages : ce que l'application se garde. */
+	dataBytes: number;
+	/** Binaire de l'API + build de l'interface. */
+	codeBytes: number;
+	/** Données + code : l'application seule, hors livres. */
+	appBytes: number;
+	/** Application + livres : tout ce que l'installation occupe. */
+	totalBytes: number;
 };
 
 /** Un livre lu en ce moment. */
@@ -196,6 +306,42 @@ export function toSample(at: number, view: View): Sample {
 	};
 }
 
+/** Convertit des tranches d'historique en points du direct, depuis `fromMs`. */
+export function historyToSamples(points: PerfHistoryPoint[], fromMs: number): Sample[] {
+	return points
+		.filter((point) => point.atMs >= fromMs)
+		.map((point) => ({
+			at: point.atMs,
+			memory: point.memAvg,
+			cpuPct: point.cpuPctAvg,
+			groups: Object.fromEntries(
+				Object.entries(point.groups).map(([name, group]) => [
+					name,
+					{ rss: group.rssAvg, cpuPct: group.cpuPctAvg }
+				])
+			)
+		}));
+}
+
+/**
+ * Horodatage d'un point, adapté à la fenêtre affichée : l'heure précise sur
+ * moins d'un jour (`14:32:05`), la date et l'heure au-delà
+ * (`21 nov. 2026, 14:32`).
+ */
+export function formatSampleTime(atMs: number, windowMs: number): string {
+	const options: Intl.DateTimeFormatOptions =
+		windowMs <= 24 * 3_600_000
+			? { hour: '2-digit', minute: '2-digit', second: '2-digit' }
+			: {
+					day: 'numeric',
+					month: 'short',
+					year: 'numeric',
+					hour: '2-digit',
+					minute: '2-digit'
+				};
+	return new Intl.DateTimeFormat(intlLocale(), options).format(new Date(atMs));
+}
+
 /** Nom d'un programme tel que l'utilisateur le connaît. */
 export function processLabel(name: string): string {
 	switch (name) {
@@ -231,6 +377,14 @@ export function colorFor(name: string): string {
 /** Pourcentage lisible (`12,4 %`). */
 export function formatPercent(value: number): string {
 	return `${formatNumber(value, value >= 10 ? 0 : 1)} %`;
+}
+
+/**
+ * Part d'un tout, lisible même quand elle est minuscule : `0 %` laisserait
+ * croire à rien du tout, alors qu'un poste de quelques kilo-octets existe.
+ */
+export function percentOf(percent: number): string {
+	return percent > 0 && percent < 0.1 ? `< ${formatPercent(0.1)}` : formatPercent(percent);
 }
 
 /** Durée CPU cumulée (`42 s`, `3 min 12 s`, `2 h 05 min`). */

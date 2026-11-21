@@ -24,6 +24,8 @@ pub struct Config {
     pub limits: Limits,
     /// Réduction des planches à la taille de l'écran (voir [`Resize`]).
     pub resize: Resize,
+    /// Historique de la page Performances (voir [`Performance`]).
+    pub performance: Performance,
     /// Comptes et connexion (voir [`Auth`]).
     pub auth: Auth,
 }
@@ -168,6 +170,86 @@ impl Default for Resize {
     }
 }
 
+/// Historique de la page Performances.
+///
+/// La page mesure en direct toutes les `live_secs` ; le serveur enregistre une
+/// mesure toutes les `sample_secs` et ne garde que `retention_days` jours.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Performance {
+    /// `false` : aucune mesure enregistrée (la page reste en direct).
+    pub enabled: bool,
+    /// Fréquence d'enregistrement côté serveur, en secondes.
+    #[serde(deserialize_with = "seconds")]
+    pub sample_secs: u64,
+    /// Durée de conservation, en jours (plafonnée à 30).
+    #[serde(deserialize_with = "days")]
+    pub retention_days: u32,
+    /// Fréquence de rafraîchissement de la page, en secondes. Une fraction est
+    /// acceptée : `0.5` = deux mesures par seconde (2 FPS).
+    #[serde(deserialize_with = "live_seconds")]
+    pub live_secs: f64,
+}
+
+/// Nombre de secondes lu sans faire échouer tout le fichier : une valeur
+/// négative, NaN ou démesurée retombe dans les bornes au lieu de rejeter la
+/// configuration entière (c'est [`Performance::sanitized`] qui applique le
+/// minimum).
+fn seconds<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = f64::deserialize(deserializer)?;
+    Ok(value.clamp(0.0, u64::MAX as f64).round() as u64)
+}
+
+/// Idem pour un nombre de jours, borné au type `u32`.
+fn days<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(seconds(deserializer)?.min(u64::from(u32::MAX)) as u32)
+}
+
+/// Secondes fractionnaires du direct : `0.5` = 2 mesures par seconde.
+/// Une valeur négative ou non finie devient 0, puis [`Performance::sanitized`]
+/// applique le plancher.
+fn live_seconds<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = f64::deserialize(deserializer)?;
+    Ok(if value.is_finite() && value > 0.0 {
+        value
+    } else {
+        0.0
+    })
+}
+
+impl Default for Performance {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            sample_secs: 10,
+            retention_days: 30,
+            // 2 mesures par seconde : la vue « temps réel » reste fluide.
+            live_secs: 0.5,
+        }
+    }
+}
+
+impl Performance {
+    /// Bornes appliquées à la lecture : 1 s à 1 h d'échantillonnage, 0,25 à
+    /// 60 s de rafraîchissement (4 FPS au plus), 1 à 30 jours de rétention.
+    #[must_use]
+    pub fn sanitized(mut self) -> Self {
+        self.sample_secs = self.sample_secs.clamp(1, 3600);
+        self.live_secs = self.live_secs.clamp(0.25, 60.0);
+        self.retention_days = self.retention_days.clamp(1, 30);
+        self
+    }
+}
+
 /// Plafonds de ressources : sans eux, une rafale de requêtes ouvre autant de
 /// lectures d'archive que de connexions, chacune avec sa page en mémoire.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -202,6 +284,7 @@ impl Default for Config {
             books_root: "../books".to_string(),
             limits: Limits::default(),
             resize: Resize::default(),
+            performance: Performance::default(),
             auth: Auth::default(),
         }
     }
@@ -255,6 +338,14 @@ pub fn resize() -> Resize {
     resize.quality = resize.quality.clamp(1, 100);
     resize.max_concurrent = resize.max_concurrent.max(1);
     resize
+}
+
+/// Historique des performances en vigueur (fréquences bornées, 30 jours max).
+pub fn performance() -> Performance {
+    INSTALLED
+        .get()
+        .map_or_else(Performance::default, |config| config.performance.clone())
+        .sanitized()
 }
 
 impl Config {
@@ -463,6 +554,97 @@ mod tests {
         assert!(!oidc.auto_create);
         // Une variable blanche ne compte pas.
         assert_eq!(oidc.label, Oidc::default().label);
+    }
+
+    #[test]
+    fn performance_is_read_from_the_file_and_clamped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(
+            &path,
+            "performance:\n  enabled: false\n  sample_secs: 5\n  retention_days: 90\n  live_secs: 3\n",
+        )
+        .unwrap();
+
+        let performance = Config::load_from(&path).performance;
+        assert!(!performance.enabled);
+        assert_eq!(performance.sample_secs, 5);
+        assert_eq!(performance.live_secs, 3.0);
+        // La lecture applique le plafond de 30 jours.
+        assert_eq!(performance.sanitized().retention_days, 30);
+    }
+
+    #[test]
+    fn performance_defaults_and_zero_values_are_sanitized() {
+        let defaults = Performance::default();
+        assert!(defaults.enabled);
+        assert_eq!(defaults.sample_secs, 10);
+        assert_eq!(defaults.retention_days, 30);
+        let zero = Performance {
+            sample_secs: 0,
+            retention_days: 0,
+            live_secs: 0.0,
+            ..Performance::default()
+        }
+        .sanitized();
+        assert_eq!(zero.sample_secs, 1);
+        assert_eq!(zero.retention_days, 1);
+        assert_eq!(zero.live_secs, 0.25);
+    }
+
+    #[test]
+    fn a_partial_performance_section_keeps_the_other_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(&path, "performance:\n  enabled: false\n").unwrap();
+
+        let performance = Config::load_from(&path).performance;
+        assert!(!performance.enabled);
+        // Les champs absents gardent les valeurs par défaut, pas zéro.
+        assert_eq!(performance.sample_secs, 10);
+        assert_eq!(performance.retention_days, 30);
+        assert_eq!(performance.live_secs, 0.5);
+    }
+
+    #[test]
+    fn negative_or_huge_values_do_not_throw_the_file_away() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(
+            &path,
+            "books_root: /livres\nperformance:\n  sample_secs: -10\n  retention_days: -5\n  live_secs: 1e30\n",
+        )
+        .unwrap();
+
+        let config = Config::load_from(&path);
+        // Le reste du fichier survit à une valeur absurde.
+        assert_eq!(config.books_root, "/livres");
+        assert_eq!(config.performance.sample_secs, 0);
+        assert_eq!(config.performance.retention_days, 0);
+        assert_eq!(config.performance.live_secs, 1e30);
+        let fixed = config.performance.sanitized();
+        assert_eq!(fixed.sample_secs, 1);
+        assert_eq!(fixed.retention_days, 1);
+        assert_eq!(fixed.live_secs, 60.0);
+    }
+
+    #[test]
+    fn live_secs_accepts_fps_fractions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(&path, "performance:\n  live_secs: 0.5\n").unwrap();
+
+        let performance = Config::load_from(&path).performance;
+        // 0,5 s = 2 mesures par seconde.
+        assert_eq!(performance.live_secs, 0.5);
+        assert_eq!(performance.sanitized().live_secs, 0.5);
+        // Plancher : 4 FPS.
+        let too_fast = Performance {
+            live_secs: 0.01,
+            ..Performance::default()
+        }
+        .sanitized();
+        assert_eq!(too_fast.live_secs, 0.25);
     }
 
     #[test]

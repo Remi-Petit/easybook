@@ -15,6 +15,9 @@
 //! | `GET /api/book?path=` | sommaire d'un livre |
 //! | `GET /api/cover?path=&v=` | couverture (vignette JPEG) |
 //! | `GET /api/admin/performance` | mémoire et CPU du conteneur, par process |
+//! | `GET /api/admin/performance/history?range=` | historique agrégé (3m, 1h, 24h, 7d, 30d) |
+//! | `GET /api/admin/storage` | espace disque : bibliothèque, couvertures, bases, code |
+//! | `GET /api/admin/library/stats` | chiffres de la bibliothèque : formats, dossiers, gros livres |
 //! | `GET /api/chapter?path=&index=` | document d'un chapitre (HTML réécrit) |
 //! | `GET /api/asset?path=&inner=` | ressource interne (image, CSS, police) |
 //! | `GET /api/page?path=&index=` | page d'une bande dessinée (image) |
@@ -25,7 +28,7 @@
 
 use crate::auth::{self, AuthState};
 use crate::formats::{self, Format};
-use crate::{config, library, readings, resize, rewrite, thumbnail, write};
+use crate::{config, library, perf_history, readings, resize, rewrite, storage, thumbnail, write};
 use axum::body::Bytes;
 use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, Request, State};
@@ -75,6 +78,10 @@ struct Snapshot {
     text: Utf8Bytes,
     etag: Arc<str>,
     notice: Utf8Bytes,
+    /// Résumé de la bibliothèque, calculé une fois par scan.
+    library: storage::Library,
+    /// Chiffres de la bibliothèque pour la page des statistiques.
+    library_detail: storage::LibraryDetail,
 }
 
 impl Snapshot {
@@ -83,7 +90,11 @@ impl Snapshot {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         json.hash(&mut hasher);
         let tag = format!("{:016x}-{:x}", hasher.finish(), json.len());
+        // Un seul parcours du catalogue sert les deux vues (résumé + détail).
+        let library_detail = storage::library_detail(&json);
         Self {
+            library: library_detail.summary(),
+            library_detail,
             text: Utf8Bytes::from(json),
             notice: Utf8Bytes::from(format!(r#"{{"etag":"{tag}"}}"#)),
             etag: format!("\"{tag}\"").into(),
@@ -98,6 +109,8 @@ pub struct AppState {
     root: Arc<PathBuf>,
     /// Dossier du cache disque des couvertures (caché, sous la racine par défaut).
     cache_dir: Arc<PathBuf>,
+    /// Dossier des bases (`accounts.db`, `metrics.db`).
+    data_dir: Arc<PathBuf>,
     /// Diffusion du catalogue aux WebSocket ouverts.
     ws: broadcast::Sender<Utf8Bytes>,
     /// Dernier catalogue sérialisé, et son instant de production.
@@ -111,13 +124,17 @@ pub struct AppState {
     resizes: Arc<Semaphore>,
     /// Comptes et sessions ; `None` : l'API reste ouverte (voir [`crate::auth`]).
     auth: Option<Arc<AuthState>>,
+    /// Historique des performances ; `None` : enregistrement désactivé.
+    history: Option<Arc<perf_history::History>>,
 }
 
 impl AppState {
     pub fn new(root: impl Into<PathBuf>, ws: broadcast::Sender<Utf8Bytes>) -> Self {
         let root = root.into();
+        let data_dir = root.join(".easybook");
         Self {
             cache_dir: Arc::new(root.join(thumbnail::DEFAULT_CACHE_DIR)),
+            data_dir: Arc::new(data_dir),
             root: Arc::new(root),
             ws,
             snapshot: Arc::new(RwLock::new(None)),
@@ -126,6 +143,7 @@ impl AppState {
             reads: Arc::new(Semaphore::new(config::limits().max_concurrent_reads)),
             resizes: Arc::new(Semaphore::new(config::resize().max_concurrent)),
             auth: None,
+            history: None,
         }
     }
 
@@ -138,6 +156,17 @@ impl AppState {
 
     pub fn auth(&self) -> Option<&Arc<AuthState>> {
         self.auth.as_ref()
+    }
+
+    /// Attache l'historique des performances (voir [`crate::perf_history`]).
+    #[must_use]
+    pub fn with_history(mut self, history: Arc<perf_history::History>) -> Self {
+        self.history = Some(history);
+        self
+    }
+
+    pub fn history(&self) -> Option<Arc<perf_history::History>> {
+        self.history.clone()
     }
 
     /// Réduit une planche à `width` pixels, dans la limite de
@@ -191,6 +220,39 @@ impl AppState {
         self.cache_dir.as_ref().clone()
     }
 
+    /// Dossier des bases, quand `EASYBOOK_DATA_DIR` est monté.
+    #[must_use]
+    pub fn with_data_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.data_dir = Arc::new(dir.into());
+        self
+    }
+
+    /// Dossier des bases (`accounts.db`, `metrics.db`).
+    pub fn data_dir(&self) -> PathBuf {
+        self.data_dir.as_ref().clone()
+    }
+
+    /// Résumé de la bibliothèque, calculé lors du dernier scan du catalogue.
+    pub fn library_stats(&self) -> storage::Library {
+        self.snapshot
+            .read()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|snapshot| snapshot.library.clone()))
+            .unwrap_or_default()
+    }
+
+    /// Chiffres complets de la bibliothèque (page des statistiques).
+    pub fn library_detail(&self) -> storage::LibraryDetail {
+        self.snapshot
+            .read()
+            .ok()
+            .and_then(|slot| {
+                slot.as_ref()
+                    .map(|snapshot| snapshot.library_detail.clone())
+            })
+            .unwrap_or_default()
+    }
+
     /// Place le cache disque des couvertures ailleurs que sous la racine.
     #[must_use]
     pub fn with_cache_dir(mut self, dir: impl Into<PathBuf>) -> Self {
@@ -214,7 +276,10 @@ impl AppState {
 
     /// Ce que l'API seule connaît : catalogue en mémoire, sessions, onglets
     /// connectés et coût cumulé du garde de session (voir la page Performance).
-    fn detail(&self) -> crate::perf::Detail {
+    ///
+    /// `pub` : l'échantillonneur d'historique (voir `main`) la lit pour
+    /// que la mesure enregistrée soit la même que celle affichée en direct.
+    pub fn detail(&self) -> crate::perf::Detail {
         let catalog_bytes = self
             .snapshot
             .read()
@@ -258,6 +323,12 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/book", get(get_book))
         .route("/api/cover", get(get_cover))
         .route("/api/admin/performance", get(get_performance))
+        .route(
+            "/api/admin/performance/history",
+            get(get_performance_history),
+        )
+        .route("/api/admin/storage", get(get_storage))
+        .route("/api/admin/library/stats", get(get_library_stats))
         .route("/api/chapter", get(get_chapter))
         .route("/api/asset", get(get_asset))
         .route("/api/page", get(get_page))
@@ -293,6 +364,66 @@ async fn get_performance(State(state): State<AppState>) -> Response {
         Ok(snapshot) => ([(header::CACHE_CONTROL, "no-store")], Json(snapshot)).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
+}
+
+#[derive(Deserialize)]
+struct PerformanceHistoryQuery {
+    range: Option<String>,
+}
+
+/// `GET /api/admin/performance/history?range=3m|1h|24h|7d|30d` — historique
+/// agrégé. Le serveur choisit la tranche pour rester sous ~800 points ; une
+/// même fenêtre est réutilisée 15 s (l'échantillonneur écrit toutes les 10 s).
+async fn get_performance_history(
+    State(state): State<AppState>,
+    Query(query): Query<PerformanceHistoryQuery>,
+) -> Response {
+    let Some(history) = state.history() else {
+        return (StatusCode::NOT_FOUND, "historique désactivé").into_response();
+    };
+    let range = query
+        .range
+        .as_deref()
+        .and_then(perf_history::Range::parse)
+        .unwrap_or(perf_history::Range::Day);
+    match tokio::task::spawn_blocking(move || history.series_json(range)).await {
+        Ok(Ok(json)) => (
+            [
+                (header::CACHE_CONTROL, "no-store"),
+                (header::CONTENT_TYPE, "application/json"),
+            ],
+            json,
+        )
+            .into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+/// `GET /api/admin/storage` — espace disque : bibliothèque, couvertures,
+/// comptages de pages, bases et code. Lecture à la demande (l'onglet Stockage).
+async fn get_storage(State(state): State<AppState>) -> Response {
+    let data_dir = state.data_dir();
+    let cache_dir = state.cache_dir();
+    let library = state.library_stats();
+    match tokio::task::spawn_blocking(move || storage::collect(&data_dir, &cache_dir, library))
+        .await
+    {
+        Ok(storage) => ([(header::CACHE_CONTROL, "no-store")], Json(storage)).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+/// `GET /api/admin/library/stats` — chiffres de la bibliothèque : totaux,
+/// répartition par format et par dossier, plus gros livres.
+///
+/// Tout vient du catalogue déjà en mémoire : aucun parcours de dossier.
+async fn get_library_stats(State(state): State<AppState>) -> Response {
+    (
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(state.library_detail()),
+    )
+        .into_response()
 }
 
 /// `GET /api/books` — catalogue complet.
