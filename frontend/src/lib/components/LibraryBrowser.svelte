@@ -32,6 +32,23 @@
 	/** Formats retenus ; vide = tous. */
 	let formats = $state<string[]>([]);
 
+	// Naviguer d'un dossier à l'autre réutilise ce composant : sans ça, la
+	// recherche tapée pour trouver une série s'appliquerait aussi à la série
+	// ouverte (on y arriverait avec le filtre encore actif). `lastScope` n'est
+	// volontairement pas réactif, sinon l'effet se relancerait sur sa propre
+	// écriture.
+	let lastScope: string | undefined;
+	$effect(() => {
+		if (lastScope === undefined) {
+			lastScope = scope;
+			return;
+		}
+		if (scope === lastScope) return;
+		lastScope = scope;
+		filter = '';
+		formats = [];
+	});
+
 	/** Le niveau, quand on ne cherche rien : ses dossiers puis ses livres. */
 	const current = $derived(level(library.folders, library.books, scope));
 
