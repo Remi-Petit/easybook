@@ -942,6 +942,8 @@ code {
 	place-items: center;
 	width: 26px;
 	height: 26px;
+	/* Le navigateur donne 1px 6px aux boutons : de quoi décaler l'icône. */
+	padding: 0;
 	background: rgba(8, 8, 12, 0.78);
 	border: 1px solid rgba(255, 255, 255, 0.14);
 	border-radius: 8px;
@@ -963,6 +965,7 @@ code {
 	place-items: center;
 	width: 26px;
 	height: 26px;
+	padding: 0;
 	background: rgba(8, 8, 12, 0.78);
 	border: 1px solid rgba(255, 255, 255, 0.14);
 	border-radius: 8px;
