@@ -98,8 +98,8 @@ pub struct Settings {
     pub history: bool,
     /// Fréquence d'enregistrement côté serveur, en secondes.
     pub sample_secs: u64,
-    /// Fréquence de rafraîchissement de la page, en secondes.
-    pub live_secs: u64,
+    /// Fréquence de rafraîchissement de la page, en secondes (fraction acceptée).
+    pub live_secs: f64,
     /// Durée de conservation, en jours.
     pub retention_days: u32,
 }

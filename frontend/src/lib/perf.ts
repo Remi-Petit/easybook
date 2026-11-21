@@ -232,6 +232,23 @@ export function toSample(at: number, view: View): Sample {
 	};
 }
 
+/** Convertit des tranches d'historique en points du direct, depuis `fromMs`. */
+export function historyToSamples(points: PerfHistoryPoint[], fromMs: number): Sample[] {
+	return points
+		.filter((point) => point.atMs >= fromMs)
+		.map((point) => ({
+			at: point.atMs,
+			memory: point.memAvg,
+			cpuPct: point.cpuPctAvg,
+			groups: Object.fromEntries(
+				Object.entries(point.groups).map(([name, group]) => [
+					name,
+					{ rss: group.rssAvg, cpuPct: group.cpuPctAvg }
+				])
+			)
+		}));
+}
+
 /**
  * Horodatage d'un point, adapté à la fenêtre affichée : l'heure précise sur
  * moins d'un jour (`14:32:05`), la date et l'heure au-delà

@@ -6,6 +6,7 @@ import {
 	toSample,
 	bookName,
 	formatSampleTime,
+	historyToSamples,
 	type PerfSnapshot
 } from './perf';
 
@@ -138,6 +139,48 @@ suite('colorFor', () => {
 	it('est stable', () => {
 		expect(colorFor('inconnu')).toBe(colorFor('inconnu'));
 		expect(colorFor('easybook')).toBe('#e0a54a');
+	});
+});
+
+suite('historyToSamples', () => {
+	it("convertit les tranches et ne garde que la fenêtre demandée", () => {
+		const samples = historyToSamples(
+			[
+				{
+					atMs: 1_000,
+					memAvg: 10,
+					memMax: 12,
+					cpuPctAvg: 1,
+					cpuPctMax: 2,
+					groups: {
+						node: { rssAvg: 4, rssMax: 5, cpuPctAvg: 0.5, cpuPctMax: 1 }
+					}
+				},
+				{ atMs: 5_000, memAvg: 20, memMax: 22, cpuPctAvg: 2, cpuPctMax: 3, groups: {} }
+			],
+			2_000
+		);
+		expect(samples).toHaveLength(1);
+		expect(samples[0]).toMatchObject({ at: 5_000, memory: 20, cpuPct: 2, groups: {} });
+	});
+
+	it('garde les groupes avec leur moyenne', () => {
+		const [sample] = historyToSamples(
+			[
+				{
+					atMs: 5_000,
+					memAvg: 20,
+					memMax: 22,
+					cpuPctAvg: 2,
+					cpuPctMax: 3,
+					groups: {
+						node: { rssAvg: 4, rssMax: 5, cpuPctAvg: 0.5, cpuPctMax: 1 }
+					}
+				}
+			],
+			0
+		);
+		expect(sample.groups.node).toEqual({ rss: 4, cpuPct: 0.5 });
 	});
 });
 

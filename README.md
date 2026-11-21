@@ -404,12 +404,13 @@ limits:
 # Historique de la page Performances (SQLite, dans le volume de données).
 # Le serveur enregistre une mesure toutes les `sample_secs` et la garde
 # `retention_days` jours (30 au maximum) ; la page se rafraîchit toutes les
-# `live_secs`. `enabled: false` désactive l'enregistrement.
+# `live_secs` (0.5 = 2 mesures par seconde). `enabled: false` désactive
+# l'enregistrement.
 performance:
   enabled: true
   sample_secs: 10
   retention_days: 30
-  live_secs: 2
+  live_secs: 0.5
 ```
 
 L'image Docker embarque ce fichier (`/app/config.yml`) ; pour changer un plafond,

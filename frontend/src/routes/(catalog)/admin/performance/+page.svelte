@@ -30,6 +30,10 @@
 	const view = $derived(perf.view);
 	const memory = $derived(snapshot?.memory ?? null);
 	const liveSeconds = $derived(snapshot?.settings?.liveSecs ?? DEFAULT_INTERVAL_MS / 1000);
+	/** 2 s ou 0,5 s : une décimale seulement quand c'est utile. */
+	const liveSecondsLabel = $derived(
+		formatNumber(liveSeconds, Number.isInteger(liveSeconds) ? 0 : 1)
+	);
 	const historyEnabled = $derived(snapshot?.settings?.history ?? false);
 	/** Horodatage de la mesure affichée, en infobulle sur les grands chiffres. */
 	const measuredAt = $derived(
@@ -175,6 +179,9 @@
 				<button
 					type="button"
 					aria-pressed={perf.range === entry.id}
+					title={entry.id === 'live'
+						? t('perf.range.liveHint', { seconds: liveSecondsLabel })
+						: undefined}
 					onclick={() => selectRange(entry.id)}
 				>
 					{t(entry.label)}
@@ -187,7 +194,7 @@
 <div class="page">
 	<section class="intro">
 		<h1>{t('perf.title')}</h1>
-		<p>{t('perf.subtitle', { seconds: formatNumber(liveSeconds) })}</p>
+		<p>{t('perf.subtitle', { seconds: liveSecondsLabel })}</p>
 	</section>
 
 	{#if perf.error && !view}

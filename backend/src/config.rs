@@ -185,9 +185,10 @@ pub struct Performance {
     /// Durée de conservation, en jours (plafonnée à 30).
     #[serde(deserialize_with = "days")]
     pub retention_days: u32,
-    /// Fréquence de rafraîchissement de la page, en secondes.
-    #[serde(deserialize_with = "seconds")]
-    pub live_secs: u64,
+    /// Fréquence de rafraîchissement de la page, en secondes. Une fraction est
+    /// acceptée : `0.5` = deux mesures par seconde (2 FPS).
+    #[serde(deserialize_with = "live_seconds")]
+    pub live_secs: f64,
 }
 
 /// Nombre de secondes lu sans faire échouer tout le fichier : une valeur
@@ -210,24 +211,40 @@ where
     Ok(seconds(deserializer)?.min(u64::from(u32::MAX)) as u32)
 }
 
+/// Secondes fractionnaires du direct : `0.5` = 2 mesures par seconde.
+/// Une valeur négative ou non finie devient 0, puis [`Performance::sanitized`]
+/// applique le plancher.
+fn live_seconds<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = f64::deserialize(deserializer)?;
+    Ok(if value.is_finite() && value > 0.0 {
+        value
+    } else {
+        0.0
+    })
+}
+
 impl Default for Performance {
     fn default() -> Self {
         Self {
             enabled: true,
             sample_secs: 10,
             retention_days: 30,
-            live_secs: 2,
+            // 2 mesures par seconde : la vue « temps réel » reste fluide.
+            live_secs: 0.5,
         }
     }
 }
 
 impl Performance {
-    /// Bornes appliquées à la lecture : 1 s à 1 h d'échantillonnage, 1 à 60 s
-    /// de rafraîchissement, 1 à 30 jours de rétention.
+    /// Bornes appliquées à la lecture : 1 s à 1 h d'échantillonnage, 0,25 à
+    /// 60 s de rafraîchissement (4 FPS au plus), 1 à 30 jours de rétention.
     #[must_use]
     pub fn sanitized(mut self) -> Self {
         self.sample_secs = self.sample_secs.clamp(1, 3600);
-        self.live_secs = self.live_secs.clamp(1, 60);
+        self.live_secs = self.live_secs.clamp(0.25, 60.0);
         self.retention_days = self.retention_days.clamp(1, 30);
         self
     }
@@ -552,7 +569,7 @@ mod tests {
         let performance = Config::load_from(&path).performance;
         assert!(!performance.enabled);
         assert_eq!(performance.sample_secs, 5);
-        assert_eq!(performance.live_secs, 3);
+        assert_eq!(performance.live_secs, 3.0);
         // La lecture applique le plafond de 30 jours.
         assert_eq!(performance.sanitized().retention_days, 30);
     }
@@ -566,13 +583,13 @@ mod tests {
         let zero = Performance {
             sample_secs: 0,
             retention_days: 0,
-            live_secs: 0,
+            live_secs: 0.0,
             ..Performance::default()
         }
         .sanitized();
         assert_eq!(zero.sample_secs, 1);
         assert_eq!(zero.retention_days, 1);
-        assert_eq!(zero.live_secs, 1);
+        assert_eq!(zero.live_secs, 0.25);
     }
 
     #[test]
@@ -586,7 +603,7 @@ mod tests {
         // Les champs absents gardent les valeurs par défaut, pas zéro.
         assert_eq!(performance.sample_secs, 10);
         assert_eq!(performance.retention_days, 30);
-        assert_eq!(performance.live_secs, 2);
+        assert_eq!(performance.live_secs, 0.5);
     }
 
     #[test]
@@ -604,11 +621,30 @@ mod tests {
         assert_eq!(config.books_root, "/livres");
         assert_eq!(config.performance.sample_secs, 0);
         assert_eq!(config.performance.retention_days, 0);
-        assert_eq!(config.performance.live_secs, u64::MAX);
+        assert_eq!(config.performance.live_secs, 1e30);
         let fixed = config.performance.sanitized();
         assert_eq!(fixed.sample_secs, 1);
         assert_eq!(fixed.retention_days, 1);
-        assert_eq!(fixed.live_secs, 60);
+        assert_eq!(fixed.live_secs, 60.0);
+    }
+
+    #[test]
+    fn live_secs_accepts_fps_fractions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        std::fs::write(&path, "performance:\n  live_secs: 0.5\n").unwrap();
+
+        let performance = Config::load_from(&path).performance;
+        // 0,5 s = 2 mesures par seconde.
+        assert_eq!(performance.live_secs, 0.5);
+        assert_eq!(performance.sanitized().live_secs, 0.5);
+        // Plancher : 4 FPS.
+        let too_fast = Performance {
+            live_secs: 0.01,
+            ..Performance::default()
+        }
+        .sanitized();
+        assert_eq!(too_fast.live_secs, 0.25);
     }
 
     #[test]

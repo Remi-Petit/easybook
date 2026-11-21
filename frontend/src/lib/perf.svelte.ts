@@ -5,6 +5,7 @@ import { apiBase } from './api';
 import type { MessageKey } from './i18n/messages';
 import {
 	describe,
+	historyToSamples,
 	toSample,
 	type PerfHistory,
 	type PerfSnapshot,
@@ -16,7 +17,7 @@ import {
 /** Fenêtre du direct, gardée en mémoire du navigateur. */
 export const WINDOW_MS = 3 * 60 * 1000;
 /** Cadence avant la première réponse du serveur (`performance.live_secs`). */
-export const DEFAULT_INTERVAL_MS = 2000;
+export const DEFAULT_INTERVAL_MS = 500;
 /** Relecture d'un historique affiché : le serveur n'écrit qu'une mesure/10 s. */
 const HISTORY_RELOAD_MS = 30_000;
 
@@ -59,7 +60,7 @@ async function measure(): Promise<void> {
 
 		// La cadence est un réglage serveur (`config.yml`) : la page la suit.
 		const seconds = snapshot.settings?.liveSecs;
-		if (seconds && seconds * 1000 >= 500) liveMs = seconds * 1000;
+		if (seconds && seconds * 1000 >= 250) liveMs = Math.round(seconds * 1000);
 
 		const cutoff = snapshot.atMs - WINDOW_MS;
 		perf.samples = [...perf.samples, toSample(snapshot.atMs, view)].filter(
@@ -74,6 +75,29 @@ async function measure(): Promise<void> {
 async function tick(): Promise<void> {
 	await measure();
 	if (users > 0) timer = setTimeout(() => void tick(), liveMs);
+}
+
+/**
+ * Amorce la fenêtre temps réel avec les 3 dernières minutes déjà enregistrées :
+ * la courbe est complète dès l'ouverture, puis les mesures en direct s'ajoutent.
+ * Échoue en silence (historique désactivé ou absent) : le direct fonctionne seul.
+ */
+async function prefillLive(): Promise<void> {
+	try {
+		const response = await fetch(`${apiBase()}/api/admin/performance/history?range=3m`, {
+			cache: 'no-store'
+		});
+		if (!response.ok) return;
+		const history = (await response.json()) as PerfHistory;
+		const seeded = historyToSamples(history.points, history.toMs - WINDOW_MS);
+		if (seeded.length === 0) return;
+		const known = new Set(perf.samples.map((sample) => sample.at));
+		perf.samples = [...seeded.filter((sample) => !known.has(sample.at)), ...perf.samples].sort(
+			(a, b) => a.at - b.at
+		);
+	} catch {
+		// Le direct démarre simplement à vide.
+	}
 }
 
 export async function loadHistory(range: Range): Promise<void> {
@@ -114,6 +138,7 @@ export function watchPerformance(): () => void {
 		perf.samples = [];
 		previous = null;
 		liveMs = DEFAULT_INTERVAL_MS;
+		void prefillLive();
 		void tick();
 		historyTimer = setInterval(() => {
 			if (perf.range !== 'live') void loadHistory(perf.range);
