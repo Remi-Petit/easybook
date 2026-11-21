@@ -55,7 +55,7 @@ describe('translate', () => {
 	});
 
 	it('remplit les paramètres', () => {
-		expect(translate('fr', 'home.noMatch', { query: 'toto' })).toBe(
+		expect(translate('fr', 'search.noMatch', { query: 'toto' })).toBe(
 			'Aucun livre ne correspond à « toto ».'
 		);
 	});

@@ -28,6 +28,25 @@ export function childBooks(books: BookInfo[], parent: string): BookInfo[] {
 	return books.filter((book) => parentOf(book.rel) === parent);
 }
 
+/** Livres de `folder` **et** de tous ses sous-dossiers (`""` = tout). */
+export function subtreeBooks(books: BookInfo[], folder: string): BookInfo[] {
+	const prefix = folder ? `${folder}/` : '';
+	return books.filter((book) => book.rel.startsWith(prefix));
+}
+
+/**
+ * Un livre répond-il à la recherche ? Le titre, le chemin complet et le format
+ * sont interrogés ; chaque mot tapé doit s'y trouver, dans n'importe quel ordre
+ * (« chainsaw t03 » trouve `mangas/Chainsaw Man/Chainsaw Man T03.cbz`).
+ */
+export function matchesQuery(book: BookInfo, query: string): boolean {
+	const haystack = `${book.title} ${book.rel} ${book.format}`.toLowerCase();
+	return query
+		.split(/\s+/)
+		.filter(Boolean)
+		.every((word) => haystack.includes(word));
+}
+
 /**
  * Contenu d'un niveau du catalogue : ses sous-dossiers, puis ses livres.
  *

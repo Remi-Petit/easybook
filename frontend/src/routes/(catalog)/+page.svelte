@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Add from '$lib/components/Add.svelte';
 	import BookCard from '$lib/components/BookCard.svelte';
+	import { matchesQuery } from '$lib/catalog';
 	import { library, reload } from '$lib/library.svelte';
 	import { t } from '$lib/i18n/state.svelte';
 
@@ -11,13 +12,7 @@
 	// La page d'accueil montre **tous** les livres, toutes catégories
 	// confondues ; le tri naturel (`T1`, `T2`, … `T10`) vient du backend.
 	const matchingBooks = $derived(
-		query
-			? library.books.filter((book) =>
-					[book.title, book.rel, book.format].some((value) =>
-						value.toLowerCase().includes(query)
-					)
-				)
-			: library.books
+		query ? library.books.filter((book) => matchesQuery(book, query)) : library.books
 	);
 </script>
 
@@ -38,8 +33,8 @@
 		<input
 			class="search"
 			bind:value={filter}
-			placeholder={t('home.search')}
-			aria-label={t('home.searchLabel')}
+			placeholder={t('search.placeholder')}
+			aria-label={t('search.label')}
 		/>
 	</section>
 
@@ -53,7 +48,7 @@
 			{#if library.books.length === 0}
 				{t('home.emptyBefore')} <code>books/</code> {t('home.emptyAfter')}
 			{:else}
-				{t('home.noMatch', { query: filter })}
+				{t('search.noMatch', { query: filter })}
 			{/if}
 		</p>
 	{:else}

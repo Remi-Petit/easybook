@@ -5,9 +5,11 @@ import {
 	childFolders,
 	folderUrl,
 	level,
+	matchesQuery,
 	parentOf,
 	previewBook,
-	segments
+	segments,
+	subtreeBooks
 } from './catalog';
 
 function book(rel: string, format: BookInfo['format'] = 'cbz', pages: number | null = 10): BookInfo {
@@ -162,5 +164,47 @@ describe('segments', () => {
 			{ name: 'Chainsaw Man', rel: 'mangas/Chainsaw Man' }
 		]);
 		expect(segments('')).toEqual([]);
+	});
+});
+
+describe('subtreeBooks', () => {
+	const books = [
+		book('livre.epub', 'epub'),
+		book('mangas/T1.cbz'),
+		book('mangas/sous/T9.cbz'),
+		book('mangas2/T1.cbz')
+	];
+
+	it('prend le dossier et tout ce qu’il contient', () => {
+		expect(subtreeBooks(books, 'mangas').map((entry) => entry.rel)).toEqual([
+			'mangas/T1.cbz',
+			'mangas/sous/T9.cbz'
+		]);
+	});
+
+	it('ne confond pas un dossier avec son homonyme préfixé', () => {
+		const rels = subtreeBooks(books, 'mangas').map((entry) => entry.rel);
+		expect(rels).not.toContain('mangas2/T1.cbz');
+	});
+
+	it('sans dossier, rend toute la bibliothèque', () => {
+		expect(subtreeBooks(books, '')).toHaveLength(books.length);
+	});
+});
+
+describe('matchesQuery', () => {
+	it('cherche dans le titre, le chemin et le format, sans casse', () => {
+		const entry = book('mangas/Chainsaw Man/T03.cbz');
+		expect(matchesQuery(entry, 'chainsaw')).toBe(true);
+		expect(matchesQuery(entry, 'CBR')).toBe(false);
+		expect(matchesQuery(entry, 'cbz')).toBe(true);
+		expect(matchesQuery(entry, 'mangas/')).toBe(true);
+	});
+
+	it('exige chaque mot, dans n’importe quel ordre', () => {
+		const entry = book('mangas/Chainsaw Man/T03.cbz');
+		expect(matchesQuery(entry, 'chainsaw t03')).toBe(true);
+		expect(matchesQuery(entry, 't03 chainsaw')).toBe(true);
+		expect(matchesQuery(entry, 'chainsaw t09')).toBe(false);
 	});
 });

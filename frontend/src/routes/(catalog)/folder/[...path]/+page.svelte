@@ -4,7 +4,7 @@
 	import Add from '$lib/components/Add.svelte';
 	import BookCard from '$lib/components/BookCard.svelte';
 	import FolderCard from '$lib/components/FolderCard.svelte';
-	import { level, folderUrl, parentOf, previewBook, segments } from '$lib/catalog';
+	import { level, folderUrl, matchesQuery, parentOf, previewBook, segments, subtreeBooks } from '$lib/catalog';
 	import { library } from '$lib/library.svelte';
 	import { t } from '$lib/i18n/state.svelte';
 
@@ -21,6 +21,20 @@
 	const books = $derived(current.books);
 	const crumbs = $derived(segments(rel));
 	const parent = $derived(parentOf(rel));
+
+	let filter = $state('');
+	const query = $derived(filter.trim().toLowerCase());
+
+	/**
+	 * Recherche dans **toute** la catégorie, sous-dossiers compris : depuis
+	 * « mangas », « chainsaw t03 » doit trouver le tome rangé dans sa série.
+	 * Tant qu'on ne cherche rien, la page montre le niveau courant tel quel.
+	 */
+	const matchingBooks = $derived(
+		query
+			? subtreeBooks(library.books, rel).filter((book) => matchesQuery(book, query))
+			: books
+	);
 
 	// Le catalogue arrive après le premier rendu : tant qu'il est vide, on ne
 	// peut pas conclure que le dossier n'existe pas.
@@ -63,6 +77,12 @@
 			{/if}
 			<code>books/{rel}</code>
 		</p>
+		<input
+			class="search"
+			bind:value={filter}
+			placeholder={t('search.placeholder')}
+			aria-label={t('search.label')}
+		/>
 	</section>
 
 	{#if missing}
@@ -72,8 +92,10 @@
 		</p>
 	{:else if subfolders.length === 0 && books.length === 0}
 		<p class="notice">{t('folder.empty')}</p>
+	{:else if query && matchingBooks.length === 0}
+		<p class="notice">{t('search.noMatch', { query: filter })}</p>
 	{:else}
-		{#if subfolders.length > 0}
+		{#if !query && subfolders.length > 0}
 			<section class="group">
 				<h2>
 					{t('group.series')}
@@ -90,14 +112,14 @@
 			</section>
 		{/if}
 
-		{#if books.length > 0}
+		{#if matchingBooks.length > 0}
 			<section class="group">
 				<h2>
 					{t('group.books')}
-					<span class="count">{books.length}</span>
+					<span class="count">{matchingBooks.length}</span>
 				</h2>
 				<div class="grid">
-					{#each books as book (book.rel)}
+					{#each matchingBooks as book (book.rel)}
 						<BookCard {book} />
 					{/each}
 				</div>
