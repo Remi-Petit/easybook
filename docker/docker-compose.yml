@@ -1,3 +1,15 @@
+# easybook — **déploiement de production** (image publiée sur GHCR).
+#
+#   cp docker/.env.example docker/.env     # puis renseigner les valeurs
+#   docker compose -f docker/docker-compose.yml up -d
+#   → interface + API : http://<hôte>:${EASYBOOK_PORT:-5100}
+#
+# Tous les réglages viennent du `.env` **de ce dossier** (`docker/.env`, chargé
+# automatiquement par Compose) ; le `.env` de développement de la racine n'est
+# pas lu. Sans `.env`, les valeurs par défaut ci-dessous suffisent — mais
+# l'administrateur reçoit alors un mot de passe tiré au hasard, affiché une
+# seule fois dans `docker logs easybook`.
+
 services:
   easybook:
     image: ghcr.io/remi-petit/easybook:latest
@@ -6,10 +18,35 @@ services:
     ports:
       # Un seul port : nginx sert l'interface **et** relaie l'API (`/api`, `/ws`).
       # L'API n'écoute que dans le conteneur ; l'interface exige une connexion.
-      - "5100:8080"
+      - "${EASYBOOK_PORT:-5100}:8080"
+    environment:
+      # Production : la connexion directe au fournisseur d'identité et les
+      # boutons de connexion rapide du mode `dev` restent désactivés.
+      EASYBOOK_MODE: prod
+      # Administrateur créé au premier démarrage (base de comptes vide).
+      EASYBOOK_ADMIN_EMAIL: ${EASYBOOK_ADMIN_EMAIL:-admin@easybook.local}
+      # Vide : mot de passe tiré au hasard, affiché **une seule fois** dans les
+      # journaux (à changer dès la première connexion).
+      EASYBOOK_ADMIN_PASSWORD: ${EASYBOOK_ADMIN_PASSWORD:-}
+      # Single sign-on OpenID Connect : vide = désactivé. L'émetteur est
+      # l'adresse que voit le **navigateur** ; `DISCOVERY_URL` est celle que joint
+      # easybook (vide : l'émetteur).
+      EASYBOOK_OIDC_ISSUER: ${EASYBOOK_OIDC_ISSUER:-}
+      EASYBOOK_OIDC_DISCOVERY_URL: ${EASYBOOK_OIDC_DISCOVERY_URL:-}
+      EASYBOOK_OIDC_CLIENT_ID: ${EASYBOOK_OIDC_CLIENT_ID:-}
+      EASYBOOK_OIDC_CLIENT_SECRET: ${EASYBOOK_OIDC_CLIENT_SECRET:-}
+      EASYBOOK_OIDC_REDIRECT_URL: ${EASYBOOK_OIDC_REDIRECT_URL:-}
+      EASYBOOK_OIDC_LABEL: ${EASYBOOK_OIDC_LABEL:-Single sign-on}
+      # Politique de liaison, fermée par défaut : un compte OIDC inconnu est
+      # refusé tant qu'un administrateur ne l'a pas lié (page Comptes).
+      EASYBOOK_OIDC_AUTO_CREATE: ${EASYBOOK_OIDC_AUTO_CREATE:-false}
+      EASYBOOK_OIDC_LINK_BY_EMAIL: ${EASYBOOK_OIDC_LINK_BY_EMAIL:-false}
+      EASYBOOK_OIDC_SELF_LINK: ${EASYBOOK_OIDC_SELF_LINK:-false}
     volumes:
-      # La bibliothèque : lue **et écrite** (création de catégories, dépôt de
-      # livres depuis l'interface).
+      # La bibliothèque : lue **et** écrite (création de catégories, dépôt de
+      # livres depuis l'interface). Chemin relatif à **ce dossier** par défaut
+      # (`docker/books`) — jamais celui du dépôt ; `EASYBOOK_BOOKS` permet de
+      # pointer ailleurs (ex. `/srv/easybook/books` sur un serveur).
       #
       # Sous Docker Desktop (Windows/macOS), le système de fichiers de l'hôte ne
       # remonte aucun événement inotify : l'interface ne se rafraîchit alors pas
@@ -19,7 +56,7 @@ services:
       # Le conteneur tourne sous l'utilisateur `node` (uid 1000) : sous Linux, ce
       # dossier doit lui appartenir (`chown -R 1000:1000 books`) pour que le
       # dépôt de livres fonctionne.
-      - ./books:/books
+      - ${EASYBOOK_BOOKS:-./books}:/books
       # Les comptes (SQLite) : à garder entre deux conteneurs. Au premier démarrage,
       # le mot de passe de l'administrateur est affiché dans `docker logs easybook`
       # (ou imposé par `EASYBOOK_ADMIN_PASSWORD`).
