@@ -8,8 +8,8 @@
 //! du dossier prend le relais : voir [`sweep`].
 
 use easybook::{
-    accounts, api, auth, config, formats, library, pages, perf, perf_history, readings, thumbnail,
-    watcher,
+    accounts, api, auth, config, formats, library, pages, perf, perf_history, progress, readings,
+    thumbnail, watcher,
 };
 use notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, new_debouncer};
@@ -160,6 +160,7 @@ async fn run(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
     let state = state.with_data_dir(accounts_dir(&root));
     let state = enable_accounts(state, &root)?;
     let state = attach_history(state, &root);
+    let state = attach_progress(state);
 
     // Les comptages de pages survivent au redémarrage (sinon chaque PDF est
     // relu en entier au premier scan).
@@ -300,6 +301,33 @@ fn enable_accounts(
         }
     }
     Ok(state.with_auth(auth))
+}
+
+/// Ouvre l'historique de lecture (`reading.db`), s'il y a des comptes.
+///
+/// Sans identité, il n'y a personne à qui rattacher une position : le fichier
+/// ne serait qu'un poids mort. Comme les autres bases, il vit dans le dossier
+/// de données, et un échec d'ouverture ne prive pas la bibliothèque de ses
+/// livres.
+fn attach_progress(state: api::AppState) -> api::AppState {
+    if state.auth().is_none() {
+        println!("Lecture   : désactivée (authentification désactivée)");
+        return state;
+    }
+    let path = state.data_dir().join("reading.db");
+    match progress::Progress::open(&path) {
+        Ok(history) => {
+            println!(
+                "Lecture   : {} (positions et sessions par utilisateur)",
+                path.display()
+            );
+            state.with_progress(Arc::new(history))
+        }
+        Err(e) => {
+            eprintln!("⚠️  Historique de lecture indisponible ({e})");
+            state
+        }
+    }
 }
 
 /// Ouvre l'historique des performances et lance son échantillonneur.

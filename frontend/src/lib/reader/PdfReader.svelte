@@ -4,6 +4,7 @@
 	import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 	import { rawUrl } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
+	import { reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
 
 	let {
@@ -48,6 +49,8 @@
 		} catch {
 			// La reprise de lecture est un confort, pas une exigence.
 		}
+		// L'historique suit la lecture ; l'envoi est groupé (voir `$lib/progress`).
+		reportPosition(rel, target, pages);
 		stage?.scrollTo({ top: 0, left: 0 });
 	}
 
@@ -90,6 +93,8 @@
 				pages = loaded.numPages;
 				pdfjs = lib;
 				doc = loaded;
+				// Ouvrir un livre, c'est déjà une lecture : la position de reprise compte.
+				reportPosition(rel, index, pages);
 			} catch (cause) {
 				if (!cancelled) error = cause instanceof Error ? cause.message : String(cause);
 			}

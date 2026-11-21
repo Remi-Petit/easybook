@@ -225,7 +225,8 @@ async fn storage_summarizes_the_library_and_the_data() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["library"]["books"], 4);
     assert!(body["library"]["bytes"].as_u64().unwrap() > 0);
-    assert_eq!(body["databases"].as_array().unwrap().len(), 2);
+    // Comptes, mesures et historique de lecture : trois bases possibles.
+    assert_eq!(body["databases"].as_array().unwrap().len(), 3);
     assert!(body["app"]["binaryBytes"].as_u64().unwrap() > 0);
     // Les parts s'additionnent : l'application seule, puis les livres.
     let number = |field: &str| body[field].as_u64().unwrap();

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { chapterUrl, type BookDetail } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
+	import { reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
 
 	let {
@@ -41,6 +42,8 @@
 		} catch {
 			// Mode navigation privée : la reprise de lecture est un confort.
 		}
+		// L'historique suit la lecture ; l'envoi est groupé (voir `$lib/progress`).
+		reportPosition(rel, target, chapters.length);
 	}
 
 	/**

@@ -3,6 +3,7 @@
 	import { browser } from '$app/environment';
 	import { pageUrl, pageWidth } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
+	import { reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
 
 	let {
@@ -40,6 +41,8 @@
 		} catch {
 			// La reprise de lecture est un confort, pas une exigence.
 		}
+		// L'historique suit la lecture ; l'envoi est groupé (voir `$lib/progress`).
+		reportPosition(rel, target, pages);
 		stage?.scrollTo({ top: 0 });
 	}
 
@@ -50,6 +53,8 @@
 		} catch {
 			// Rien à restaurer.
 		}
+		// Ouvrir un livre, c'est déjà une lecture : la position de reprise compte.
+		reportPosition(rel, index, pages);
 
 		const onKey = (event: KeyboardEvent) => {
 			if (event.key === 'ArrowLeft') go(index - 1);

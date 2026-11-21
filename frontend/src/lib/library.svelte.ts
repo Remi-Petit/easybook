@@ -42,6 +42,20 @@ export function onActivity(listener: ActivityListener): () => void {
 	return () => activityListeners.delete(listener);
 }
 
+type ReadingListener = (userId: string) => void;
+const readingListeners = new Set<ReadingListener>();
+
+/**
+ * Avis de lecture : une position vient d'être enregistrée pour ce compte.
+ *
+ * Distinct de [`onActivity`] : la page d'historique de lecture se rafraîchit,
+ * sans réveiller la liste des comptes à chaque page tournée.
+ */
+export function onReading(listener: ReadingListener): () => void {
+	readingListeners.add(listener);
+	return () => readingListeners.delete(listener);
+}
+
 /** Démarre le chargement initial et la connexion temps réel (une seule fois). */
 export function start(): void {
 	if (started) return;
@@ -121,6 +135,10 @@ function connect(): void {
 			};
 			if (notice.type === 'activity' && notice.user_id) {
 				for (const listener of activityListeners) listener(notice.user_id);
+				return;
+			}
+			if (notice.type === 'reading' && notice.user_id) {
+				for (const listener of readingListeners) listener(notice.user_id);
 				return;
 			}
 			// Déjà à jour (le catalogue de départ vient d'être chargé) : rien à faire.

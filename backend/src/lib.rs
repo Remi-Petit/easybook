@@ -29,6 +29,7 @@ pub mod oidc;
 pub mod pages;
 pub mod perf;
 pub mod perf_history;
+pub mod progress;
 pub mod readings;
 pub mod resize;
 pub mod rewrite;

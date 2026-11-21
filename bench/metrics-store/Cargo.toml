@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 anyhow = "1"
 memory-stats = "1"
+serde_json = "1"
 
 rusqlite = { version = "0.43", features = ["bundled"], optional = true }
 duckdb = { version = "1", features = ["bundled"], optional = true }
@@ -20,6 +21,10 @@ heed = { version = "0.20", optional = true }
 [[bin]]
 name = "metrics-store-bench"
 path = "src/main.rs"
+
+[[bin]]
+name = "reading-store-bench"
+path = "src/bin/reading_store.rs"
 
 [[bin]]
 name = "duck-inspect"

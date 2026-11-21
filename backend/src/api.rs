@@ -28,7 +28,9 @@
 
 use crate::auth::{self, AuthState};
 use crate::formats::{self, Format};
-use crate::{config, library, perf_history, readings, resize, rewrite, storage, thumbnail, write};
+use crate::{
+    config, library, perf_history, progress, readings, resize, rewrite, storage, thumbnail, write,
+};
 use axum::body::Bytes;
 use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, Request, State};
@@ -127,6 +129,9 @@ pub struct AppState {
     auth: Option<Arc<AuthState>>,
     /// Historique des performances ; `None` : enregistrement désactivé.
     history: Option<Arc<perf_history::History>>,
+    /// Historique de lecture ; `None` : pas d'identité (authentification
+    /// désactivée) ou base indisponible.
+    progress: Option<Arc<progress::Progress>>,
     /// Nombre de rediffusions du catalogue (watcher ou contrôle périodique).
     /// Le contrôle périodique de `main` s'en sert pour ne pas rediffuser un
     /// changement que le watcher a déjà traité entre deux de ses passages.
@@ -150,6 +155,7 @@ impl AppState {
             auth: None,
             history: None,
             broadcasts: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            progress: None,
         }
     }
 
@@ -173,6 +179,17 @@ impl AppState {
 
     pub fn history(&self) -> Option<Arc<perf_history::History>> {
         self.history.clone()
+    }
+
+    /// Attache l'historique de lecture (voir [`crate::progress`]).
+    #[must_use]
+    pub fn with_progress(mut self, progress: Arc<progress::Progress>) -> Self {
+        self.progress = Some(progress);
+        self
+    }
+
+    pub fn progress(&self) -> Option<Arc<progress::Progress>> {
+        self.progress.clone()
     }
 
     /// Réduit une planche à `width` pixels, dans la limite de
@@ -353,6 +370,13 @@ pub fn routes(state: AppState) -> Router {
         .route("/api/asset", get(get_asset))
         .route("/api/page", get(get_page))
         .route("/api/raw", get(get_raw))
+        // Historique de lecture : la position du lecteur, et ce qu'en voit un
+        // administrateur. Le préfixe `/api/admin/` suffit à exiger le rôle.
+        .route("/api/read/progress", post(save_progress))
+        .route(
+            "/api/admin/users/{id}/read/history",
+            get(get_reading_history),
+        )
         // Écriture : ce que le catalogue affiche, il doit pouvoir le créer.
         .route("/api/folder", post(create_folder))
         .route("/api/book", put(upload_book))
@@ -1321,6 +1345,105 @@ fn origin(headers: &HeaderMap) -> String {
 /// Erreur interne (E/S, sérialisation) → 500 avec le message.
 fn internal_error(e: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+}
+
+// ── Historique de lecture ───────────────────────────────────────────────────
+
+/// Corps de `POST /api/read/progress`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProgressBody {
+    /// Chemin du livre dans la bibliothèque (comme le catalogue).
+    path: String,
+    /// Index 0-based de la page (BD, PDF) ou du chapitre (EPUB).
+    page: i64,
+    /// Total connu du lecteur ; `0` s'il ne le sait pas encore.
+    #[serde(default)]
+    pages: i64,
+}
+
+/// `POST /api/read/progress` — enregistre la position du lecteur connecté.
+///
+/// Le livre doit exister : un chemin inventé n'entre pas en base. Sans identité
+/// (authentification désactivée), l'extracteur répond 401 — il n'y a personne à
+/// qui rattacher une position, et rien n'est écrit.
+async fn save_progress(
+    State(state): State<AppState>,
+    auth::SessionUser(user): auth::SessionUser,
+    Json(body): Json<ProgressBody>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return StatusCode::NO_CONTENT.into_response();
+    };
+    let Some(path) = file_in(&state.root(), &body.path) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !path.is_file() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    // Le titre et le format viennent du disque, pas du client : la même règle
+    // que le catalogue, et rien à croire sur parole.
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let entry = progress::Entry {
+        book: body.path,
+        title: library::title_of(name),
+        format: Format::from_path(name).map_or_else(String::new, |format| format.id().to_string()),
+        page: body.page,
+        pages: body.pages,
+    };
+    let user_id = user.id.clone();
+    let notify = user_id.clone();
+    match tokio::task::spawn_blocking(move || progress.save(&user_id, &entry)).await {
+        Ok(Ok(())) => {
+            // Les administrateurs regardent peut-être la page d'historique.
+            if let Some(auth) = state.auth() {
+                auth.notify_reading(&notify);
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ReadingHistoryQuery {
+    limit: Option<usize>,
+}
+
+/// `GET /api/admin/users/{id}/read/history?limit=` — l'historique d'un compte.
+async fn get_reading_history(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Query(query): Query<ReadingHistoryQuery>,
+) -> Response {
+    let Some(progress) = state.progress() else {
+        return (StatusCode::NOT_FOUND, "historique désactivé").into_response();
+    };
+    // Un identifiant inconnu est une erreur, pas un historique vide.
+    if let Some(auth) = state.auth() {
+        let accounts = Arc::clone(&auth.accounts);
+        let lookup = id.clone();
+        let known = tokio::task::spawn_blocking(move || accounts.user(&lookup)).await;
+        match known {
+            Ok(Ok(Some(_))) => {}
+            Ok(Ok(None)) => return StatusCode::NOT_FOUND.into_response(),
+            Ok(Err(e)) => return internal_error(e).into_response(),
+            Err(e) => return internal_error(e).into_response(),
+        }
+    }
+
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    let user = id.clone();
+    match tokio::task::spawn_blocking(move || progress.history(&user, limit)).await {
+        Ok(Ok(history)) => ([(header::CACHE_CONTROL, "no-store")], Json(history)).into_response(),
+        Ok(Err(e)) => internal_error(e).into_response(),
+        Err(e) => internal_error(e).into_response(),
+    }
 }
 
 #[cfg(test)]
