@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { BookInfo } from './api';
 import type { BookProgress } from './auth';
-import { completedSeries, inProgress, isFinished, percentRead, seriesProgress } from './progress';
+import {
+	completedSeries,
+	completedSeriesList,
+	inProgress,
+	isFinished,
+	percentRead,
+	readingBuckets,
+	seriesProgress,
+	seriesTotal
+} from './progress';
 
 describe('percentRead', () => {
 	it('compte la page courante déjà lue', () => {
@@ -190,5 +199,145 @@ describe('completedSeries', () => {
 		];
 		// T1 est repassé « en cours » : la série n'est plus terminée du tout.
 		expect(completedSeries(books, items, 4_000)).toEqual({ done: 0, total: 1 });
+	});
+
+	it('rend chaque série terminée avec sa date, pour les grouper', () => {
+		const books = [
+			book('mangas/A/T1.cbz'),
+			book('mangas/A/T2.cbz'),
+			book('mangas/B/T1.cbz'),
+			book('mangas/B/T2.cbz')
+		];
+		const items = [
+			{ ...entry('mangas/A/T1.cbz', 99, 100), updatedAt: 1_000 },
+			{ ...entry('mangas/A/T2.cbz', 99, 100), updatedAt: 3_000 },
+			{ ...entry('mangas/B/T1.cbz', 99, 100), updatedAt: 9_000 },
+			{ ...entry('mangas/B/T2.cbz', 99, 100), updatedAt: 2_000 }
+		];
+		// La date d'une série est celle de son dernier tome terminé.
+		expect(completedSeriesList(books, items)).toEqual([
+			{ folder: 'mangas/A', last: 3_000 },
+			{ folder: 'mangas/B', last: 9_000 }
+		]);
+	});
+});
+
+describe('seriesTotal', () => {
+	const book = (rel: string): BookInfo => ({
+		rel,
+		name: rel,
+		folder: '',
+		format: 'cbz',
+		readable: true,
+		size: 1,
+		modified: 1,
+		pages: 100,
+		title: rel
+	});
+
+	it('compte les dossiers qui rangent au moins deux livres', () => {
+		const books = [
+			book('mangas/A/T1.cbz'),
+			book('mangas/A/T2.cbz'),
+			book('mangas/Seul.cbz'),
+			book('mangas/B/T1.cbz'),
+			book('mangas/B/T2.cbz'),
+			book('Racine.cbz')
+		];
+		expect(seriesTotal(books)).toBe(2);
+	});
+});
+
+describe('readingBuckets', () => {
+	const book = (rel: string): BookInfo => ({
+		rel,
+		name: rel,
+		folder: '',
+		format: 'cbz',
+		readable: true,
+		size: 1,
+		modified: 1,
+		pages: 100,
+		title: rel
+	});
+
+	const entry = (rel: string, at: number): BookProgress => ({
+		book: rel,
+		title: rel,
+		format: 'cbz',
+		page: 99,
+		pages: 100,
+		startedAt: at,
+		updatedAt: at
+	});
+
+	// 15 novembre 2026, 3 février 2026, 20 décembre 2025 (UTC).
+	const NOVEMBRE = Date.UTC(2026, 10, 15) / 1000;
+	const FEVRIER = Date.UTC(2026, 1, 3) / 1000;
+	const DECEMBRE = Date.UTC(2025, 11, 20) / 1000;
+
+	const books = [
+		book('mangas/A/T1.cbz'),
+		book('mangas/A/T2.cbz'),
+		book('mangas/B/T1.cbz'),
+		book('mangas/B/T2.cbz'),
+		book('mangas/C/T1.cbz')
+	];
+
+	it('range par mois, du plus récent au plus ancien', () => {
+		const items = [
+			entry('mangas/A/T1.cbz', NOVEMBRE),
+			entry('mangas/B/T1.cbz', FEVRIER),
+			entry('mangas/C/T1.cbz', DECEMBRE)
+		];
+		const buckets = readingBuckets(books, items, 'year');
+		expect(buckets.map((bucket) => bucket.key)).toEqual(['2026-11', '2026-02', '2025-12']);
+		expect(buckets.map((bucket) => bucket.books.map((item) => item.rel))).toEqual([
+			['mangas/A/T1.cbz'],
+			['mangas/B/T1.cbz'],
+			['mangas/C/T1.cbz']
+		]);
+	});
+
+	it('range par année quand la période est « tout »', () => {
+		const items = [
+			entry('mangas/A/T1.cbz', NOVEMBRE),
+			entry('mangas/B/T1.cbz', FEVRIER),
+			entry('mangas/C/T1.cbz', DECEMBRE)
+		];
+		const buckets = readingBuckets(books, items, 'all');
+		expect(buckets.map((bucket) => bucket.key)).toEqual(['2026', '2025']);
+		expect(buckets[0]!.books).toHaveLength(2);
+	});
+
+	it('rend une seule tranche sans titre pour le mois en cours', () => {
+		const items = [
+			entry('mangas/A/T1.cbz', NOVEMBRE - 86_400),
+			entry('mangas/B/T1.cbz', NOVEMBRE)
+		];
+		const buckets = readingBuckets(books, items, 'month', NOVEMBRE);
+		expect(buckets).toHaveLength(1);
+		expect(buckets[0]!.key).toBe('month');
+		// `since` écarte ce qui est antérieur à la période.
+		expect(buckets[0]!.books.map((item) => item.rel)).toEqual(['mangas/B/T1.cbz']);
+	});
+
+	it('place une série achevée dans la tranche de son dernier tome', () => {
+		const items = [
+			entry('mangas/A/T1.cbz', DECEMBRE),
+			entry('mangas/A/T2.cbz', FEVRIER),
+			entry('mangas/B/T1.cbz', FEVRIER),
+			entry('mangas/C/T1.cbz', NOVEMBRE)
+		];
+		const buckets = readingBuckets(books, items, 'year');
+		const fevrier = buckets.find((bucket) => bucket.key === '2026-02')!;
+		expect(fevrier.series).toEqual(['mangas/A']);
+		// Une série finie en décembre n'apparaît pas dans le groupe de février.
+		expect(buckets.find((bucket) => bucket.key === '2025-12')!.series).toEqual([]);
+	});
+
+	it('ignore les livres terminés qui ne sont plus au catalogue', () => {
+		const items = [entry('mangas/Disparu/T1.cbz', NOVEMBRE)];
+		expect(readingBuckets(books, items, 'all')).toEqual([]);
 	});
 });

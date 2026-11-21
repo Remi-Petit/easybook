@@ -105,22 +105,20 @@ export function seriesProgress(
 export const SERIES_MIN_BOOKS = 2;
 
 /**
- * Séries terminées : un dossier dont **tous** les livres sont finis.
+ * Les séries terminées, avec la date de leur dernier tome terminé.
  *
  * Chaque livre est rattaché au dossier qui le range (`parentOf`) — un livre,
  * un seul dossier — donc une catégorie et ses sous-dossiers ne se comptent pas
  * deux fois. Les livres posés à la racine n'appartiennent à aucune série, et un
  * dossier qui ne range qu'un livre n'est pas une série (voir `SERIES_MIN_BOOKS`).
  *
- * `since` (secondes Unix) ne garde que les séries terminées depuis : la date de
- * fin est celle du **dernier tome terminé**, pas celle du dossier. Relire un
- * tome sans le finir ne rajeunit donc pas la série.
+ * `last` est la date de fin : celle du **dernier tome terminé**, pas celle du
+ * dossier. C'est elle qui range une série dans un mois ou une année.
  */
-export function completedSeries(
+export function completedSeriesList(
 	books: BookInfo[],
-	items: BookProgress[],
-	since = 0
-): { done: number; total: number } {
+	items: BookProgress[]
+): { folder: string; last: number }[] {
 	const finished = new Map(
 		items
 			.filter((item) => isFinished(item.page, item.pages))
@@ -140,14 +138,105 @@ export function completedSeries(
 		series.set(folder, entry);
 	}
 
-	let done = 0;
-	let total = 0;
-	for (const entry of series.values()) {
-		if (entry.total < SERIES_MIN_BOOKS) continue;
-		total += 1;
-		if (entry.done === entry.total && entry.last >= since) done += 1;
+	const done: { folder: string; last: number }[] = [];
+	for (const [folder, entry] of series) {
+		if (entry.total < SERIES_MIN_BOOKS || entry.done < entry.total) continue;
+		done.push({ folder, last: entry.last });
 	}
-	return { done, total };
+	return done;
+}
+
+/** Nombre de séries du catalogue (un dossier qui range au moins deux livres). */
+export function seriesTotal(books: BookInfo[]): number {
+	const totals = new Map<string, number>();
+	for (const book of books) {
+		const folder = parentOf(book.rel);
+		if (!folder) continue;
+		totals.set(folder, (totals.get(folder) ?? 0) + 1);
+	}
+	let total = 0;
+	for (const count of totals.values()) {
+		if (count >= SERIES_MIN_BOOKS) total += 1;
+	}
+	return total;
+}
+
+/**
+ * Séries terminées : combien, sur combien, et depuis quand.
+ *
+ * `since` (secondes Unix) ne garde que les séries terminées depuis — les KPI
+ * « ce mois-ci » et « cette année » ont la même définition que les groupes.
+ */
+export function completedSeries(
+	books: BookInfo[],
+	items: BookProgress[],
+	since = 0
+): { done: number; total: number } {
+	const done = completedSeriesList(books, items).filter((entry) => entry.last >= since);
+	return { done: done.length, total: seriesTotal(books) };
+}
+
+/** Une tranche de l'historique de lecture : un mois, une année — ou tout. */
+export type ReadingBucket = {
+	/** `2026-11` (un mois), `2026` (une année) ou `month` (période en cours). */
+	key: string;
+	/** Instant le plus récent de la tranche : c'est lui qui l'ordonne. */
+	at: number;
+	books: BookInfo[];
+	/** Chemins des séries achevées dans la tranche. */
+	series: string[];
+};
+
+/**
+ * Range les livres terminés — et les séries achevées — par mois ou par année.
+ *
+ * `span` : `'year'` groupe par mois (l'onglet « Année »), `'all'` par année
+ * (l'onglet « Tout »), `'month'` rend une seule tranche sans titre (la période
+ * est déjà annoncée par l'onglet). Du plus récent au plus ancien, comme
+ * l'historique.
+ */
+export function readingBuckets(
+	books: BookInfo[],
+	items: BookProgress[],
+	span: 'month' | 'year' | 'all',
+	since = 0
+): ReadingBucket[] {
+	const buckets = new Map<string, ReadingBucket>();
+	const bucketOf = (at: number): ReadingBucket => {
+		if (span === 'month') {
+			let only = buckets.get('month');
+			if (!only) {
+				only = { key: 'month', at: 0, books: [], series: [] };
+				buckets.set('month', only);
+			}
+			return only;
+		}
+		const date = new Date(at * 1000);
+		const key =
+			span === 'year'
+				? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+				: String(date.getFullYear());
+		let entry = buckets.get(key);
+		if (!entry) {
+			entry = { key, at, books: [], series: [] };
+			buckets.set(key, entry);
+		}
+		entry.at = Math.max(entry.at, at);
+		return entry;
+	};
+
+	const byRel = new Map(books.map((book) => [book.rel, book]));
+	for (const item of items) {
+		if (item.updatedAt < since || !isFinished(item.page, item.pages)) continue;
+		const book = byRel.get(item.book);
+		if (book) bucketOf(item.updatedAt).books.push(book);
+	}
+	for (const done of completedSeriesList(books, items)) {
+		if (done.last < since) continue;
+		bucketOf(done.last).series.push(done.folder);
+	}
+
+	return [...buckets.values()].sort((a, b) => b.at - a.at);
 }
 
 if (typeof window !== 'undefined') {

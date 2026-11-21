@@ -12,11 +12,13 @@
 		type ReadingHistory,
 		type Session
 	} from '$lib/auth';
+	import { previewBook } from '$lib/catalog';
 	import BookCard from '$lib/components/BookCard.svelte';
+	import FolderCard from '$lib/components/FolderCard.svelte';
 	import PasswordField from '$lib/components/PasswordField.svelte';
-	import { formatNumber, t } from '$lib/i18n/state.svelte';
+	import { formatNumber, intlLocale, t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
-	import { completedSeries, isFinished } from '$lib/progress';
+	import { completedSeries, isFinished, readingBuckets } from '$lib/progress';
 	import { notify } from '$lib/toasts.svelte';
 
 	let { data }: { data: { session: Session } } = $props();
@@ -137,6 +139,28 @@
 	/** Séries terminées : les dossiers dont tous les livres sont finis, et dont le
 	 *  dernier tome a été terminé dans la période. */
 	const series = $derived(completedSeries(library.books, finished, since));
+
+	const monthFormat = $derived(
+		new Intl.DateTimeFormat(intlLocale(), { month: 'long', year: 'numeric' })
+	);
+	const yearFormat = $derived(new Intl.DateTimeFormat(intlLocale(), { year: 'numeric' }));
+
+	/** Le dossier d'une série, s'il est encore au catalogue. */
+	const folderOf = (rel: string) => library.folders.find((entry) => entry.rel === rel);
+
+	/**
+	 * Les livres terminés de la période, rangés mois par mois dans « Année » et
+	 * année par année dans « Tout » (une seule tranche, sans titre, dans « Mois »).
+	 */
+	const groups = $derived(
+		readingBuckets(library.books, finished, period, since).map((bucket) => ({
+			...bucket,
+			label:
+				bucket.key === 'month'
+					? null
+					: (period === 'year' ? monthFormat : yearFormat).format(new Date(bucket.at * 1000))
+		}))
+	);
 
 	/** « 2 h 05 », « 47 min », « 12 s » : une durée se lit d'un coup d'œil. */
 	function duration(seconds: number): string {
@@ -261,14 +285,38 @@
 							</h2>
 							{#if !loaded.all}
 								<p class="panel-hint">{t('status.connecting')}</p>
-							{:else if finishedBooks.length === 0}
+							{:else if groups.length === 0}
 								<p class="panel-hint">{t('account.reading.empty')}</p>
 							{:else}
-								<div class="grid">
-									{#each finishedBooks as book (book.rel)}
-										<BookCard {book} />
-									{/each}
-								</div>
+								{#each groups as group (group.key)}
+									<div class="reading-group">
+										{#if group.label}
+											<h3>
+												{group.label}
+												<span class="perf-count">{group.books.length}</span>
+												{#if group.series.length > 0}
+													<span class="group-series">
+														{t('account.reading.group.series', { count: group.series.length })}
+													</span>
+												{/if}
+											</h3>
+										{/if}
+										<div class="grid">
+											{#each group.series as rel (rel)}
+												{@const folder = folderOf(rel)}
+												{#if folder}
+													<FolderCard
+														{folder}
+														preview={previewBook(library.folders, library.books, rel)}
+													/>
+												{/if}
+											{/each}
+											{#each group.books as book (book.rel)}
+												<BookCard {book} />
+											{/each}
+										</div>
+									</div>
+								{/each}
 							{/if}
 						</section>
 					</div>

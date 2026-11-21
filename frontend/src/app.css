@@ -1862,6 +1862,31 @@ code {
 	font-size: 26px;
 }
 
+/* Une tranche de l'historique de lecture (un mois, une année) : son titre,
+   puis ses couvertures. */
+.panel-card .reading-group + .reading-group {
+	margin-top: 24px;
+}
+
+.panel-card .reading-group h3 {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 0 0 12px;
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: capitalize;
+}
+
+.panel-card .reading-group .group-series {
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+	letter-spacing: 0;
+	text-transform: none;
+}
+
 /* Le « / 4 » d'un compteur « 3 / 4 » : lisible sans peser comme un chiffre. */
 .stat-of {
 	margin-left: 2px;

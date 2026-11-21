@@ -372,6 +372,10 @@
 	"account.reading.period.all": "Tudo",
 	"account.reading.kpi.time": "Tempo de leitura",
 	"account.reading.kpi.series": "Séries terminadas",
+	"account.reading.group.series": {
+		"one": "{count} série terminada",
+		"other": "{count} séries terminadas"
+	},
 	"account.reading.duration.seconds": "{count} s",
 	"account.reading.duration.minutes": "{count} min",
 	"account.reading.duration.hours": "{hours} h {minutes}",
