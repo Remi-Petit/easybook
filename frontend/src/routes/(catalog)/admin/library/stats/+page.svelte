@@ -6,6 +6,7 @@
 	import Donut from '$lib/components/Donut.svelte';
 	import SegmentBar from '$lib/components/SegmentBar.svelte';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
+	import { library } from '$lib/library.svelte';
 	import {
 		folderColor,
 		formatColor,
@@ -13,6 +14,7 @@
 		type LibraryDetail
 	} from '$lib/library-stats';
 	import { percentOf } from '$lib/perf';
+	import BooksTable from './BooksTable.svelte';
 
 	let detail = $state<LibraryDetail | null>(null);
 	let error = $state<string | null>(null);
@@ -62,15 +64,11 @@
 	const COLLAPSED = 5;
 	let formatsOpen = $state(false);
 	let foldersOpen = $state(false);
-	let booksOpen = $state(false);
 
 	const shownFormats = $derived(
 		formatsOpen ? (detail?.formats ?? []) : (detail?.formats ?? []).slice(0, COLLAPSED)
 	);
 	const shownFolders = $derived(foldersOpen ? folderBars : folderBars.slice(0, COLLAPSED));
-	const shownBooks = $derived(
-		booksOpen ? (detail?.largest ?? []) : (detail?.largest ?? []).slice(0, COLLAPSED)
-	);
 
 	const averageSize = $derived(totals && totals.books > 0 ? totals.bytes / totals.books : 0);
 	const averagePages = $derived(
@@ -78,10 +76,6 @@
 	);
 	/** Livres dont le nombre de pages n'a pas pu être compté. */
 	const missingPages = $derived(totals ? totals.books - totals.withPages : 0);
-	/** Poids cumulé des livres listés : le reste de la bibliothèque est ailleurs. */
-	const largestBytes = $derived(
-		(detail?.largest ?? []).reduce((total, book) => total + book.size, 0)
-	);
 </script>
 
 <svelte:head>
@@ -233,51 +227,8 @@
 				</div>
 			</section>
 
-			<section class="perf-card">
-				<h2>
-					{t('stats.largest')}
-					<span class="perf-count">
-						{t('stats.ofLibrary', { share: share(largestBytes, totals.bytes) })}
-					</span>
-				</h2>
-				<div class="table-wrap">
-					<table class="perf-table">
-						<thead>
-							<tr>
-								<th>{t('stats.col.book')}</th>
-								<th>{t('stats.col.format')}</th>
-								<th>{t('stats.col.pages')}</th>
-								<th>{t('stats.col.weight')}</th>
-								<th>{t('stats.col.share')}</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each shownBooks as book (book.rel)}
-								<tr>
-									<td title={book.rel}>{book.rel}</td>
-									<td>{formatLabel(book.format)}</td>
-									<td>{book.pages === null ? '—' : formatNumber(book.pages)}</td>
-									<td>{formatBytes(book.size)}</td>
-									<td>{share(book.size, totals.bytes)}</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-				{#if detail.largest.length > COLLAPSED}
-					<button
-						type="button"
-						class="more-toggle"
-						aria-expanded={booksOpen}
-						onclick={() => (booksOpen = !booksOpen)}
-					>
-						{booksOpen
-							? t('stats.less')
-							: t('stats.more', { count: detail.largest.length - COLLAPSED })}
-					</button>
-				{/if}
-				<p class="stat-hint">{t('stats.largestHint')}</p>
-			</section>
+			<!-- Tous les livres, dans le tableau complet (recherche, filtres, tri). -->
+			<BooksTable books={library.books} totalBytes={totals.bytes} />
 		</div>
 	{/if}
 </div>

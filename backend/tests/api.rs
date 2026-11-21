@@ -208,7 +208,6 @@ async fn library_stats_describe_the_catalog() {
     assert_eq!(body["totals"]["folders"], 2);
     assert_eq!(body["totals"]["unreadable"], 0);
     assert_eq!(body["formats"].as_array().unwrap().len(), 3);
-    assert_eq!(body["largest"].as_array().unwrap().len(), 4);
     let folders: Vec<&str> = body["folders"]
         .as_array()
         .unwrap()

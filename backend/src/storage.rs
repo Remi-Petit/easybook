@@ -40,8 +40,6 @@ pub struct LargestBook {
 
 /// Nombre de livres détaillés dans le résumé.
 const LARGEST: usize = 5;
-/// Nombre de livres détaillés sur la page des statistiques.
-const LARGEST_DETAIL: usize = 20;
 /// Nombre de dossiers détaillés sur la page des statistiques.
 const TOP_FOLDERS: usize = 12;
 
@@ -116,7 +114,10 @@ pub struct LibraryDetail {
     pub formats: Vec<FormatStats>,
     /// Les plus gros dossiers (livres regroupés par dossier parent).
     pub folders: Vec<FolderStats>,
-    /// Les plus gros livres.
+    /// Plus gros livres — **interne** : sert au résumé de l'onglet Stockage.
+    /// La liste complète est déjà dans le catalogue du navigateur, inutile de
+    /// la renvoyer ici.
+    #[serde(skip)]
     pub largest: Vec<LargestBook>,
 }
 
@@ -256,7 +257,7 @@ pub fn library_detail(catalog_json: &str) -> LibraryDetail {
     detail
         .largest
         .sort_by_key(|book| std::cmp::Reverse(book.size));
-    detail.largest.truncate(LARGEST_DETAIL);
+    detail.largest.truncate(LARGEST);
     detail
 }
 
@@ -484,6 +485,11 @@ mod tests {
         assert_eq!(summary.books, 2);
         assert_eq!(summary.bytes, 1000);
         assert_eq!(summary.largest.len(), 2);
+        // La liste des gros livres ne part pas dans la réponse JSON : le
+        // navigateur a déjà le catalogue complet.
+        let json = serde_json::to_string(&detail).unwrap();
+        assert!(!json.contains("largest"));
+        assert!(json.contains("totals"));
     }
 
     #[test]

@@ -1,10 +1,7 @@
 // Chiffres de la bibliothèque (`GET /api/admin/library/stats`), servis par le
 // catalogue déjà en mémoire : la page ne déclenche aucun parcours de dossier.
 
-import { colorFor, type StorageBook } from './perf';
-
-/** Un livre, tel que la page des statistiques le montre. */
-export type LibraryBook = StorageBook;
+import { colorFor } from './perf';
 
 export type LibraryTotals = {
 	books: number;
@@ -43,8 +40,6 @@ export type LibraryDetail = {
 	formats: LibraryFormat[];
 	/** Les plus gros dossiers, séries comprises. */
 	folders: LibraryFolder[];
-	/** Les plus gros livres. */
-	largest: LibraryBook[];
 };
 
 const FORMAT_COLORS: Record<string, string> = {
