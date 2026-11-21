@@ -229,6 +229,8 @@ pub enum AccountError {
     WeakPassword,
     UsernameTaken,
     EmailTaken,
+    /// L'adresse est portée par un compte qui n'est pas administrateur.
+    EmailOwnedByUser,
     IdentityTaken,
     NotFound,
     /// Le dernier administrateur actif ne peut être ni retiré, ni rétrogradé.
@@ -246,6 +248,7 @@ impl AccountError {
             Self::WeakPassword => "weak_password",
             Self::UsernameTaken => "username_taken",
             Self::EmailTaken => "email_taken",
+            Self::EmailOwnedByUser => "email_owned_by_user",
             Self::IdentityTaken => "identity_taken",
             Self::NotFound => "not_found",
             Self::LastAdmin => "last_admin",
@@ -458,6 +461,13 @@ pub struct Bootstrap {
     /// Le mot de passe, **seulement** s'il a été tiré au hasard : il n'existe
     /// alors nulle part ailleurs qu'à l'écran de démarrage.
     pub generated_password: Option<String>,
+}
+
+/// Ce qu'a fait [`Accounts::reset_admin`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResetOutcome {
+    Created(User),
+    Updated(User),
 }
 
 pub struct Accounts {
@@ -813,6 +823,45 @@ impl Accounts {
             user,
             generated_password: generated,
         }))
+    }
+
+    /// Force l'administrateur désigné par `email`.
+    ///
+    /// Le compte est créé s'il n'existe pas ; sinon il est réactivé, ramené au
+    /// rôle d'administrateur et son mot de passe est remplacé (ce qui révoque
+    /// ses sessions). `EASYBOOK_ADMIN_*` n'étant lu qu'au premier démarrage,
+    /// c'est la façon de le rejouer à la demande.
+    ///
+    /// Une adresse déjà portée par un compte **non administrateur** est refusée
+    /// plutôt que promue : la promotion reste une décision explicite.
+    pub fn reset_admin(&self, email: &str, password: &str) -> Result<ResetOutcome> {
+        let email = require_email(email)?;
+        check_password(password)?;
+        match self.user_by_email(&email)? {
+            Some(user) if user.role == Role::Admin => {
+                self.update_user(
+                    &user.id,
+                    &UserPatch {
+                        role: Some(Role::Admin),
+                        disabled: Some(false),
+                        ..UserPatch::default()
+                    },
+                )?;
+                self.set_password(&user.id, password)?;
+                let user = self.user(&user.id)?.ok_or(AccountError::NotFound)?;
+                Ok(ResetOutcome::Updated(user))
+            }
+            Some(_) => Err(AccountError::EmailOwnedByUser),
+            None => {
+                let user = self.create_user(NewUser {
+                    email: Some(email),
+                    password: Some(password.to_string()),
+                    role: Some(Role::Admin),
+                    ..NewUser::default()
+                })?;
+                Ok(ResetOutcome::Created(user))
+            }
+        }
     }
 
     // ── Sessions ─────────────────────────────────────────────────────────
@@ -1647,6 +1696,93 @@ mod tests {
         assert!(
             imposed
                 .authenticate("root@x.test", "imposé-123")
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn reset_admin_creates_then_updates_the_same_account() {
+        let store = store();
+        let created = store.reset_admin("admin@x.test", "premier-mdp-1").unwrap();
+        let ResetOutcome::Created(first) = created else {
+            panic!("attendu Created");
+        };
+        assert_eq!(first.role, Role::Admin);
+        assert!(
+            store
+                .authenticate("admin@x.test", "premier-mdp-1")
+                .unwrap()
+                .is_some()
+        );
+
+        // Rejouer avec un autre mot de passe ne crée pas de doublon.
+        let updated = store.reset_admin("ADMIN@x.test", "second-mdp-2").unwrap();
+        let ResetOutcome::Updated(second) = updated else {
+            panic!("attendu Updated");
+        };
+        assert_eq!(second.id, first.id);
+        assert_eq!(store.count_users().unwrap(), 1);
+        assert!(
+            store
+                .authenticate("admin@x.test", "premier-mdp-1")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .authenticate("admin@x.test", "second-mdp-2")
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn reset_admin_reactivates_a_disabled_admin() {
+        let store = store();
+        let _other = user(&store, "other", Role::Admin);
+        let root = user(&store, "root", Role::Admin);
+        store
+            .update_user(
+                &root.id,
+                &UserPatch {
+                    disabled: Some(true),
+                    ..UserPatch::default()
+                },
+            )
+            .unwrap();
+        assert!(
+            store
+                .authenticate("root@local.test", "motdepasse1")
+                .unwrap()
+                .is_none()
+        );
+
+        store
+            .reset_admin("root@local.test", "nouveau-mdp-3")
+            .unwrap();
+        assert!(
+            store
+                .authenticate("root@local.test", "nouveau-mdp-3")
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn reset_admin_refuses_an_address_owned_by_a_plain_user() {
+        let store = store();
+        user(&store, "alice", Role::User);
+        assert_eq!(
+            store
+                .reset_admin("alice@local.test", "nouveau-mdp-4")
+                .unwrap_err(),
+            AccountError::EmailOwnedByUser
+        );
+        // Rien n'a bougé : ni le rôle, ni le mot de passe.
+        assert!(
+            store
+                .authenticate("alice@local.test", "motdepasse1")
                 .unwrap()
                 .is_some()
         );

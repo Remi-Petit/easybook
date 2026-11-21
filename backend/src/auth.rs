@@ -444,6 +444,7 @@ fn account_error(e: AccountError) -> Response {
         }
         AccountError::UsernameTaken
         | AccountError::EmailTaken
+        | AccountError::EmailOwnedByUser
         | AccountError::IdentityTaken
         | AccountError::LastAdmin
         | AccountError::LastCredential => StatusCode::CONFLICT,
