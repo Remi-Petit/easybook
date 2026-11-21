@@ -18,6 +18,8 @@
 	"home.in": "in",
 	"home.live": "in Echtzeit",
 	"home.continue": "Weiterlesen",
+	"rail.previous": "Nach links blättern",
+	"rail.next": "Nach rechts blättern",
 	"search.placeholder": "Nach Titel, Serie, Format filtern…",
 	"search.label": "Bibliothek filtern",
 	"search.seriesPlaceholder": "Nach Reihe filtern…",

@@ -18,6 +18,8 @@
 	"home.in": "em",
 	"home.live": "em tempo real",
 	"home.continue": "Continuar a ler",
+	"rail.previous": "Deslocar para a esquerda",
+	"rail.next": "Deslocar para a direita",
 	"search.placeholder": "Filtrar por título, série, formato…",
 	"search.label": "Filtrar a biblioteca",
 	"search.seriesPlaceholder": "Filtrar por série…",

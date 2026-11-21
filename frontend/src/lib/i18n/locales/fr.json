@@ -18,6 +18,8 @@
 	"home.in": "dans",
 	"home.live": "en temps réel",
 	"home.continue": "Poursuivre la lecture",
+	"rail.previous": "Faire défiler vers la gauche",
+	"rail.next": "Faire défiler vers la droite",
 	"search.placeholder": "Filtrer par titre, série, format…",
 	"search.label": "Filtrer la bibliothèque",
 	"search.seriesPlaceholder": "Filtrer par série…",

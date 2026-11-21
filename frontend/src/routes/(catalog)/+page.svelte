@@ -2,10 +2,15 @@
 	import Add from '$lib/components/Add.svelte';
 	import BookCard from '$lib/components/BookCard.svelte';
 	import LibraryBrowser from '$lib/components/LibraryBrowser.svelte';
+	import Rail from '$lib/components/Rail.svelte';
+	import { folderUrl, noveltyRails } from '$lib/catalog';
 	import { library, reload } from '$lib/library.svelte';
 	import { inProgress } from '$lib/progress';
 	import { reading } from '$lib/reading.svelte';
 	import { t } from '$lib/i18n/state.svelte';
+
+	/** Books per novelty line: one screenful, the rest scrolls sideways. */
+	const NOVELTIES = 20;
 
 	/**
 	 * Les lectures en cours, du plus récent au plus ancien, dans l'ordre du
@@ -17,6 +22,9 @@
 			return book ? [book] : [];
 		})
 	);
+
+	/** Une ligne de nouveautés par catégorie : ses livres les plus récents. */
+	const novelties = $derived(noveltyRails(library.folders, library.books, NOVELTIES));
 </script>
 
 <svelte:head>
@@ -58,13 +66,29 @@
 							{t('home.continue')}
 							<span class="count">{continuing.length}</span>
 						</h2>
-						<div class="rail">
+						<Rail label={t('home.continue')}>
 							{#each continuing as book (book.rel)}
 								<BookCard {book} />
 							{/each}
-						</div>
+						</Rail>
 					</section>
 				{/if}
+
+				<!-- Les nouveautés, catégorie par catégorie : le titre mène à la
+				     catégorie entière, la ligne s'arrête à `NOVELTIES`. -->
+				{#each novelties as rail (rail.folder.rel)}
+					<section class="group">
+						<h2>
+							<a href={folderUrl(rail.folder.rel)}>{rail.folder.name}</a>
+							<span class="count">{rail.books.length}</span>
+						</h2>
+						<Rail label={rail.folder.name}>
+							{#each rail.books as book (book.rel)}
+								<BookCard {book} />
+							{/each}
+						</Rail>
+					</section>
+				{/each}
 			{/snippet}
 		</LibraryBrowser>
 	{/if}

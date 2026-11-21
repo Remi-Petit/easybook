@@ -18,6 +18,8 @@
 	"home.in": "in",
 	"home.live": "live",
 	"home.continue": "Continue reading",
+	"rail.previous": "Scroll left",
+	"rail.next": "Scroll right",
 	"search.placeholder": "Filter by title, series, format…",
 	"search.label": "Filter the library",
 	"search.seriesPlaceholder": "Filter by series…",

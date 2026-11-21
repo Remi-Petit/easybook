@@ -974,7 +974,8 @@ code {
 	backdrop-filter: blur(4px);
 }
 
-/* « Poursuivre la lecture » : une seule ligne, qui défile horizontalement. */
+/* « Poursuivre la lecture », nouveautés : une seule ligne, qui défile
+   horizontalement — au doigt, à la molette, ou par les flèches posées dessus. */
 .rail {
 	display: grid;
 	grid-auto-flow: column;
@@ -983,10 +984,97 @@ code {
 	overflow-x: auto;
 	padding-bottom: 8px;
 	scroll-snap-type: x proximity;
+	scroll-behavior: smooth;
 }
 
 .rail .card {
 	scroll-snap-align: start;
+}
+
+/* Le cadre qui porte les flèches : elles se posent sur les bords de la ligne. */
+.rail-frame {
+	position: relative;
+}
+
+.rail-nav {
+	position: absolute;
+	top: 43%;
+	z-index: 2;
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	transform: translateY(-50%);
+	background: rgba(12, 12, 16, 0.88);
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	color: var(--text);
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+	backdrop-filter: blur(6px);
+	transition:
+		opacity 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
+}
+
+.rail-nav.prev {
+	left: -12px;
+}
+
+.rail-nav.next {
+	right: -12px;
+}
+
+.rail-nav:hover:not(:disabled) {
+	border-color: var(--muted);
+	color: var(--accent);
+}
+
+.rail-nav:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* Au bout de la ligne, la flèche n'a plus rien à faire : elle s'efface. Elle
+   reste `aria-disabled` (et non `disabled`) pour garder le focus clavier. */
+.rail-nav[aria-disabled='true'] {
+	opacity: 0;
+	pointer-events: none;
+}
+
+/* La souris peut tirer la ligne : le curseur le dit, et le glissement ne doit
+   pas être freiné par l'aimantation ni par le défilement animé. */
+.rail.dragging {
+	scroll-snap-type: none;
+	scroll-behavior: auto;
+	cursor: grabbing;
+}
+
+.rail.dragging * {
+	cursor: grabbing;
+}
+
+/* Une image ne se « drague » pas comme un fichier : c'est la ligne qu'on tire. */
+.rail img {
+	-webkit-user-drag: none;
+	user-select: none;
+}
+
+/* Une ligne de nouveautés : elle défile à la souris ou au doigt, sans barre
+   visible — le titre de la catégorie mène à la liste entière. */
+.rail.flush {
+	scrollbar-width: none;
+}
+
+.rail.flush::-webkit-scrollbar {
+	display: none;
+}
+
+/* Le titre d'une ligne de nouveautés renvoie vers sa catégorie. */
+.group h2 a:hover {
+	color: var(--text);
+	text-decoration: underline;
+	text-underline-offset: 3px;
 }
 
 .fallback {
