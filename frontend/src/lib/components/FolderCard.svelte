@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { coverUrl, type BookInfo, type FolderInfo } from '$lib/api';
-	import { folderUrl } from '$lib/catalog';
+	import { folderUrl, subtreeBooks } from '$lib/catalog';
 	import { t } from '$lib/i18n/state.svelte';
+	import { library } from '$lib/library.svelte';
+	import { seriesProgress } from '$lib/progress';
+	import { reading } from '$lib/reading.svelte';
 
 	let {
 		folder,
@@ -12,6 +15,14 @@
 	// si elle manque (PDF, CBR, archive sans image), la tuile garde un repli
 	// lisible.
 	let failed = $state(false);
+
+	// Avancement de la série : livres terminés sur le total de son sous-arbre.
+	const progress = $derived(
+		seriesProgress(subtreeBooks(library.books, folder.rel), reading.items)
+	);
+	const percent = $derived(
+		progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
+	);
 </script>
 
 <a class="card folder" href={folderUrl(folder.rel)}>
@@ -26,6 +37,12 @@
 			/>
 		{:else}
 			<span class="fallback" aria-hidden="true">{t('card.series')}</span>
+		{/if}
+		{#if progress.done > 0}
+			<span class="cover-badge">{progress.done}/{progress.total}</span>
+			<span class="card-progress" title="{percent} %">
+				<span style:width="{percent}%"></span>
+			</span>
 		{/if}
 	</span>
 

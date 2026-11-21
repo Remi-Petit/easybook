@@ -10,6 +10,7 @@
 // `reading` est mis à jour tout de suite, pour que la couverture soit juste au
 // retour dans le catalogue, sans attendre le serveur.
 
+import type { BookInfo } from './api';
 import { call, type BookProgress } from './auth';
 import { notePosition } from './reading.svelte';
 
@@ -78,6 +79,25 @@ export function isFinished(page: number, pages: number): boolean {
  */
 export function inProgress(items: BookProgress[], current: string | null): BookProgress[] {
 	return items.filter((item) => !isFinished(item.page, item.pages) || item.book === current);
+}
+
+/**
+ * Avancement d'une série : combien de ses livres sont terminés, sur le total.
+ *
+ * `books` est déjà restreint à la série (voir `subtreeBooks`) : un livre jamais
+ * ouvert compte dans le total, jamais dans les terminés.
+ */
+export function seriesProgress(
+	books: BookInfo[],
+	items: BookProgress[]
+): { done: number; total: number } {
+	const byBook = new Map(items.map((item) => [item.book, item]));
+	let done = 0;
+	for (const book of books) {
+		const entry = byBook.get(book.rel);
+		if (entry && isFinished(entry.page, entry.pages)) done += 1;
+	}
+	return { done, total: books.length };
 }
 
 if (typeof window !== 'undefined') {

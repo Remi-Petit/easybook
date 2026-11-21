@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { BookInfo } from './api';
 import type { BookProgress } from './auth';
-import { inProgress, isFinished, percentRead } from './progress';
+import { inProgress, isFinished, percentRead, seriesProgress } from './progress';
 
 describe('percentRead', () => {
 	it('compte la page courante déjà lue', () => {
@@ -64,5 +65,47 @@ describe('inProgress', () => {
 	it('garde les livres dont le total est inconnu', () => {
 		const items = [entry('inconnu.epub', 12, 0)];
 		expect(inProgress(items, null)).toHaveLength(1);
+	});
+});
+
+describe('seriesProgress', () => {
+	const book = (rel: string): BookInfo => ({
+		rel,
+		name: rel,
+		folder: '',
+		format: 'cbz',
+		readable: true,
+		size: 1,
+		modified: 1,
+		pages: 100,
+		title: rel
+	});
+
+	const entry = (book: string, page: number, pages: number): BookProgress => ({
+		book,
+		title: book,
+		format: 'cbz',
+		page,
+		pages,
+		startedAt: 1,
+		updatedAt: 2
+	});
+
+	it('compte les livres terminés sur le total de la série', () => {
+		const books = [book('t1.cbz'), book('t2.cbz'), book('t3.cbz')];
+		const items = [entry('t1.cbz', 99, 100), entry('t2.cbz', 40, 100)];
+		expect(seriesProgress(books, items)).toEqual({ done: 1, total: 3 });
+	});
+
+	it('ignore les livres jamais ouverts et les totaux inconnus', () => {
+		const books = [book('t1.cbz'), book('t2.cbz')];
+		const items = [entry('t2.cbz', 12, 0)];
+		expect(seriesProgress(books, items)).toEqual({ done: 0, total: 2 });
+	});
+
+	it('ne compte pas les lectures d’autres séries', () => {
+		const books = [book('t1.cbz')];
+		const items = [entry('autre/t9.cbz', 99, 100)];
+		expect(seriesProgress(books, items)).toEqual({ done: 0, total: 1 });
 	});
 });
