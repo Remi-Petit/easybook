@@ -45,24 +45,27 @@
 			{t('home.emptyBefore')} <code>books/</code> {t('home.emptyAfter')}
 		</p>
 	{:else}
-		{#if continuing.length > 0}
-			<!-- Une seule ligne : le plus récent à gauche, le reste au défilement. -->
-			<section class="group">
-				<h2>
-					{t('home.continue')}
-					<span class="count">{continuing.length}</span>
-				</h2>
-				<div class="rail">
-					{#each continuing as book (book.rel)}
-						<BookCard {book} />
-					{/each}
-				</div>
-			</section>
-		{/if}
-
 		<!-- La racine du catalogue : ses catégories d'abord, puis ses livres.
 		     La recherche y trouve des **séries** ; les livres se cherchent dans
-		     une série, une fois qu'on y est. -->
-		<LibraryBrowser scope="" categories search="folders" />
+		     une série, une fois qu'on y est. Les lectures en cours passent
+		     **sous** la barre de recherche, et seulement s'il y en a. -->
+		<LibraryBrowser scope="" categories search="folders">
+			{#snippet lead()}
+				{#if continuing.length > 0}
+					<!-- Une seule ligne : le plus récent à gauche, le reste au défilement. -->
+					<section class="group">
+						<h2>
+							{t('home.continue')}
+							<span class="count">{continuing.length}</span>
+						</h2>
+						<div class="rail">
+							{#each continuing as book (book.rel)}
+								<BookCard {book} />
+							{/each}
+						</div>
+					</section>
+				{/if}
+			{/snippet}
+		</LibraryBrowser>
 	{/if}
 </div>
