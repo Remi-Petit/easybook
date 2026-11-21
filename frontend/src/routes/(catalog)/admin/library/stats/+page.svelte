@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { formatBytes } from '$lib/api';
+	import { formatBytes, type BookInfo } from '$lib/api';
 	import { call, errorKey } from '$lib/auth';
 	import BarList from '$lib/components/BarList.svelte';
 	import Donut from '$lib/components/Donut.svelte';
@@ -39,13 +39,86 @@
 		}))
 	);
 
+	/**
+	 * Vue « par dossier » à deux niveaux, calculée depuis le catalogue déjà
+	 * chargé : les catégories (dossier de premier niveau), puis, d'un clic sur
+	 * une part du camembert, les dossiers qu'elle contient.
+	 */
+	type FolderNode = { key: string; label: string; books: number; bytes: number; pages: number };
+
+	/** Regroupe des livres par clé, du plus lourd au plus léger. */
+	function groupBooks(
+		books: BookInfo[],
+		keyOf: (book: BookInfo) => string,
+		labelOf: (key: string) => string
+	): FolderNode[] {
+		const groups = new Map<string, FolderNode>();
+		for (const book of books) {
+			const key = keyOf(book);
+			const node = groups.get(key) ?? { key, label: labelOf(key), books: 0, bytes: 0, pages: 0 };
+			node.books += 1;
+			node.bytes += book.size;
+			node.pages += book.pages ?? 0;
+			groups.set(key, node);
+		}
+		return [...groups.values()].sort((a, b) => b.bytes - a.bytes);
+	}
+
+	/** Dossier parent d'un livre (`""` à la racine). */
+	const parentOf = (rel: string) => rel.split('/').slice(0, -1).join('/');
+
+	const categories = $derived(
+		groupBooks(
+			library.books,
+			(book) => book.folder,
+			(key) => key || t('stats.root')
+		)
+	);
+
+	/** Catégorie ouverte dans le camembert ; `null` = vue par catégorie. */
+	let openCategory = $state<string | null>(null);
+
+	/** Le contenu de la catégorie ouverte, par sous-dossier. */
+	const insideCategory = $derived.by(() => {
+		const category = openCategory;
+		if (category === null) return [];
+		return groupBooks(
+			library.books.filter((book) => book.folder === category),
+			(book) => parentOf(book.rel),
+			(key) =>
+				key === category || key === ''
+					? t('stats.noSubfolder')
+					: key.slice(category.length + 1)
+		);
+	});
+
+	/** Le niveau affiché : catégories, ou dossiers d'une catégorie. */
+	const folderNodes = $derived(openCategory === null ? categories : insideCategory);
+
+	/** Nom du niveau affiché (`null` = toutes les catégories). */
+	const levelLabel = $derived(
+		openCategory === null
+			? t('stats.categories', { count: categories.length })
+			: openCategory || t('stats.root')
+	);
+
+	function openFolder(key: string) {
+		openCategory = key;
+		foldersOpen = false;
+	}
+
+	function closeFolder() {
+		openCategory = null;
+		foldersOpen = false;
+	}
+
 	const folderBars = $derived(
-		(detail?.folders ?? []).map((entry, index) => ({
-			key: entry.name || '.',
-			label: entry.name || t('stats.root'),
-			value: entry.bytes,
+		folderNodes.map((node, index) => ({
+			key: node.key,
+			label: node.label,
+			value: node.bytes,
 			color: folderColor(index),
-			note: t('perf.books', { count: entry.books })
+			note: t('perf.books', { count: node.books })
 		}))
 	);
 
@@ -199,18 +272,24 @@
 			<section class="perf-card">
 				<h2>
 					{t('stats.foldersTitle')}
-					<span class="perf-count">{formatNumber(folderBars.length)}</span>
+					<span class="perf-count">{levelLabel}</span>
 				</h2>
+				{#if openCategory !== null}
+					<button type="button" class="back-link" onclick={closeFolder}>
+						‹ {t('stats.allCategories')}
+					</button>
+				{/if}
 				<div class="perf-split">
 					<Donut
 						slices={folderSlices}
 						format={formatBytes}
 						label={t('stats.foldersTitle')}
-						caption={t('stats.folders', { count: folderBars.length })}
+						caption={levelLabel}
+						onSelect={openCategory === null ? openFolder : undefined}
 					/>
 					<div>
 						<BarList bars={shownFolders} format={formatBytes} />
-						{#if folderBars.length > COLLAPSED}
+						{#if folderNodes.length > COLLAPSED}
 							<button
 								type="button"
 								class="more-toggle"
@@ -219,10 +298,14 @@
 							>
 								{foldersOpen
 									? t('stats.less')
-									: t('stats.more', { count: folderBars.length - COLLAPSED })}
+									: t('stats.more', { count: folderNodes.length - COLLAPSED })}
 							</button>
 						{/if}
-						<p class="stat-hint">{t('stats.foldersHint')}</p>
+						<p class="stat-hint">
+							{openCategory === null
+								? t('stats.drillHint')
+								: t('stats.foldersHint', { name: openCategory || t('stats.root') })}
+						</p>
 					</div>
 				</div>
 			</section>

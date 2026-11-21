@@ -1677,6 +1677,21 @@ code {
 	font-size: 11px;
 }
 
+/* Part cliquable : elle ouvre le détail qu'elle représente. */
+.donut .pickable {
+	cursor: pointer;
+	transition:
+		opacity 120ms ease,
+		stroke-width 120ms ease;
+}
+
+.donut .pickable:hover,
+.donut .pickable:focus-visible {
+	opacity: 0.8;
+	outline: none;
+	stroke-width: 16;
+}
+
 .perf-card {
 	min-width: 0;
 	padding: 18px 20px 20px;

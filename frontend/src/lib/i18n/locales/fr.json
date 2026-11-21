@@ -270,7 +270,14 @@
 	"stats.formats": "Par format",
 	"stats.formatsHint": "Le poids de chaque format et les pages qu’il apporte ; un format non ouvrable n’a pas de pages.",
 	"stats.foldersTitle": "Par dossier",
-	"stats.foldersHint": "Douze dossiers au plus, les plus lourds d’abord.",
+	"stats.categories": {
+		"one": "{count} catégorie",
+		"other": "{count} catégories"
+	},
+	"stats.drillHint": "Cliquez une part du camembert pour voir les dossiers qu’elle contient.",
+	"stats.noSubfolder": "Sans sous-dossier",
+	"stats.allCategories": "Toutes les catégories",
+	"stats.foldersHint": "Les dossiers de {name}, les plus lourds d’abord.",
 	"stats.root": "Racine",
 	"stats.allBooks": "Tous les livres",
 	"stats.search": "Rechercher un livre…",

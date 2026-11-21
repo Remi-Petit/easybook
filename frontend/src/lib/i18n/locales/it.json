@@ -270,7 +270,14 @@
 	"stats.formats": "Per formato",
 	"stats.formatsHint": "Quanto pesa ogni formato e quante pagine porta; un formato non leggibile non ha pagine.",
 	"stats.foldersTitle": "Per cartella",
-	"stats.foldersHint": "Al massimo dodici cartelle, le più pesanti per prime.",
+	"stats.categories": {
+		"one": "{count} categoria",
+		"other": "{count} categorie"
+	},
+	"stats.drillHint": "Fai clic su una fetta del grafico per vedere le cartelle che contiene.",
+	"stats.noSubfolder": "Senza sottocartella",
+	"stats.allCategories": "Tutte le categorie",
+	"stats.foldersHint": "Le cartelle di {name}, le più pesanti per prime.",
 	"stats.root": "Radice",
 	"stats.allBooks": "Tutti i libri",
 	"stats.search": "Cerca un libro…",

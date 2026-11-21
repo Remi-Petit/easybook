@@ -270,7 +270,14 @@
 	"stats.formats": "Por formato",
 	"stats.formatsHint": "Lo que pesa cada formato y las páginas que aporta; un formato no legible no tiene páginas.",
 	"stats.foldersTitle": "Por carpeta",
-	"stats.foldersHint": "Doce carpetas como máximo, las más pesadas primero.",
+	"stats.categories": {
+		"one": "{count} categoría",
+		"other": "{count} categorías"
+	},
+	"stats.drillHint": "Haz clic en una porción del gráfico para ver sus carpetas.",
+	"stats.noSubfolder": "Sin subcarpeta",
+	"stats.allCategories": "Todas las categorías",
+	"stats.foldersHint": "Las carpetas de {name}, las más pesadas primero.",
 	"stats.root": "Raíz",
 	"stats.allBooks": "Todos los libros",
 	"stats.search": "Buscar un libro…",

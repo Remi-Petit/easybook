@@ -270,7 +270,14 @@
 	"stats.formats": "Nach Format",
 	"stats.formatsHint": "Was jedes Format wiegt und an Seiten beiträgt; ein nicht lesbares Format hat keine Seiten.",
 	"stats.foldersTitle": "Nach Ordner",
-	"stats.foldersHint": "Höchstens zwölf Ordner, die schwersten zuerst.",
+	"stats.categories": {
+		"one": "{count} Kategorie",
+		"other": "{count} Kategorien"
+	},
+	"stats.drillHint": "Klicke auf ein Tortenstück, um seine Ordner zu sehen.",
+	"stats.noSubfolder": "Ohne Unterordner",
+	"stats.allCategories": "Alle Kategorien",
+	"stats.foldersHint": "Die Ordner in {name}, die schwersten zuerst.",
 	"stats.root": "Wurzel",
 	"stats.allBooks": "Alle Bücher",
 	"stats.search": "Buch suchen…",

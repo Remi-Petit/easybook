@@ -8,13 +8,16 @@
 		slices,
 		format,
 		label,
-		caption
+		caption,
+		onSelect
 	}: {
 		slices: Slice[];
 		format: (value: number) => string;
 		label: string;
 		/** Petit texte au centre, sous le total. */
 		caption?: string;
+		/** Rend chaque part cliquable (ouvrir un détail). */
+		onSelect?: (key: string) => void;
 	} = $props();
 
 	/** Rayon du trait et sa longueur : une part = une fraction de ce cercle. */
@@ -41,6 +44,8 @@
 	<svg viewBox="0 0 100 100" role="img" aria-label={label}>
 		<circle cx="50" cy="50" r={RADIUS} fill="none" stroke="var(--panel-2)" stroke-width="13" />
 		{#each arcs as arc (arc.key)}
+			<!-- Une part cliquable est un bouton : le role le dit, le tabindex l'atteint. -->
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<circle
 				cx="50"
 				cy="50"
@@ -51,6 +56,19 @@
 				stroke-dasharray="{arc.length} {LENGTH - arc.length}"
 				stroke-dashoffset={-arc.offset}
 				transform="rotate(-90 50 50)"
+				class:pickable={!!onSelect}
+				role={onSelect ? 'button' : undefined}
+				tabindex={onSelect ? 0 : undefined}
+				aria-label={onSelect ? arc.label : undefined}
+				onclick={onSelect ? () => onSelect(arc.key) : undefined}
+				onkeydown={onSelect
+					? (event: KeyboardEvent) => {
+							if (event.key === 'Enter' || event.key === ' ') {
+								event.preventDefault();
+								onSelect(arc.key);
+							}
+						}
+					: undefined}
 			>
 				<title>{arc.label} · {format(arc.value)}</title>
 			</circle>

@@ -208,16 +208,10 @@ async fn library_stats_describe_the_catalog() {
     assert_eq!(body["totals"]["folders"], 2);
     assert_eq!(body["totals"]["unreadable"], 0);
     assert_eq!(body["formats"].as_array().unwrap().len(), 3);
-    let folders: Vec<&str> = body["folders"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|entry| entry["name"].as_str().unwrap())
-        .collect();
-    // Regroupement par dossier parent : la racine compte pour un.
-    assert!(folders.contains(&"mangas"));
-    assert!(folders.contains(&"mangas/sous"));
-    assert!(folders.contains(&""));
+    // Le détail des dossiers est calculé par le navigateur (deux niveaux :
+    // catégorie, puis dossier d'une catégorie) à partir du catalogue.
+    assert!(body.get("folders").is_none());
+    assert!(body.get("largest").is_none());
 }
 
 #[tokio::test]

@@ -40,8 +40,6 @@ pub struct LargestBook {
 
 /// Nombre de livres détaillés dans le résumé.
 const LARGEST: usize = 5;
-/// Nombre de dossiers détaillés sur la page des statistiques.
-const TOP_FOLDERS: usize = 12;
 
 #[derive(Serialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
@@ -112,8 +110,6 @@ pub struct LibraryDetail {
     pub totals: Totals,
     /// Un poste par format, du plus lourd au plus léger.
     pub formats: Vec<FormatStats>,
-    /// Les plus gros dossiers (livres regroupés par dossier parent).
-    pub folders: Vec<FolderStats>,
     /// Plus gros livres — **interne** : sert au résumé de l'onglet Stockage.
     /// La liste complète est déjà dans le catalogue du navigateur, inutile de
     /// la renvoyer ici.
@@ -148,16 +144,6 @@ pub struct FormatStats {
     pub unreadable: u64,
 }
 
-#[derive(Serialize, Debug, Default, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct FolderStats {
-    /// Chemin relatif du dossier parent (`""` à la racine).
-    pub name: String,
-    pub books: u64,
-    pub bytes: u64,
-    pub pages: u64,
-}
-
 /// Lit le catalogue sérialisé une fois et en tire tous les chiffres.
 pub fn library_detail(catalog_json: &str) -> LibraryDetail {
     use std::collections::BTreeMap;
@@ -180,7 +166,6 @@ pub fn library_detail(catalog_json: &str) -> LibraryDetail {
         ..LibraryDetail::default()
     };
     let mut formats: BTreeMap<String, FormatStats> = BTreeMap::new();
-    let mut folders: BTreeMap<String, FolderStats> = BTreeMap::new();
 
     for book in books {
         let text = |field: &str| book.get(field).and_then(|value| value.as_str());
@@ -223,18 +208,6 @@ pub fn library_detail(catalog_json: &str) -> LibraryDetail {
             format_stats.pages += pages;
         }
 
-        // Regroupement par dossier parent : une série = une ligne.
-        let parent = rel.rsplit_once('/').map_or("", |(dir, _)| dir);
-        let folder_stats = folders
-            .entry(parent.to_string())
-            .or_insert_with(|| FolderStats {
-                name: parent.to_string(),
-                ..FolderStats::default()
-            });
-        folder_stats.books += 1;
-        folder_stats.bytes += size;
-        folder_stats.pages += pages.unwrap_or(0);
-
         if !rel.is_empty() {
             detail.largest.push(LargestBook {
                 rel: rel.to_string(),
@@ -249,11 +222,6 @@ pub fn library_detail(catalog_json: &str) -> LibraryDetail {
     detail
         .formats
         .sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.format.cmp(&b.format)));
-    detail.folders = folders.into_values().collect();
-    detail
-        .folders
-        .sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.name.cmp(&b.name)));
-    detail.folders.truncate(TOP_FOLDERS);
     detail
         .largest
         .sort_by_key(|book| std::cmp::Reverse(book.size));
@@ -428,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn detail_groups_by_format_and_parent_folder() {
+    fn detail_counts_formats_and_unreadable_books() {
         let detail = library_detail(
             r#"{
                 "total": 3,
@@ -458,14 +426,6 @@ mod tests {
             vec![("cbz", 1, 300), ("cbr", 1, 200), ("epub", 1, 10)]
         );
         assert_eq!(detail.formats[1].unreadable, 1);
-
-        // Dossiers parents : la série, puis la racine du livre isolé.
-        let folders: Vec<(&str, u64, u64)> = detail
-            .folders
-            .iter()
-            .map(|entry| (entry.name.as_str(), entry.books, entry.bytes))
-            .collect();
-        assert_eq!(folders, vec![("mangas/Chainsaw Man", 2, 500), ("", 1, 10)]);
     }
 
     #[test]

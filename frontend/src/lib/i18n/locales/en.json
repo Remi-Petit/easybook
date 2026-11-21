@@ -270,7 +270,14 @@
 	"stats.formats": "By format",
 	"stats.formatsHint": "What each format weighs and the pages it brings; a format the server cannot open has no pages.",
 	"stats.foldersTitle": "By folder",
-	"stats.foldersHint": "Twelve folders at most, heaviest first.",
+	"stats.categories": {
+		"one": "{count} category",
+		"other": "{count} categories"
+	},
+	"stats.drillHint": "Click a slice of the pie to see the folders it holds.",
+	"stats.noSubfolder": "No subfolder",
+	"stats.allCategories": "All categories",
+	"stats.foldersHint": "The folders inside {name}, heaviest first.",
 	"stats.root": "Root",
 	"stats.allBooks": "All books",
 	"stats.search": "Search a book…",

@@ -26,20 +26,10 @@ export type LibraryFormat = {
 	unreadable: number;
 };
 
-export type LibraryFolder = {
-	/** Dossier parent (`""` pour les livres à la racine). */
-	name: string;
-	books: number;
-	bytes: number;
-	pages: number;
-};
-
 export type LibraryDetail = {
 	totals: LibraryTotals;
 	/** Un poste par format, du plus lourd au plus léger. */
 	formats: LibraryFormat[];
-	/** Les plus gros dossiers, séries comprises. */
-	folders: LibraryFolder[];
 };
 
 const FORMAT_COLORS: Record<string, string> = {
