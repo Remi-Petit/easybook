@@ -369,10 +369,6 @@
 	"account.reading.kpi.books": "Libri letti",
 	"account.reading.kpi.time": "Tempo di lettura",
 	"account.reading.kpi.series": "Serie completate",
-	"account.reading.kpi.seriesTotal": {
-		"one": "su {count} serie",
-		"other": "su {count} serie"
-	},
 	"account.reading.duration.seconds": "{count} s",
 	"account.reading.duration.minutes": "{count} min",
 	"account.reading.duration.hours": "{hours} h {minutes}",

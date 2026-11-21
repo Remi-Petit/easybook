@@ -139,6 +139,31 @@ async fn only_the_owner_writes_and_only_admins_read() {
 }
 
 #[tokio::test]
+async fn the_history_follows_the_limit_and_zero_means_everything() {
+    let site = site();
+    let alice = site.add_user("alice", Role::User, Some(PASSWORD));
+    let reader = site.session_for(&alice);
+    for index in 0..4 {
+        let name = format!("T{index}.cbz");
+        std::fs::write(site.dir.path().join(&name), b"x").unwrap();
+        site.post("/api/read/progress", Some(&reader), position(&name, 1, 10))
+            .await;
+    }
+
+    let limited = site.get("/api/read/history?limit=2", Some(&reader)).await;
+    assert_eq!(limited.status, StatusCode::OK);
+    assert_eq!(
+        limited.json()["recent"].as_array().unwrap().len(),
+        2,
+        "la limite borne la liste"
+    );
+
+    // `limit=0` : tout l'historique, pour les chiffres du compte.
+    let all = site.get("/api/read/history?limit=0", Some(&reader)).await;
+    assert_eq!(all.json()["recent"].as_array().unwrap().len(), 4);
+}
+
+#[tokio::test]
 async fn an_unknown_account_is_not_found() {
     let site = site();
     let admin = site.admin().await;

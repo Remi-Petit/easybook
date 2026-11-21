@@ -1453,7 +1453,9 @@ struct ReadingHistoryQuery {
 /// `GET /api/read/history?limit=` — les lectures du compte connecté.
 ///
 /// C'est ce que l'accueil affiche (« poursuivre la lecture ») et ce qui donne
-/// leur barre de progression aux couvertures.
+/// leur barre de progression aux couvertures. `limit=0` rend **tout**
+/// l'historique : la page du compte y calcule ses chiffres (séries terminées),
+/// qui doivent porter sur toutes les lectures, pas sur les plus récentes.
 async fn get_my_reading(
     State(state): State<AppState>,
     auth::SessionUser(user): auth::SessionUser,
@@ -1462,7 +1464,7 @@ async fn get_my_reading(
     let Some(progress) = state.progress() else {
         return (StatusCode::NOT_FOUND, "historique désactivé").into_response();
     };
-    let limit = query.limit.unwrap_or(30).clamp(1, 200);
+    let limit = query.limit.unwrap_or(30);
     let id = user.id.clone();
     match tokio::task::spawn_blocking(move || progress.history(&id, limit)).await {
         Ok(Ok(history)) => ([(header::CACHE_CONTROL, "no-store")], Json(history)).into_response(),

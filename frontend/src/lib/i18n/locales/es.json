@@ -369,10 +369,6 @@
 	"account.reading.kpi.books": "Libros leídos",
 	"account.reading.kpi.time": "Tiempo de lectura",
 	"account.reading.kpi.series": "Sagas terminadas",
-	"account.reading.kpi.seriesTotal": {
-		"one": "de {count} saga",
-		"other": "de {count} sagas"
-	},
 	"account.reading.duration.seconds": "{count} s",
 	"account.reading.duration.minutes": "{count} min",
 	"account.reading.duration.hours": "{hours} h {minutes}",

@@ -32,6 +32,10 @@ pub const IDLE_SECS: i64 = crate::readings::IDLE.as_secs() as i64;
 /// Longueur maximale d'un chemin ou d'un titre gardé en base.
 const MAX_TEXT: usize = 512;
 
+/// Sessions rendues quand on demande **tout** l'historique de lecture : le
+/// tableau des sessions n'est qu'informatif, il n'a pas à suivre.
+const SESSIONS_RECENT: usize = 200;
+
 fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -231,6 +235,9 @@ impl Progress {
     }
 
     /// Livres les plus récemment lus par `user`, du plus récent au plus ancien.
+    ///
+    /// `limit` : `0` rend **tout** l'historique — les chiffres d'un compte (KPI,
+    /// séries terminées) en ont besoin pour être exacts.
     pub fn recent(&self, user: &str, limit: usize) -> rusqlite::Result<Vec<BookProgress>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
@@ -240,8 +247,10 @@ impl Progress {
               ORDER BY updated_at DESC, book ASC
               LIMIT ?2",
         )?;
+        // `LIMIT -1` est la façon dont SQLite dit « pas de limite ».
+        let limit = if limit == 0 { -1 } else { limit as i64 };
         let rows = stmt
-            .query_map(params![user, limit as i64], |row| {
+            .query_map(params![user, limit], |row| {
                 Ok(BookProgress {
                     book: row.get(0)?,
                     title: row.get(1)?,
@@ -317,11 +326,16 @@ impl Progress {
     }
 
     /// Tout ce qu'affiche la page d'administration, en une fois.
+    ///
+    /// `limit` : `0` rend tout l'historique de lecture. Les sessions, elles,
+    /// s'arrêtent à `SESSIONS_RECENT` dans ce cas : elles ne sont qu'un tableau
+    /// informatif, et « tout » pour les livres ne doit pas le devenir aussi.
     pub fn history(&self, user: &str, limit: usize) -> rusqlite::Result<History> {
+        let sessions = if limit == 0 { SESSIONS_RECENT } else { limit };
         Ok(History {
             summary: self.summary(user)?,
             recent: self.recent(user, limit)?,
-            sessions: self.sessions(user, limit)?,
+            sessions: self.sessions(user, sessions)?,
         })
     }
 }
@@ -432,6 +446,25 @@ mod tests {
 
         // Chaque utilisateur ne voit que ses lignes.
         assert_eq!(progress.recent("u2", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_null_limit_renders_the_whole_history() {
+        let progress = Progress::open_in_memory().unwrap();
+        for index in 0..5 {
+            let name = format!("T{index}.cbz");
+            progress.save("u1", &entry(&name, index, 10)).unwrap();
+        }
+        progress.save("u2", &entry("autre.cbz", 1, 10)).unwrap();
+
+        // Une limite ordinaire borne la liste ; zéro veut dire « tout ».
+        assert_eq!(progress.recent("u1", 2).unwrap().len(), 2);
+        assert_eq!(progress.recent("u1", 0).unwrap().len(), 5);
+        let history = progress.history("u1", 0).unwrap();
+        assert_eq!(history.recent.len(), 5);
+        assert_eq!(history.summary.books, 5);
+        // Les sessions, elles, gardent leur plafond.
+        assert!(history.sessions.len() <= SESSIONS_RECENT);
     }
 
     #[test]

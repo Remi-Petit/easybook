@@ -49,11 +49,11 @@
 		document.getElementById(`account-tab-${tab}`)?.focus();
 	}
 
-	// Les livres terminés : la liste du compte, un peu plus longue que celle du
-	// magasin partagé (60 entrées) — on redemande jusqu'à 200 au serveur.
+	// Les livres terminés : toute la liste du compte (`limit=0` — le serveur ne
+	// plafonne plus, sinon les séries terminées seraient sous-estimées).
 	let finished = $state<BookProgress[]>([]);
 	// Les chiffres du compte (`summary`) viennent de la même réponse : ils
-	// portent sur **toutes** les lectures, pas seulement les 200 dernières.
+	// portent sur **toutes** les lectures, pas seulement les plus récentes.
 	let summary = $state<ReadingHistory['summary'] | null>(null);
 	let readingLoaded = $state(false);
 
@@ -64,7 +64,7 @@
 		else if (params.get('error')) notify(t(errorKey(params.get('error'))), { tone: 'error' });
 		if (params.get('linked') || params.get('error')) replaceState('/account', {});
 
-		const result = await call<ReadingHistory>('GET', '/api/read/history?limit=200');
+		const result = await call<ReadingHistory>('GET', '/api/read/history?limit=0');
 		if (result.ok) {
 			summary = result.data.summary;
 			finished = result.data.recent.filter((entry) => isFinished(entry.page, entry.pages));
@@ -160,19 +160,19 @@
 			<div class="admin-stack">
 				{#if tab === 'reading'}
 					<div class="perf-grid compact">
-						<section class="perf-card perf-stat">
+						<section class="perf-card kpi" style="--kpi: #e0a54a">
 							<h2>{t('account.reading.kpi.books')}</h2>
 							<p class="stat-value">{formatNumber(summary?.finished ?? 0)}</p>
 						</section>
-						<section class="perf-card perf-stat">
+						<section class="perf-card kpi" style="--kpi: #6aa5e0">
 							<h2>{t('account.reading.kpi.time')}</h2>
 							<p class="stat-value">{duration(summary?.seconds ?? 0)}</p>
 						</section>
-						<section class="perf-card perf-stat">
+						<section class="perf-card kpi" style="--kpi: #5cc98a">
 							<h2>{t('account.reading.kpi.series')}</h2>
-							<p class="stat-value">{formatNumber(series.done)}</p>
-							<p class="stat-sub">
-								{t('account.reading.kpi.seriesTotal', { count: series.total })}
+							<p class="stat-value">
+								{formatNumber(series.done)}
+								<span class="stat-of">/ {formatNumber(series.total)}</span>
 							</p>
 						</section>
 					</div>
