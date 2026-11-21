@@ -1,5 +1,13 @@
 import { describe as suite, expect, it } from 'vitest';
-import { describe, niceCeil, colorFor, toSample, bookName, type PerfSnapshot } from './perf';
+import {
+	describe,
+	niceCeil,
+	colorFor,
+	toSample,
+	bookName,
+	formatSampleTime,
+	type PerfSnapshot
+} from './perf';
 
 function snapshot(atMs: number, processes: PerfSnapshot['processes'], usec: number | null = null) {
 	return {
@@ -130,5 +138,19 @@ suite('colorFor', () => {
 	it('est stable', () => {
 		expect(colorFor('inconnu')).toBe(colorFor('inconnu'));
 		expect(colorFor('easybook')).toBe('#e0a54a');
+	});
+});
+
+suite('formatSampleTime', () => {
+	const at = Date.UTC(2026, 10, 21, 14, 35, 20);
+
+	it("donne l'heure précise sur une fenêtre courte", () => {
+		expect(formatSampleTime(at, 3 * 60_000)).toMatch(/\d{2}:\d{2}:\d{2}/);
+	});
+
+	it("ajoute la date au-delà d'un jour", () => {
+		const label = formatSampleTime(at, 30 * 24 * 3_600_000);
+		expect(label).toMatch(/\d{4}/);
+		expect(label).toMatch(/\d{1,2}:\d{2}/);
 	});
 });

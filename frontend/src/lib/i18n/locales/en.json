@@ -115,6 +115,7 @@
 	"perf.history.error": "History unavailable ({error}).",
 	"perf.history.hint": "Recorded every {sample} s, kept for {days} days.",
 	"perf.now": "now",
+	"perf.measuredAt": "Measured at {time}",
 	"perf.ram.total": "Memory used",
 	"perf.ram.limit": "of {limit} allowed",
 	"perf.ram.noLimit": "no limit set",

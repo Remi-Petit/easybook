@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { niceCeil } from '$lib/perf';
+	import { formatSampleTime, niceCeil } from '$lib/perf';
 	import { t, formatNumber } from '$lib/i18n/state.svelte';
 
 	type Series = { key: string; label: string; color: string; values: number[] };
@@ -24,6 +24,8 @@
 
 	let width = $state(640);
 	let hover = $state<number | null>(null);
+	/** Position verticale du pointeur, pour poser la carte à côté du trait. */
+	let pointerY = $state(0);
 
 	const innerW = $derived(Math.max(10, width - PAD.left - PAD.right));
 	const innerH = $derived(height - PAD.top - PAD.bottom);
@@ -60,6 +62,7 @@
 	function move(event: PointerEvent) {
 		if (times.length === 0) return;
 		const box = (event.currentTarget as SVGElement).getBoundingClientRect();
+		pointerY = event.clientY - box.top;
 		const time = end - windowMs + ((event.clientX - box.left - PAD.left) / innerW) * windowMs;
 		let best = 0;
 		for (let i = 1; i < times.length; i++) {
@@ -69,6 +72,13 @@
 	}
 
 	const shown = $derived(hover ?? (times.length > 0 ? times.length - 1 : null));
+
+	/** Position du trait vertical du point survolé. */
+	const tipX = $derived(hover === null ? 0 : x(times[hover]));
+	/** La carte passe à gauche du trait quand la droite manque de place. */
+	const tipOnLeft = $derived(tipX > width / 2);
+	/** Suit la souris, sans sortir du cadre du graphique. */
+	const tipY = $derived(Math.max(20, Math.min(pointerY, height - 20)));
 
 	/** Durée couverte, en unité lisible : « 3 min », « 24 h », « 30 j ». */
 	const spanLabel = $derived.by(() => {
@@ -111,6 +121,17 @@
 		</text>
 		<text class="tick" x={width - PAD.right} y={height - 6} text-anchor="end">{t('perf.now')}</text>
 	</svg>
+
+	{#if hover !== null && times[hover] !== undefined}
+		<div
+			class="chart-tip"
+			style:left={tipOnLeft ? 'auto' : `${tipX + 12}px`}
+			style:right={tipOnLeft ? `${width - tipX + 12}px` : 'auto'}
+			style:top={`${tipY}px`}
+		>
+			{formatSampleTime(times[hover], windowMs)}
+		</div>
+	{/if}
 
 	<ul class="legend">
 		{#each series as item (item.key)}

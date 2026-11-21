@@ -115,6 +115,7 @@
 	"perf.history.error": "Verlauf nicht verfügbar ({error}).",
 	"perf.history.hint": "Alle {sample} s aufgezeichnet, {days} Tage aufbewahrt.",
 	"perf.now": "jetzt",
+	"perf.measuredAt": "Messung vom {time}",
 	"perf.ram.total": "Belegter Speicher",
 	"perf.ram.limit": "von {limit} erlaubt",
 	"perf.ram.noLimit": "keine Obergrenze gesetzt",

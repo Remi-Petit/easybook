@@ -115,6 +115,7 @@
 	"perf.history.error": "Cronologia non disponibile ({error}).",
 	"perf.history.hint": "Registrato ogni {sample} s, conservato {days} giorni.",
 	"perf.now": "ora",
+	"perf.measuredAt": "Misura del {time}",
 	"perf.ram.total": "Memoria usata",
 	"perf.ram.limit": "su {limit} consentiti",
 	"perf.ram.noLimit": "nessun limite impostato",

@@ -1714,10 +1714,30 @@ code {
 	font-size: 13px;
 }
 
+.chart {
+	position: relative;
+}
+
 .chart svg {
 	display: block;
 	width: 100%;
 	touch-action: pan-y;
+}
+
+.chart-tip {
+	position: absolute;
+	z-index: 2;
+	padding: 4px 8px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--panel);
+	box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+	color: var(--text);
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	pointer-events: none;
+	transform: translateY(-50%);
 }
 
 .chart .gridline {

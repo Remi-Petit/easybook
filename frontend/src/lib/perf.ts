@@ -4,7 +4,7 @@
 // instantanées (mémoire). Un taux CPU se calcule donc à partir de deux mesures
 // successives. Ce module ne touche ni au réseau ni à l'état : il se teste seul.
 
-import { formatNumber, t } from './i18n/state.svelte';
+import { formatNumber, intlLocale, t } from './i18n/state.svelte';
 
 export type PerfProcess = {
 	pid: number;
@@ -230,6 +230,25 @@ export function toSample(at: number, view: View): Sample {
 			view.groups.map((group) => [group.name, { rss: group.rss, cpuPct: group.cpuPct }])
 		)
 	};
+}
+
+/**
+ * Horodatage d'un point, adapté à la fenêtre affichée : l'heure précise sur
+ * moins d'un jour (`14:32:05`), la date et l'heure au-delà
+ * (`21 nov. 2026, 14:32`).
+ */
+export function formatSampleTime(atMs: number, windowMs: number): string {
+	const options: Intl.DateTimeFormatOptions =
+		windowMs <= 24 * 3_600_000
+			? { hour: '2-digit', minute: '2-digit', second: '2-digit' }
+			: {
+					day: 'numeric',
+					month: 'short',
+					year: 'numeric',
+					hour: '2-digit',
+					minute: '2-digit'
+				};
+	return new Intl.DateTimeFormat(intlLocale(), options).format(new Date(atMs));
 }
 
 /** Nom d'un programme tel que l'utilisateur le connaît. */

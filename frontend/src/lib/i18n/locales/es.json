@@ -115,6 +115,7 @@
 	"perf.history.error": "Historial no disponible ({error}).",
 	"perf.history.hint": "Registrado cada {sample} s, conservado {days} días.",
 	"perf.now": "ahora",
+	"perf.measuredAt": "Medición de {time}",
 	"perf.ram.total": "Memoria usada",
 	"perf.ram.limit": "de {limit} permitidos",
 	"perf.ram.noLimit": "sin límite definido",

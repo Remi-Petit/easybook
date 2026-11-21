@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { formatBytes } from '$lib/api';
+	import { formatBytes, formatDateTime } from '$lib/api';
 	import BarList from '$lib/components/BarList.svelte';
 	import InfoTip from '$lib/components/InfoTip.svelte';
 	import SegmentBar from '$lib/components/SegmentBar.svelte';
@@ -31,6 +31,12 @@
 	const memory = $derived(snapshot?.memory ?? null);
 	const liveSeconds = $derived(snapshot?.settings?.liveSecs ?? DEFAULT_INTERVAL_MS / 1000);
 	const historyEnabled = $derived(snapshot?.settings?.history ?? false);
+	/** Horodatage de la mesure affichée, en infobulle sur les grands chiffres. */
+	const measuredAt = $derived(
+		snapshot
+			? t('perf.measuredAt', { time: formatDateTime(snapshot.atMs / 1000) })
+			: ''
+	);
 
 	/** Points de l'historique enregistré (vide tant qu'on est en direct). */
 	const historyPoints = $derived(perf.range === 'live' ? [] : (perf.history?.points ?? []));
@@ -211,7 +217,7 @@
 				<div class="perf-grid">
 					<section class="perf-card perf-stat">
 						<h2>{t('perf.ram.total')}</h2>
-						<p class="stat-value">{formatBytes(view.memory)}</p>
+						<p class="stat-value" title={measuredAt}>{formatBytes(view.memory)}</p>
 						<p class="stat-sub">
 							{memory?.limit ? t('perf.ram.limit', { limit: formatBytes(memory.limit) }) : t('perf.ram.noLimit')}
 						</p>
@@ -445,7 +451,7 @@
 				<div class="perf-grid">
 					<section class="perf-card perf-stat">
 						<h2>{t('perf.cpu.now')}</h2>
-						<p class="stat-value">{formatPercent(view.cpuPct ?? 0)}</p>
+						<p class="stat-value" title={measuredAt}>{formatPercent(view.cpuPct ?? 0)}</p>
 						<p class="stat-sub">{t('perf.cpu.ofCores', { count: Math.round(cpuCapacity * 10) / 10 })}</p>
 						<p class="stat-hint">{t('perf.cpu.hint')}</p>
 					</section>
