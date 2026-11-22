@@ -27,6 +27,9 @@
 	/** Menu ouvert (écrans étroits : la barre latérale devient un bandeau + un menu). */
 	let open = $state(false);
 
+	/** Les pages d'administration se plient : elles ne servent pas à tous les visiteurs. */
+	let adminOpen = $state(true);
+
 	afterNavigate(() => (open = false));
 
 	/** Une catégorie reste active sur ses sous-dossiers (`/folder/A/B`). */
@@ -92,30 +95,54 @@
 			</div>
 
 			{#if isAdmin}
-				<p class="nav-section">{t('nav.admin')}</p>
-				{#if user}
+				<button
+					type="button"
+					class="nav-section nav-toggle"
+					aria-expanded={adminOpen}
+					aria-controls="sidebar-admin"
+					onclick={() => (adminOpen = !adminOpen)}
+				>
+					<span>{t('nav.admin')}</span>
+					<svg
+						class="nav-chevron"
+						width="12"
+						height="12"
+						viewBox="0 0 12 12"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.6"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M3 4.5l3 3 3-3" />
+					</svg>
+				</button>
+				<div id="sidebar-admin" hidden={!adminOpen}>
+					{#if user}
+						<a
+							class="nav-item"
+							href="/admin/users"
+							aria-current={active('/admin/users') ? 'page' : undefined}
+						>
+							<span class="name">{t('nav.users')}</span>
+						</a>
+					{/if}
 					<a
 						class="nav-item"
-						href="/admin/users"
-						aria-current={active('/admin/users') ? 'page' : undefined}
+						href="/admin/performance"
+						aria-current={active('/admin/performance') ? 'page' : undefined}
 					>
-						<span class="name">{t('nav.users')}</span>
+						<span class="name">{t('nav.performance')}</span>
 					</a>
-				{/if}
-				<a
-					class="nav-item"
-					href="/admin/performance"
-					aria-current={active('/admin/performance') ? 'page' : undefined}
-				>
-					<span class="name">{t('nav.performance')}</span>
-				</a>
-				<a
-					class="nav-item"
-					href="/admin/library/stats"
-					aria-current={active('/admin/library') ? 'page' : undefined}
-				>
-					<span class="name">{t('nav.stats')}</span>
-				</a>
+					<a
+						class="nav-item"
+						href="/admin/library/stats"
+						aria-current={active('/admin/library') ? 'page' : undefined}
+					>
+						<span class="name">{t('nav.stats')}</span>
+					</a>
+				</div>
 			{/if}
 		</nav>
 
