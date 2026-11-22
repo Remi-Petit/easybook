@@ -481,6 +481,8 @@
 	"users.reading.pages": "Pagine lette",
 	"users.reading.last": "Ultima lettura",
 	"users.reading.never": "Mai",
+	"users.reading.search": "Filtra per titolo…",
+	"users.reading.filter.format": "Tutti i formati",
 	"users.reading.unknown": "posizione sconosciuta",
 	"users.reading.recent": "Ultimi libri letti",
 	"users.reading.sessions": "Sessioni di lettura",

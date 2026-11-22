@@ -481,6 +481,8 @@
 	"users.reading.pages": "Pages read",
 	"users.reading.last": "Last read",
 	"users.reading.never": "Never",
+	"users.reading.search": "Filter by title…",
+	"users.reading.filter.format": "All formats",
 	"users.reading.unknown": "position unknown",
 	"users.reading.recent": "Recently read",
 	"users.reading.sessions": "Reading sessions",
