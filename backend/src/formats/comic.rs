@@ -15,7 +15,7 @@ use unrar::{Archive, CursorBeforeHeader, OpenArchive, Process};
 
 use crate::archive;
 use crate::formats::filecache::FileCache;
-use crate::formats::{is_image, is_noise, natural_cmp, normalize_entry};
+use crate::formats::{is_image, is_noise, natural_cmp, normalize_entry, Problem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Container {
@@ -24,7 +24,7 @@ enum Container {
 }
 
 /// Noms des planches, dans l'ordre de lecture.
-pub fn pages(path: &Path) -> Result<Vec<String>, String> {
+pub fn pages(path: &Path) -> Result<Vec<String>, Problem> {
     let (mut names, files) = match container(path)? {
         Container::Zip => zip_entries(path)?,
         Container::Rar => rar_entries(path)?,
@@ -42,18 +42,16 @@ pub fn pages(path: &Path) -> Result<Vec<String>, String> {
 /// Raison d'une archive sans planche, en nommant ce qu'elle contient quand il
 /// n'y a qu'un fichier (cas réel : un `.cbr` qui est un RAR de sources et d'un
 /// PDF, pas une bande dessinée).
-fn no_pages(files: &[String]) -> String {
+fn no_pages(files: &[String]) -> Problem {
     if let Some(book) = files.iter().find(|name| is_document(name)) {
-        return format!("l'archive ne contient aucune planche (elle contient un livre, « {book} »)");
+        return Problem::with("comic.no-pages.book", "name", book.clone());
     }
     match files {
-        [] => "l'archive ne contient aucun fichier".to_string(),
-        [only] => format!("l'archive ne contient aucune planche, seulement « {only} »"),
-        several => format!(
-            "l'archive ne contient aucune planche ({} fichiers, dont « {} »)",
-            several.len(),
-            several[0]
-        ),
+        [] => Problem::new("comic.no-pages.empty"),
+        [only] => Problem::with("comic.no-pages.only", "name", only.clone()),
+        several => Problem::new("comic.no-pages.some")
+            .param("count", several.len().to_string())
+            .param("name", several[0].clone()),
     }
 }
 
@@ -65,11 +63,15 @@ fn is_document(name: &str) -> bool {
 }
 
 /// Une planche : son nom d'entrée et son contenu.
-pub fn page(path: &Path, index: usize) -> Result<(String, Vec<u8>), String> {
+pub fn page(path: &Path, index: usize) -> Result<(String, Vec<u8>), Problem> {
     let names = cached_pages(path)?;
     let target = names
         .get(index)
-        .ok_or_else(|| format!("page {index} hors limites ({} pages)", names.len()))?
+        .ok_or_else(|| {
+            Problem::new("comic.page-out-of-range")
+                .param("index", index.to_string())
+                .param("count", names.len().to_string())
+        })?
         .clone();
 
     match container(path)? {
@@ -83,17 +85,15 @@ pub fn page(path: &Path, index: usize) -> Result<(String, Vec<u8>), String> {
 /// tournée.
 static PAGE_LISTS: FileCache<Vec<String>> = FileCache::new(32);
 
-fn cached_pages(path: &Path) -> Result<Arc<Vec<String>>, String> {
+fn cached_pages(path: &Path) -> Result<Arc<Vec<String>>, Problem> {
     PAGE_LISTS.get_or_load(path, || pages(path))
 }
 
 /// Type d'archive, d'après les premiers octets.
-fn container(path: &Path) -> Result<Container, String> {
+fn container(path: &Path) -> Result<Container, Problem> {
     let mut head = [0u8; 8];
-    let mut file = std::fs::File::open(path).map_err(|e| format!("{} : {e}", path.display()))?;
-    let read = file
-        .read(&mut head)
-        .map_err(|e| format!("{} : {e}", path.display()))?;
+    let mut file = std::fs::File::open(path).map_err(read_error)?;
+    let read = file.read(&mut head).map_err(read_error)?;
     let head = &head[..read];
 
     if head.starts_with(b"Rar!\x1a\x07") {
@@ -107,38 +107,48 @@ fn container(path: &Path) -> Result<Container, String> {
             .extension()
             .map(|ext| ext.to_string_lossy().into_owned());
         Err(match (kind(head), expected.as_deref()) {
-            (Some(kind), Some(ext)) => format!("le fichier est {kind}, pas une archive .{ext}"),
-            (Some(kind), None) => format!("le fichier est {kind}, pas une archive"),
-            (None, Some(ext)) => format!("le contenu ne correspond pas à l'extension .{ext}"),
-            (None, None) => "le contenu n'est pas une archive".to_string(),
+            (Some(code), Some(ext)) => Problem::with(code, "ext", ext),
+            (None, Some(ext)) => Problem::with("comic.content-mismatch", "ext", ext),
+            // Sans extension annoncée, on ne nomme pas le type : la phrase
+            // « pas une archive .<vide> » n'aurait pas de sens.
+            _ => Problem::new("comic.not-archive"),
         })
     }
 }
 
+/// Une erreur d'entrée-sortie : le texte du système est un détail technique,
+/// pas une phrase à traduire. Le chemin n'est pas répété (l'interface sait de
+/// quel livre il s'agit, et un chemin absolu de serveur n'a rien à y faire).
+fn read_error(error: std::io::Error) -> Problem {
+    Problem::with("io.error", "error", error.to_string())
+}
+
 /// Ce qu'est réellement le fichier, d'après ses premiers octets.
 ///
+/// Rend le **code du diagnostic** à montrer : la phrase traduite dépend du type
+/// réel, mais c'est toujours la même anomalie (« ce n'est pas une archive »).
 /// Répond `None` quand ces octets ne disent rien de connu (fichier vide,
 /// conteneur exotique) : on ne devine pas.
 fn kind(head: &[u8]) -> Option<&'static str> {
     const KNOWN: [(&[u8], &str); 5] = [
-        (b"7z\xbc\xaf\x27\x1c", "une archive 7z"),
-        (b"%PDF", "un PDF"),
-        (b"\x1f\x8b", "une archive gzip"),
-        (b"BZh", "une archive bzip2"),
-        (b"\xfd7zXZ\x00", "une archive xz"),
+        (b"7z\xbc\xaf\x27\x1c", "comic.not-archive.7z"),
+        (b"%PDF", "comic.not-archive.pdf"),
+        (b"\x1f\x8b", "comic.not-archive.gzip"),
+        (b"BZh", "comic.not-archive.bzip2"),
+        (b"\xfd7zXZ\x00", "comic.not-archive.xz"),
     ];
 
     KNOWN
         .iter()
         .find(|(magic, _)| head.starts_with(magic))
-        .map(|(_, name)| *name)
+        .map(|(_, code)| *code)
 }
 
 // ── ZIP ─────────────────────────────────────────────────────────────────────
 
 /// Contenu d'une archive ZIP : ses planches, puis tous ses fichiers (pour
 /// expliquer une archive vide de planches).
-fn zip_entries(path: &Path) -> Result<(Vec<String>, Vec<String>), String> {
+fn zip_entries(path: &Path) -> Result<(Vec<String>, Vec<String>), Problem> {
     let zip = archive::open(path)?;
     let files: Vec<String> = zip
         .file_names()
@@ -154,10 +164,10 @@ fn zip_entries(path: &Path) -> Result<(Vec<String>, Vec<String>), String> {
     Ok((pages, files))
 }
 
-fn zip_page(path: &Path, target: &str) -> Result<(String, Vec<u8>), String> {
+fn zip_page(path: &Path, target: &str) -> Result<(String, Vec<u8>), Problem> {
     let mut zip = archive::open(path)?;
     let bytes = archive::read_named(&mut zip, target)
-        .ok_or_else(|| format!("page {target} introuvable dans l'archive"))?;
+        .ok_or_else(|| Problem::with("comic.page-missing", "name", target))?;
     Ok((target.to_string(), bytes))
 }
 
@@ -165,7 +175,7 @@ fn zip_page(path: &Path, target: &str) -> Result<(String, Vec<u8>), String> {
 
 /// Contenu d'une archive RAR : ses planches, puis tous ses fichiers (pour
 /// expliquer une archive vide de planches).
-fn rar_entries(path: &Path) -> Result<(Vec<String>, Vec<String>), String> {
+fn rar_entries(path: &Path) -> Result<(Vec<String>, Vec<String>), Problem> {
     let mut archive = rar_open(path)?;
     let mut files: Vec<String> = Vec::new();
 
@@ -186,7 +196,7 @@ fn rar_entries(path: &Path) -> Result<(Vec<String>, Vec<String>), String> {
     Ok((pages, files))
 }
 
-fn rar_page(path: &Path, target: &str) -> Result<(String, Vec<u8>), String> {
+fn rar_page(path: &Path, target: &str) -> Result<(String, Vec<u8>), Problem> {
     let mut archive = rar_open(path)?;
 
     while let Some(header) = archive.read_header().map_err(rar_error)? {
@@ -198,15 +208,15 @@ fn rar_page(path: &Path, target: &str) -> Result<(String, Vec<u8>), String> {
         archive = header.skip().map_err(rar_error)?;
     }
 
-    Err(format!("page {target} introuvable dans l'archive"))
+    Err(Problem::with("comic.page-missing", "name", target))
 }
 
-fn rar_open(path: &Path) -> Result<OpenArchive<Process, CursorBeforeHeader>, String> {
+fn rar_open(path: &Path) -> Result<OpenArchive<Process, CursorBeforeHeader>, Problem> {
     Archive::new(path).open_for_processing().map_err(rar_error)
 }
 
-fn rar_error(error: unrar::error::UnrarError) -> String {
-    format!("archive RAR : {error}")
+fn rar_error(error: unrar::error::UnrarError) -> Problem {
+    Problem::with("comic.rar-error", "error", error.to_string())
 }
 
 #[cfg(test)]
@@ -305,7 +315,7 @@ mod tests {
         let (_dir, seul) = zip_with(&[("notes.txt", b"x")], "seul.cbr");
         assert_eq!(
             pages(&seul).unwrap_err(),
-            "l'archive ne contient aucune planche, seulement « notes.txt »"
+            Problem::with("comic.no-pages.only", "name", "notes.txt")
         );
 
         let (_dir, plusieurs) = zip_with(
@@ -314,19 +324,21 @@ mod tests {
         );
         assert_eq!(
             pages(&plusieurs).unwrap_err(),
-            "l'archive ne contient aucune planche (elle contient un livre, « livre.pdf »)"
+            Problem::with("comic.no-pages.book", "name", "livre.pdf")
         );
 
         let (_dir, sources) = zip_with(&[("a.ino", b"x"), ("b.ino", b"y")], "code.cbz");
         assert_eq!(
             pages(&sources).unwrap_err(),
-            "l'archive ne contient aucune planche (2 fichiers, dont « a.ino »)"
+            Problem::new("comic.no-pages.some")
+                .param("count", "2")
+                .param("name", "a.ino")
         );
 
         let (_dir, vide) = zip_with(&[("dossier/", b"")], "vide.cbz");
         assert_eq!(
             pages(&vide).unwrap_err(),
-            "l'archive ne contient aucun fichier"
+            Problem::new("comic.no-pages.empty")
         );
     }
 
@@ -336,19 +348,25 @@ mod tests {
         let path = dir.path().join("tome.cbz");
         // Cas réel : des `.cbz` qui sont en fait des archives 7z.
         std::fs::write(&path, b"7z\xbc\xaf\x27\x1c\x00\x04reste").unwrap();
-        let error = pages(&path).unwrap_err();
-        assert_eq!(error, "le fichier est une archive 7z, pas une archive .cbz");
+        assert_eq!(
+            pages(&path).unwrap_err(),
+            Problem::with("comic.not-archive.7z", "ext", "cbz")
+        );
 
         let renamed = dir.path().join("tome.cbr");
         std::fs::write(&renamed, b"%PDF-1.4reste").unwrap();
-        let error = pages(&renamed).unwrap_err();
-        assert_eq!(error, "le fichier est un PDF, pas une archive .cbr");
+        assert_eq!(
+            pages(&renamed).unwrap_err(),
+            Problem::with("comic.not-archive.pdf", "ext", "cbr")
+        );
 
         // Octets méconnus : on ne prononce pas de type, seulement le désaccord.
         let opaque = dir.path().join("bizarre.cbz");
         std::fs::write(&opaque, b"bonjour").unwrap();
-        let error = pages(&opaque).unwrap_err();
-        assert_eq!(error, "le contenu ne correspond pas à l'extension .cbz");
+        assert_eq!(
+            pages(&opaque).unwrap_err(),
+            Problem::with("comic.content-mismatch", "ext", "cbz")
+        );
     }
 
     #[test]

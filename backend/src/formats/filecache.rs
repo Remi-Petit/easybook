@@ -4,6 +4,7 @@
 //! est un autre livre, et son entrée est refaite. Le nombre d'entrées est
 //! borné : au-delà, l'une d'elles est évincée à chaque ajout.
 
+use crate::problem::Problem;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -29,9 +30,10 @@ impl<V> FileCache<V> {
     pub fn get_or_load(
         &self,
         path: &Path,
-        load: impl FnOnce() -> Result<V, String>,
-    ) -> Result<Arc<V>, String> {
-        let meta = std::fs::metadata(path).map_err(|e| format!("{} : {e}", path.display()))?;
+        load: impl FnOnce() -> Result<V, Problem>,
+    ) -> Result<Arc<V>, Problem> {
+        let meta = std::fs::metadata(path)
+            .map_err(|e| Problem::with("io.error", "error", e.to_string()))?;
         let stamp = meta
             .modified()
             .ok()
@@ -96,7 +98,7 @@ mod tests {
 
         let path = dir.path().join("a");
         std::fs::write(&path, b"a").unwrap();
-        assert!(cache.get_or_load(&path, || Err("échec".into())).is_err());
+        assert!(cache.get_or_load(&path, || Err(Problem::new("test.failure"))).is_err());
         assert_eq!(*cache.get_or_load(&path, || Ok(7)).unwrap(), 7);
 
         for name in ["b", "c", "d"] {

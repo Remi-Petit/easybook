@@ -16,6 +16,7 @@
 //! entier pour en compter les pages.
 
 use crate::formats::{self, Format};
+use crate::problem::Problem;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -47,13 +48,12 @@ pub fn count(path: &Path, format: Format) -> Option<usize> {
     count_stat(path, format, meta.len(), stamp)
 }
 
-/// Ce qu'un comptage a donné : le nombre de pages s'il est connu, et sinon la
-/// **raison** de l'échec telle que le format l'a dite (sans le chemin, que
-/// l'appelant connaît déjà).
+/// Ce qu'un comptage a donné : le nombre de pages s'il est connu, et sinon le
+/// **diagnostic** à montrer (voir [`Problem`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Count {
     pub pages: Option<usize>,
-    pub problem: Option<String>,
+    pub problem: Option<Problem>,
 }
 
 /// Comme [`count`], pour un appelant qui a déjà lu la taille et la date du
@@ -79,9 +79,9 @@ pub fn open_stat(path: &Path, format: Format, size: u64, stamp: u64) -> Count {
             pages,
             problem: None,
         },
-        Err(error) => Count {
+        Err(problem) => Count {
             pages: None,
-            problem: Some(explain(&error, path)),
+            problem: Some(problem),
         },
     };
     crate::readings::release_if_idle(path);
@@ -97,12 +97,6 @@ pub fn open_stat(path: &Path, format: Format, size: u64, stamp: u64) -> Count {
         );
     }
     count
-}
-
-/// Le message du format, sans le chemin que l'appelant affiche déjà.
-fn explain(error: &str, path: &Path) -> String {
-    let prefix = format!("{} : ", path.display());
-    error.strip_prefix(&prefix).unwrap_or(error).to_string()
 }
 
 /// Nombre de comptages en cache.
@@ -310,10 +304,10 @@ mod tests {
         let problem = counted.problem.expect("une raison");
         assert_eq!(
             problem,
-            "le fichier est une archive 7z, pas une archive .cbz"
+            Problem::with("comic.not-archive.7z", "ext", "cbz")
         );
         assert!(
-            !problem.contains(&path.display().to_string()),
+            !format!("{problem}").contains(&path.display().to_string()),
             "le chemin est déjà connu de l'appelant : {problem}"
         );
     }

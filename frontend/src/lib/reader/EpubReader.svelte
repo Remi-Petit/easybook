@@ -2,6 +2,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { chapterUrl, type BookDetail } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
+	import { errorText } from '$lib/problems';
 	import { flushPositions, reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
 
@@ -112,7 +113,7 @@
 		fetch(chapterUrl(rel, target))
 			.then(async (response) => {
 				if (!response.ok) {
-					throw new Error((await response.text()).trim() || `Erreur ${response.status}`);
+					throw new Error(await errorText(response));
 				}
 				return response.text();
 			})

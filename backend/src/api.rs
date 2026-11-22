@@ -571,7 +571,7 @@ struct BookDetail {
     modified: Option<u64>,
     /// Explication, quand le livre ne peut pas être ouvert.
     #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
+    note: Option<formats::Problem>,
     /// Position du lecteur connecté : c'est elle qui fait **reprendre** la
     /// lecture, y compris depuis un autre appareil.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -621,13 +621,16 @@ async fn get_book(
             // Réponse propre à un lecteur : jamais de cache intermédiaire.
             ([(header::CACHE_CONTROL, "no-store")], Json(detail)).into_response()
         }
-        Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, e).into_response(),
+        // Le corps est un diagnostic **traduisible** : l'interface en choisit la
+        // langue (voir `formats::Problem`).
+        Ok(Err(problem)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(problem)).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
 }
 
-fn detail(path: &Path, rel: &str) -> Result<BookDetail, String> {
-    let format = formats::resolve(path, rel).ok_or_else(|| "format non reconnu".to_string())?;
+fn detail(path: &Path, rel: &str) -> Result<BookDetail, formats::Problem> {
+    let format =
+        formats::resolve(path, rel).ok_or_else(|| formats::Problem::new("api.unknown-format"))?;
     // Tout ce qui dépend du format passe par son module : l'API ne connaît que
     // le trait (voir `formats::BookFormat`).
     let module = formats::module(format);
@@ -651,7 +654,7 @@ fn detail(path: &Path, rel: &str) -> Result<BookDetail, String> {
             .and_then(|outline| (!outline.chapters.is_empty()).then_some(outline.chapters)),
         pages,
         modified: file_stamp(path).map(|(_, secs)| secs),
-        note: module.note().map(str::to_string),
+        note: module.problem(),
         progress: None,
     })
 }
@@ -754,7 +757,7 @@ async fn get_chapter(
     match state
         .read(move || match format {
             Some(format) => formats::module(format).chapter(&path, index, &rel, &origin),
-            None => Err("format non reconnu".to_string()),
+            None => Err(formats::Problem::new("api.unknown-format")),
         })
         .await
     {
@@ -762,7 +765,7 @@ async fn get_chapter(
             readings::touch(&book, &query.path, html.len() as u64);
             html_response(html)
         }
-        Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, e).into_response(),
+        Ok(Err(problem)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(problem)).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
 }
@@ -927,7 +930,7 @@ async fn get_page(
     match state
         .read(move || match format {
             Some(format) => formats::module(format).page(&path, index),
-            None => Err("format non reconnu".to_string()),
+            None => Err(formats::Problem::new("api.unknown-format")),
         })
         .await
     {
@@ -953,7 +956,7 @@ async fn get_page(
             }
             response
         }
-        Ok(Err(e)) => (StatusCode::NOT_FOUND, e).into_response(),
+        Ok(Err(problem)) => (StatusCode::NOT_FOUND, Json(problem)).into_response(),
         Err(e) => internal_error(e).into_response(),
     }
 }

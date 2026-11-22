@@ -15,7 +15,7 @@ use std::sync::Arc;
 use zip::ZipArchive;
 
 use super::filecache::FileCache;
-use super::{BookFormat, Chapter, Outline};
+use super::{BookFormat, Chapter, Outline, Problem};
 
 /// Format EPUB, tel que l'enregistre [`super::module`].
 pub struct Epub;
@@ -28,13 +28,13 @@ impl BookFormat for Epub {
         "epub"
     }
 
-    fn outline(&self, path: &Path) -> Result<Option<Outline>, String> {
+    fn outline(&self, path: &Path) -> Result<Option<Outline>, Problem> {
         Ok(Some((*outline(path)?).clone()))
     }
 
     /// Nombre de **chapitres** : le texte d'un EPUB se recompose à l'écran, il
     /// n'a pas de pages fixes. C'est le `spine` qui fixe les documents du livre.
-    fn pages(&self, path: &Path) -> Result<Option<usize>, String> {
+    fn pages(&self, path: &Path) -> Result<Option<usize>, Problem> {
         Ok(Some(outline(path)?.chapters.len()))
     }
 
@@ -52,7 +52,7 @@ impl BookFormat for Epub {
         index: usize,
         book_rel: &str,
         asset_base: &str,
-    ) -> Result<String, String> {
+    ) -> Result<String, Problem> {
         chapter(path, index, book_rel, asset_base)
     }
 }
@@ -62,7 +62,7 @@ impl BookFormat for Epub {
 static OUTLINES: FileCache<Outline> = FileCache::new(32);
 
 /// Sommaire d'un EPUB.
-fn outline(path: &Path) -> Result<Arc<Outline>, String> {
+fn outline(path: &Path) -> Result<Arc<Outline>, Problem> {
     OUTLINES.get_or_load(path, || {
         let mut zip = archive::open(path)?;
         outline_from(&mut zip)
@@ -173,18 +173,17 @@ fn manifest(opf: &Document<'_>, opf_dir: &str) -> HashMap<String, Item> {
 ///
 /// Les URL relatives sont réécrites vers `/api/asset` (voir [`crate::rewrite`]) :
 /// le document peut donc être injecté tel quel dans la page du lecteur.
-fn chapter(path: &Path, index: usize, book_rel: &str, asset_base: &str) -> Result<String, String> {
+fn chapter(path: &Path, index: usize, book_rel: &str, asset_base: &str) -> Result<String, Problem> {
     let mut zip = archive::open(path)?;
     let outline = outline(path)?;
     let chapter = outline.chapters.get(index).ok_or_else(|| {
-        format!(
-            "chapitre {index} hors limites ({} chapitres)",
-            outline.chapters.len()
-        )
+        Problem::new("epub.chapter-out-of-range")
+            .param("index", index.to_string())
+            .param("count", outline.chapters.len().to_string())
     })?;
 
     let bytes = archive::read_named(&mut zip, &chapter.href)
-        .ok_or_else(|| format!("chapitre introuvable dans l'archive : {}", chapter.href))?;
+        .ok_or_else(|| Problem::with("epub.chapter-missing", "href", &chapter.href))?;
     let text = String::from_utf8_lossy(&bytes);
 
     Ok(rewrite::html(
@@ -203,15 +202,16 @@ struct Item {
     properties: String,
 }
 
-fn outline_from(zip: &mut ZipArchive<File>) -> Result<Outline, String> {
+fn outline_from(zip: &mut ZipArchive<File>) -> Result<Outline, Problem> {
     // 1. `container.xml` : où est l'OPF ?
-    let opf_path = container_opf(zip).ok_or("META-INF/container.xml absent ou invalide")?;
+    let opf_path = container_opf(zip).ok_or_else(|| Problem::new("epub.container-missing"))?;
 
     // 2. L'OPF : métadonnées, manifeste, spine. Le document emprunte le texte
     //    (local) : il vit le temps de cette fonction, sans copie ni fuite.
-    let bytes = archive::read_named(zip, &opf_path).ok_or("OPF introuvable")?;
+    let bytes = archive::read_named(zip, &opf_path).ok_or_else(|| Problem::new("epub.opf-missing"))?;
     let text = String::from_utf8_lossy(&bytes);
-    let opf = Document::parse(&text).map_err(|e| format!("OPF invalide : {e}"))?;
+    let opf = Document::parse(&text)
+        .map_err(|e| Problem::with("epub.opf-invalid", "error", e.to_string()))?;
     let opf_dir = rewrite::dir_of(&opf_path).to_string();
 
     let title = element_text(&opf, "title");

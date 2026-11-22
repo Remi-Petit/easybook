@@ -23,6 +23,8 @@ use std::cmp::Ordering;
 use std::io::Read;
 use std::path::Path;
 
+pub use crate::problem::Problem;
+
 /// Formats reconnus, dans l'ordre où ils sont annoncés au démarrage.
 pub const ALL: [Format; 4] = [Format::Epub, Format::Cbz, Format::Cbr, Format::Pdf];
 
@@ -97,19 +99,22 @@ pub trait BookFormat: Send + Sync {
     }
 
     /// Explication à montrer quand `readable()` est faux, ou précision utile.
-    fn note(&self) -> Option<&'static str> {
+    ///
+    /// C'est un **diagnostic traduisible** : le serveur ne choisit pas la
+    /// langue, l'interface traduit le code (voir [`Problem`]).
+    fn problem(&self) -> Option<Problem> {
         None
     }
 
     /// Titre, auteur et chapitres — les formats qui en ont un.
-    fn outline(&self, _path: &Path) -> Result<Option<Outline>, String> {
+    fn outline(&self, _path: &Path) -> Result<Option<Outline>, Problem> {
         Ok(None)
     }
 
     /// Nombre de pages — les formats paginés (bande dessinée, PDF). Pour un
     /// EPUB, c'est le nombre de chapitres du `spine` : le texte se recompose à
     /// l'écran, il n'a pas de pages fixes.
-    fn pages(&self, _path: &Path) -> Result<Option<usize>, String> {
+    fn pages(&self, _path: &Path) -> Result<Option<usize>, Problem> {
         Ok(None)
     }
 
@@ -130,13 +135,13 @@ pub trait BookFormat: Send + Sync {
         _index: usize,
         _book_rel: &str,
         _asset_base: &str,
-    ) -> Result<String, String> {
-        Err(format!("{} : pas de chapitres", self.id()))
+    ) -> Result<String, Problem> {
+        Err(Problem::with("formats.no-chapters", "format", self.id()))
     }
 
     /// Une page illustrée : nom de l'entrée et contenu.
-    fn page(&self, _path: &Path, _index: usize) -> Result<(String, Vec<u8>), String> {
-        Err(format!("{} : pas de pages", self.id()))
+    fn page(&self, _path: &Path, _index: usize) -> Result<(String, Vec<u8>), Problem> {
+        Err(Problem::with("formats.no-pages", "format", self.id()))
     }
 }
 

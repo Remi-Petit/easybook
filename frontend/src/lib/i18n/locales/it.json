@@ -34,6 +34,40 @@
 		"one": "{count} libro",
 		"other": "{count} libri"
 	},
+	"problem.unknownFormat": "formato non riconosciuto",
+	"problem.io": "lettura impossibile: {error}",
+	"problem.archiveUnreadable": "archivio illeggibile: {error}",
+	"problem.pdfUnreadable": "PDF illeggibile: {error}",
+	"problem.comic.notArchive": "il file non è un archivio",
+	"problem.comic.notArchive.7z": "il file è un archivio 7z, non un archivio .{ext}",
+	"problem.comic.notArchive.pdf": "il file è un PDF, non un archivio .{ext}",
+	"problem.comic.notArchive.gzip": "il file è un archivio gzip, non un archivio .{ext}",
+	"problem.comic.notArchive.bzip2": "il file è un archivio bzip2, non un archivio .{ext}",
+	"problem.comic.notArchive.xz": "il file è un archivio xz, non un archivio .{ext}",
+	"problem.comic.contentMismatch": "il contenuto non corrisponde all’estensione .{ext}",
+	"problem.comic.noPages.empty": "l’archivio non contiene file",
+	"problem.comic.noPages.book": "l’archivio non contiene tavole: contiene un libro, «{name}»",
+	"problem.comic.noPages.only": "l’archivio non contiene tavole, solo «{name}»",
+	"problem.comic.noPages.some": {
+		"one": "l’archivio non contiene tavole ({count} file: «{name}»)",
+		"other": "l’archivio non contiene tavole ({count} file, tra cui «{name}»)"
+	},
+	"problem.comic.pageOutOfRange": {
+		"one": "pagina {index} fuori intervallo ({count} pagina)",
+		"other": "pagina {index} fuori intervallo ({count} pagine)"
+	},
+	"problem.comic.pageMissing": "pagina non trovata nell’archivio: {name}",
+	"problem.comic.rarError": "archivio RAR: {error}",
+	"problem.epub.containerMissing": "META-INF/container.xml mancante o non valido",
+	"problem.epub.opfMissing": "OPF non trovato",
+	"problem.epub.opfInvalid": "OPF non valido: {error}",
+	"problem.epub.chapterOutOfRange": {
+		"one": "capitolo {index} fuori intervallo ({count} capitolo)",
+		"other": "capitolo {index} fuori intervallo ({count} capitoli)"
+	},
+	"problem.epub.chapterMissing": "capitolo non trovato nell’archivio: {href}",
+	"problem.formats.noChapters": "{format}: nessun capitolo",
+	"problem.formats.noPages": "{format}: nessuna pagina",
 	"language.label": "Lingua",
 	"language.choose": "Scegli la lingua",
 	"status.live": "in diretta",

@@ -642,6 +642,32 @@ async fn traversal_is_refused() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Un livre qui ne s'ouvre pas porte un **diagnostic traduisible** : un code
+/// stable et ses paramètres, que l'interface rend dans la langue de la page.
+/// Aucune phrase française ne traverse l'API.
+#[tokio::test]
+async fn an_unreadable_book_carries_a_translatable_diagnostic() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    // Cas réel : un `.cbz` qui est en fait une archive 7z.
+    fs::write(root.join("casse.cbz"), b"7z\xbc\xaf\x27\x1creste").unwrap();
+    let (tx, _) = tokio::sync::broadcast::channel(4);
+    let app = api::routes(AppState::new(root, tx));
+
+    let (status, body) = json(&app, "/api/books").await;
+    assert_eq!(status, StatusCode::OK);
+    let book = &body["books"][0];
+    assert_eq!(book["pages"], Value::Null);
+    assert_eq!(book["note"]["code"], "comic.not-archive.7z");
+    assert_eq!(book["note"]["params"]["ext"], "cbz");
+
+    // La fiche du même livre : même diagnostic, en JSON.
+    let (status, problem) = json(&app, "/api/book?path=casse.cbz").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(problem["code"], "comic.not-archive.7z");
+    assert_eq!(problem["params"]["ext"], "cbz");
+}
+
 /// Ce qui n'existe pas, ou qui n'est pas un livre : 404 ; ce qui existe mais ne
 /// peut pas être lu : 422 avec le message du format.
 #[tokio::test]
@@ -656,9 +682,10 @@ async fn missing_and_unreadable_books_are_answered_precisely() {
     // Présent, mais pas un format de livre.
     let (status, _, body) = call(&app, "/api/book?path=notes.txt").await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(
-        String::from_utf8_lossy(&body).contains("format non reconnu"),
-        "message du format attendu"
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap()["code"],
+        "api.unknown-format",
+        "diagnostic du format attendu, sous forme de code traduisible"
     );
 
     // Un PDF n'a pas de planches : /api/page n'a rien à servir.

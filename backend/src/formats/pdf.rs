@@ -18,6 +18,7 @@ use image::{DynamicImage, GrayImage, ImageFormat, RgbImage};
 use lopdf::{Dictionary, Document, Object, Stream};
 
 use crate::formats::BookFormat;
+use crate::problem::Problem;
 
 /// Largeur visée du rendu, en pixels : la vignette finale en fait 400, un peu
 /// de marge garde les petits caractères lisibles après réduction.
@@ -37,13 +38,14 @@ impl BookFormat for Pdf {
         "pdf"
     }
 
-    fn pages(&self, path: &Path) -> Result<Option<usize>, String> {
+    fn pages(&self, path: &Path) -> Result<Option<usize>, Problem> {
         if let Some(pages) = mapped_page_count(path) {
             return Ok(Some(pages));
         }
 
         // Repli : fichier que le chargeur léger ne sait pas lire (zéro page).
-        let document = Document::load(path).map_err(|e| format!("{} : {e}", path.display()))?;
+        let document = Document::load(path)
+            .map_err(|e| Problem::with("pdf.unreadable", "error", e.to_string()))?;
         Ok(Some(document.get_pages().len()))
     }
 

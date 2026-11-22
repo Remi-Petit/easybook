@@ -34,6 +34,40 @@
 		"one": "{count} livre",
 		"other": "{count} livres"
 	},
+	"problem.unknownFormat": "format non reconnu",
+	"problem.io": "lecture impossible : {error}",
+	"problem.archiveUnreadable": "archive illisible : {error}",
+	"problem.pdfUnreadable": "PDF illisible : {error}",
+	"problem.comic.notArchive": "le fichier n’est pas une archive",
+	"problem.comic.notArchive.7z": "le fichier est une archive 7z, pas une archive .{ext}",
+	"problem.comic.notArchive.pdf": "le fichier est un PDF, pas une archive .{ext}",
+	"problem.comic.notArchive.gzip": "le fichier est une archive gzip, pas une archive .{ext}",
+	"problem.comic.notArchive.bzip2": "le fichier est une archive bzip2, pas une archive .{ext}",
+	"problem.comic.notArchive.xz": "le fichier est une archive xz, pas une archive .{ext}",
+	"problem.comic.contentMismatch": "le contenu ne correspond pas à l’extension .{ext}",
+	"problem.comic.noPages.empty": "l’archive ne contient aucun fichier",
+	"problem.comic.noPages.book": "l’archive ne contient aucune planche : elle contient un livre, « {name} »",
+	"problem.comic.noPages.only": "l’archive ne contient aucune planche, seulement « {name} »",
+	"problem.comic.noPages.some": {
+		"one": "l’archive ne contient aucune planche ({count} fichier : « {name} »)",
+		"other": "l’archive ne contient aucune planche ({count} fichiers, dont « {name} »)"
+	},
+	"problem.comic.pageOutOfRange": {
+		"one": "page {index} hors limites ({count} page)",
+		"other": "page {index} hors limites ({count} pages)"
+	},
+	"problem.comic.pageMissing": "page introuvable dans l’archive : {name}",
+	"problem.comic.rarError": "archive RAR : {error}",
+	"problem.epub.containerMissing": "META-INF/container.xml absent ou invalide",
+	"problem.epub.opfMissing": "OPF introuvable",
+	"problem.epub.opfInvalid": "OPF invalide : {error}",
+	"problem.epub.chapterOutOfRange": {
+		"one": "chapitre {index} hors limites ({count} chapitre)",
+		"other": "chapitre {index} hors limites ({count} chapitres)"
+	},
+	"problem.epub.chapterMissing": "chapitre introuvable dans l’archive : {href}",
+	"problem.formats.noChapters": "{format} : pas de chapitres",
+	"problem.formats.noPages": "{format} : pas de pages",
 	"language.label": "Langue",
 	"language.choose": "Choisir la langue",
 	"status.live": "en direct",

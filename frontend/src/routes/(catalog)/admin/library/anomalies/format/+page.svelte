@@ -4,6 +4,7 @@
 	import { formatLabel, parentOf } from '$lib/catalog';
 	import { t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
+	import { problemText } from '$lib/problems';
 
 	/** Format reconnu mais que ce serveur ne sait pas afficher. */
 	const unsupported = $derived(library.books.filter((book) => !book.readable));
@@ -48,7 +49,7 @@
 									<a href={readUrl(entry.rel)}>{entry.title}</a>
 									<code class="anomaly-path">{parentOf(entry.rel) || t('stats.root')}</code>
 									{#if entry.note}
-										<code class="anomaly-reason">{entry.note}</code>
+										<code class="anomaly-reason">{problemText(entry.note)}</code>
 									{/if}
 								</span>
 								<span class="nav-count">

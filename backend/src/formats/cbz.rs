@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use crate::formats::{BookFormat, comic};
+use crate::formats::{BookFormat, comic, Problem};
 
 /// Format CBZ, tel que l'enregistre [`super::module`].
 pub struct Cbz;
@@ -18,7 +18,7 @@ impl BookFormat for Cbz {
         "cbz"
     }
 
-    fn pages(&self, path: &Path) -> Result<Option<usize>, String> {
+    fn pages(&self, path: &Path) -> Result<Option<usize>, Problem> {
         Ok(Some(comic::pages(path)?.len()))
     }
 
@@ -27,7 +27,7 @@ impl BookFormat for Cbz {
         comic::page(path, 0).ok().map(|(_, bytes)| bytes)
     }
 
-    fn page(&self, path: &Path, index: usize) -> Result<(String, Vec<u8>), String> {
+    fn page(&self, path: &Path, index: usize) -> Result<(String, Vec<u8>), Problem> {
         comic::page(path, index)
     }
 }

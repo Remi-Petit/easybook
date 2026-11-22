@@ -2,6 +2,14 @@ import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
 import { formatNumber, intlLocale, t } from './i18n/state.svelte';
 
+/// Un diagnostic du serveur : un **code** stable et ses paramètres (voir
+/// `problem::Problem` côté Rust). Le serveur ne choisit pas la langue : c'est
+/// `problemText()` qui rend la phrase.
+export type Problem = {
+	code: string;
+	params?: Record<string, string>;
+};
+
 /// Un livre du catalogue, tel que le backend le décrit.
 export type BookInfo = {
 	rel: string;
@@ -15,8 +23,8 @@ export type BookInfo = {
 	/// livre n'a pas pu être ouvert.
 	pages: number | null;
 	/// Pourquoi le livre ne s'ouvre pas (ou précision sur son format) : le
-	/// message du serveur, sans le chemin. Absent quand tout va bien.
-	note?: string;
+	/// diagnostic du serveur. Absent quand tout va bien.
+	note?: Problem;
 	title: string;
 };
 
@@ -48,7 +56,7 @@ export type BookDetail = {
 	chapters?: Chapter[];
 	pages?: number;
 	modified?: number;
-	note?: string;
+	note?: Problem;
 	/** Position enregistrée du lecteur : c'est elle qui fait reprendre la lecture. */
 	progress?: { page: number; pages: number };
 };

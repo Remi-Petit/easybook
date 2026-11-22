@@ -34,6 +34,40 @@
 		"one": "{count} libro",
 		"other": "{count} libros"
 	},
+	"problem.unknownFormat": "formato no reconocido",
+	"problem.io": "lectura imposible: {error}",
+	"problem.archiveUnreadable": "comprimido ilegible: {error}",
+	"problem.pdfUnreadable": "PDF ilegible: {error}",
+	"problem.comic.notArchive": "el archivo no es un comprimido",
+	"problem.comic.notArchive.7z": "el archivo es un comprimido 7z, no un .{ext}",
+	"problem.comic.notArchive.pdf": "el archivo es un PDF, no un .{ext}",
+	"problem.comic.notArchive.gzip": "el archivo es un comprimido gzip, no un .{ext}",
+	"problem.comic.notArchive.bzip2": "el archivo es un comprimido bzip2, no un .{ext}",
+	"problem.comic.notArchive.xz": "el archivo es un comprimido xz, no un .{ext}",
+	"problem.comic.contentMismatch": "el contenido no corresponde a la extensión .{ext}",
+	"problem.comic.noPages.empty": "el comprimido no contiene ningún archivo",
+	"problem.comic.noPages.book": "el comprimido no tiene páginas: contiene un libro, «{name}»",
+	"problem.comic.noPages.only": "el comprimido no tiene páginas, solo «{name}»",
+	"problem.comic.noPages.some": {
+		"one": "el comprimido no tiene páginas ({count} archivo: «{name}»)",
+		"other": "el comprimido no tiene páginas ({count} archivos, entre ellos «{name}»)"
+	},
+	"problem.comic.pageOutOfRange": {
+		"one": "página {index} fuera de rango ({count} página)",
+		"other": "página {index} fuera de rango ({count} páginas)"
+	},
+	"problem.comic.pageMissing": "página no encontrada en el comprimido: {name}",
+	"problem.comic.rarError": "comprimido RAR: {error}",
+	"problem.epub.containerMissing": "META-INF/container.xml ausente o no válido",
+	"problem.epub.opfMissing": "OPF no encontrado",
+	"problem.epub.opfInvalid": "OPF no válido: {error}",
+	"problem.epub.chapterOutOfRange": {
+		"one": "capítulo {index} fuera de rango ({count} capítulo)",
+		"other": "capítulo {index} fuera de rango ({count} capítulos)"
+	},
+	"problem.epub.chapterMissing": "capítulo no encontrado en el comprimido: {href}",
+	"problem.formats.noChapters": "{format}: sin capítulos",
+	"problem.formats.noPages": "{format}: sin páginas",
 	"language.label": "Idioma",
 	"language.choose": "Elegir el idioma",
 	"status.live": "en directo",

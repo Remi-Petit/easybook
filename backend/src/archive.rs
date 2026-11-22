@@ -11,6 +11,7 @@
 //! différente) n'est jamais servi depuis une ancienne archive.
 
 use crate::config;
+use crate::problem::Problem;
 use std::fs::File;
 use std::io::Read;
 use std::ops::{Deref, DerefMut};
@@ -78,8 +79,9 @@ pub fn pooled() -> usize {
 }
 
 /// Ouvre une archive en lecture (ou en emprunte une déjà ouverte).
-pub fn open(path: &Path) -> Result<Borrowed, String> {
-    let meta = std::fs::metadata(path).map_err(|e| format!("{} : {e}", path.display()))?;
+pub fn open(path: &Path) -> Result<Borrowed, Problem> {
+    let meta = std::fs::metadata(path)
+        .map_err(|e| Problem::with("io.error", "error", e.to_string()))?;
     let size = meta.len();
     let stamp = meta
         .modified()
@@ -102,8 +104,9 @@ pub fn open(path: &Path) -> Result<Borrowed, String> {
         }
     }
 
-    let file = File::open(path).map_err(|e| format!("{} : {e}", path.display()))?;
-    let zip = ZipArchive::new(file).map_err(|e| format!("archive illisible : {e}"))?;
+    let file = File::open(path).map_err(|e| Problem::with("io.error", "error", e.to_string()))?;
+    let zip = ZipArchive::new(file)
+        .map_err(|e| Problem::with("archive.unreadable", "error", e.to_string()))?;
     Ok(Borrowed {
         slot: Some(Slot {
             path: path.to_path_buf(),

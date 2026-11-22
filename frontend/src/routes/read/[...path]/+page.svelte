@@ -5,6 +5,7 @@
 	import { folderUrl, parentOf } from '$lib/catalog';
 	import { t } from '$lib/i18n/state.svelte';
 	import { setCurrentBook } from '$lib/reading.svelte';
+	import { errorText, problemText } from '$lib/problems';
 	import ComicReader from '$lib/reader/ComicReader.svelte';
 	import EpubReader from '$lib/reader/EpubReader.svelte';
 	import PdfReader from '$lib/reader/PdfReader.svelte';
@@ -73,7 +74,7 @@
 		fetch(bookUrl(path))
 			.then(async (response) => {
 				if (!response.ok) {
-					throw new Error((await response.text()).trim() || `Erreur ${response.status}`);
+					throw new Error(await errorText(response));
 				}
 				return (await response.json()) as BookDetail;
 			})
@@ -131,7 +132,7 @@
 			<div class="state">
 				<div>
 					<strong>{t('reader.unsupported', { format: detail.format.toUpperCase() })}</strong>
-					{detail.note ?? t('reader.unsupportedNote')}
+				{detail.note ? problemText(detail.note) : t('reader.unsupportedNote')}
 				</div>
 			</div>
 		{:else if detail.format === 'epub' && detail.chapters}

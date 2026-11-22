@@ -34,6 +34,40 @@
 		"one": "{count} book",
 		"other": "{count} books"
 	},
+	"problem.unknownFormat": "unrecognised format",
+	"problem.io": "read failed: {error}",
+	"problem.archiveUnreadable": "unreadable archive: {error}",
+	"problem.pdfUnreadable": "unreadable PDF: {error}",
+	"problem.comic.notArchive": "the file is not an archive",
+	"problem.comic.notArchive.7z": "the file is a 7z archive, not a .{ext} archive",
+	"problem.comic.notArchive.pdf": "the file is a PDF, not a .{ext} archive",
+	"problem.comic.notArchive.gzip": "the file is a gzip archive, not a .{ext} archive",
+	"problem.comic.notArchive.bzip2": "the file is a bzip2 archive, not a .{ext} archive",
+	"problem.comic.notArchive.xz": "the file is an xz archive, not a .{ext} archive",
+	"problem.comic.contentMismatch": "the content does not match the .{ext} extension",
+	"problem.comic.noPages.empty": "the archive contains no files",
+	"problem.comic.noPages.book": "the archive has no pages — it contains a book, “{name}”",
+	"problem.comic.noPages.only": "the archive has no pages, only “{name}”",
+	"problem.comic.noPages.some": {
+		"one": "the archive has no pages ({count} file: “{name}”)",
+		"other": "the archive has no pages ({count} files, including “{name}”)"
+	},
+	"problem.comic.pageOutOfRange": {
+		"one": "page {index} out of range ({count} page)",
+		"other": "page {index} out of range ({count} pages)"
+	},
+	"problem.comic.pageMissing": "page not found in the archive: {name}",
+	"problem.comic.rarError": "RAR archive: {error}",
+	"problem.epub.containerMissing": "META-INF/container.xml missing or invalid",
+	"problem.epub.opfMissing": "OPF not found",
+	"problem.epub.opfInvalid": "invalid OPF: {error}",
+	"problem.epub.chapterOutOfRange": {
+		"one": "chapter {index} out of range ({count} chapter)",
+		"other": "chapter {index} out of range ({count} chapters)"
+	},
+	"problem.epub.chapterMissing": "chapter not found in the archive: {href}",
+	"problem.formats.noChapters": "{format}: no chapters",
+	"problem.formats.noPages": "{format}: no pages",
 	"language.label": "Language",
 	"language.choose": "Choose the language",
 	"status.live": "live",

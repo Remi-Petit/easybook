@@ -7,6 +7,7 @@
 
 use crate::formats::{self, Format};
 use crate::pages;
+use crate::problem::Problem;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -32,11 +33,11 @@ pub struct BookInfo {
     /// Nombre de pages (nombre de chapitres pour un EPUB), `None` si le livre
     /// n'a pas pu être ouvert.
     pub pages: Option<usize>,
-    /// Pourquoi le livre ne s'ouvre pas, ou précision sur son format : le
-    /// message du format, **sans** le chemin (le catalogue l'affiche à côté).
-    /// Absent quand le livre s'ouvre normalement.
+    /// Pourquoi le livre ne s'ouvre pas, ou précision sur son format : un
+    /// **diagnostic traduisible** (code + paramètres), jamais une phrase dans
+    /// une langue choisie par le serveur. Absent quand le livre s'ouvre.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
+    pub note: Option<Problem>,
     /// Titre affiché : le nom sans extension.
     pub title: String,
 }
@@ -179,7 +180,7 @@ fn walk(root: &Path, dir: &Path, books: &mut Vec<BookInfo>, folders: &mut Vec<Fo
             pages: counted.pages,
             note: counted
                 .problem
-                .or_else(|| formats::module(format).note().map(str::to_string)),
+                .or_else(|| formats::module(format).problem()),
             name,
             format: format.id(),
             readable: format.readable(),

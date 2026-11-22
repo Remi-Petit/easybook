@@ -12,6 +12,7 @@
 //! - [`thumbnail`] : couvertures (extraction, vignette, cache).
 //! - [`resize`] : planches réduites à la largeur de l'écran.
 //! - [`pages`] : nombre de pages d'un livre (comptage, cache).
+//! - [`problem`] : diagnostic traduisible (un code + ses paramètres).
 //! - [`perf_history`] : historique des mesures RAM/CPU (SQLite, 30 jours max).
 //! - [`storage`] : espace disque (bibliothèque, couvertures, bases, code).
 //! - [`watcher`] : interprétation des événements du système de fichiers.
@@ -29,6 +30,7 @@ pub mod oidc;
 pub mod pages;
 pub mod perf;
 pub mod perf_history;
+pub mod problem;
 pub mod progress;
 pub mod readings;
 pub mod resize;
