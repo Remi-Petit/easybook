@@ -129,12 +129,26 @@ code {
 }
 
 .nav-section {
+	display: flex;
+	align-items: center;
+	gap: 8px;
 	margin: 12px 10px 6px;
 	font-size: 10.5px;
 	font-weight: 600;
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 	color: var(--muted);
+}
+
+/* Icône collée à son libellé, sans se déformer quand le texte est long. */
+.nav-icon {
+	flex: none;
+}
+
+.nav-section-label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
 }
 
 /* Titre de section cliquable : plie et déplie les pages d'administration.
