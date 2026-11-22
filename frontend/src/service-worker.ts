@@ -189,11 +189,14 @@ async function api(request: Request, url: URL): Promise<Response> {
 		if (cached) return cached;
 		return networkFirst(request, media, null);
 	}
-	if (
-		url.pathname === '/api/chapter' ||
-		url.pathname === '/api/asset' ||
-		url.pathname === '/api/raw'
-	) {
+	if (url.pathname === '/api/chapter' || url.pathname === '/api/asset') {
+		// Le HTML d'un chapitre est **réécrit** par le serveur : sa forme peut
+		// changer d'une version à l'autre (origine des ressources, par exemple).
+		// Le réseau d'abord évite de servir un ancien document à un téléchargement ;
+		// hors ligne, le cache prend le relais.
+		return networkFirst(request, media, cached);
+	}
+	if (url.pathname === '/api/raw') {
 		// Réponse immédiate depuis le cache, rafraîchissement en coulisse.
 		if (cached) {
 			void refreshMedia(media, request);

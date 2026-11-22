@@ -1374,15 +1374,30 @@ fn clean_inner(raw: &str) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("/"))
 }
 
-/// Origine publique de l'API, telle que la voit le client.
+/// Origine publique de l'API, telle que le voit le client.
+///
+/// Derrière le nginx de l'image, `Host` vaut `$host`, qui **perd le port** :
+/// les URL réécrites des chapitres EPUB pointeraient alors vers
+/// `http://localhost/...` (port 80) au lieu de `http://localhost:5200/...`.
+/// `X-Forwarded-Host` (posé par nginx avec `$http_host`) garde l'adresse
+/// demandée, port compris ; il prime donc sur `Host` quand il est présent.
 fn origin(headers: &HeaderMap) -> String {
     let scheme = headers
         .get("x-forwarded-proto")
         .and_then(|value| value.to_str().ok())
         .unwrap_or("http");
     let host = headers
-        .get(header::HOST)
+        .get("x-forwarded-host")
         .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            headers
+                .get(header::HOST)
+                .and_then(|value| value.to_str().ok())
+                .filter(|value| !value.is_empty())
+        })
         .unwrap_or("127.0.0.1:8091");
     format!("{scheme}://{host}")
 }
@@ -1667,5 +1682,24 @@ mod tests {
         assert_eq!(clean_inner("./a.css").as_deref(), Some("a.css"));
         assert_eq!(clean_inner("../secret"), None);
         assert_eq!(clean_inner(""), None);
+    }
+
+    #[test]
+    fn origin_keeps_the_forwarded_port() {
+        // nginx pose `Host: $host` (sans port) mais `X-Forwarded-Host: $http_host`.
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, "localhost".parse().unwrap());
+        headers.insert("x-forwarded-host", "localhost:5200".parse().unwrap());
+        assert_eq!(origin(&headers), "http://localhost:5200");
+
+        headers.insert("x-forwarded-proto", "https".parse().unwrap());
+        assert_eq!(origin(&headers), "https://localhost:5200");
+    }
+
+    #[test]
+    fn origin_falls_back_to_host() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, "127.0.0.1:8091".parse().unwrap());
+        assert_eq!(origin(&headers), "http://127.0.0.1:8091");
     }
 }
