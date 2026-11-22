@@ -131,7 +131,7 @@ code {
 .nav-section {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 10px;
 	margin: 12px 10px 6px;
 	font-size: 10.5px;
 	font-weight: 600;
@@ -140,15 +140,24 @@ code {
 	color: var(--muted);
 }
 
-/* Icône collée à son libellé, sans se déformer quand le texte est long. */
+/* Icône collée à son libellé, sans se déformer quand le texte est long. Une
+   largeur fixe de 16 px pour l'accueil comme pour les sections : icônes de même
+   taille, et le texte commence au même endroit partout. */
 .nav-icon {
 	flex: none;
+	width: 16px;
+	height: 16px;
 }
 
 .nav-section-label {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 10px;
+}
+
+/* Les libellés de section partent exactement comme celui d'Accueil. */
+.nav-label {
+	white-space: nowrap;
 }
 
 /* Titre de section cliquable : plie et déplie les pages d'administration.

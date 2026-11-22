@@ -98,8 +98,8 @@
 			<p class="nav-section">
 				<svg
 					class="nav-icon"
-					width="14"
-					height="14"
+					width="16"
+					height="16"
 					viewBox="0 0 24 24"
 					fill="none"
 					stroke="currentColor"
@@ -112,7 +112,7 @@
 					<path d="M10 4.5h4V20h-4z" />
 					<path d="M15.5 6.2l3.5 1-3.2 11.8-3.5-1z" />
 				</svg>
-				{t('nav.library')}
+				<span class="nav-label">{t('nav.library')}</span>
 			</p>
 
 			<!-- Seule cette liste défile : l'administration et le pied de la barre
@@ -146,8 +146,8 @@
 					<span class="nav-section-label">
 						<svg
 							class="nav-icon"
-							width="14"
-							height="14"
+							width="16"
+							height="16"
 							viewBox="0 0 24 24"
 							fill="none"
 							stroke="currentColor"
@@ -159,7 +159,7 @@
 							<path d="M12 3.5 19 6v5.5c0 4.6-3 7.6-7 9-4-1.4-7-4.4-7-9V6z" />
 							<path d="M9 12l2 2 4-4" />
 						</svg>
-						{t('nav.admin')}
+						<span class="nav-label">{t('nav.admin')}</span>
 					</span>
 					<svg
 						class="nav-chevron"
