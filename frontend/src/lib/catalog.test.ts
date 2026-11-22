@@ -5,6 +5,7 @@ import {
 	childFolders,
 	folderUrl,
 	formatLabel,
+	insideFolders,
 	level,
 	matchesQuery,
 	matchesWords,
@@ -279,6 +280,20 @@ describe('matchesWords', () => {
 		expect(matchesWords('Chainsaw Man', 'CHAINSaw')).toBe(true);
 		expect(matchesWords('Chainsaw Man', 'man chainsaw')).toBe(true);
 		expect(matchesWords('Chainsaw Man', 'chainsaw t03')).toBe(false);
+	});
+});
+
+describe('insideFolders', () => {
+	const found = [{ rel: 'mangas/Chainsaw Man' }];
+
+	it('reconnaît un livre rangé dans la série, même dans un sous-dossier', () => {
+		expect(insideFolders('mangas/Chainsaw Man/T01.cbz', found)).toBe(true);
+		expect(insideFolders('mangas/Chainsaw Man/Bonus/T01.cbz', found)).toBe(true);
+	});
+
+	it('ne prend ni un livre voisin, ni un dossier au nom proche', () => {
+		expect(insideFolders('mangas/T01.cbz', found)).toBe(false);
+		expect(insideFolders('mangas/Chainsaw Man 2/T01.cbz', found)).toBe(false);
 	});
 });
 

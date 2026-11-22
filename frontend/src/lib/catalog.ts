@@ -69,6 +69,19 @@ export function matchesQuery(book: BookInfo, query: string): boolean {
 }
 
 /**
+ * Le livre est-il rangé dans l'un de ces dossiers, à n'importe quelle
+ * profondeur ? C'est ce qui évite de répéter dans « Livres » les livres d'une
+ * série déjà trouvée : sa tuile les porte.
+ */
+export function insideFolders(rel: string, folders: { rel: string }[]): boolean {
+	const known = new Set(folders.map((folder) => folder.rel));
+	for (let parent = parentOf(rel); parent; parent = parentOf(parent)) {
+		if (known.has(parent)) return true;
+	}
+	return false;
+}
+
+/**
  * Contenu d'un niveau du catalogue : ses sous-dossiers, puis ses livres.
  *
  * C'est la règle d'affichage de la page d'un dossier — et elle est récursive,

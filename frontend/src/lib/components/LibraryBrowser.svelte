@@ -7,6 +7,7 @@
 	import FolderCard from '$lib/components/FolderCard.svelte';
 	import {
 		formatLabel,
+		insideFolders,
 		level,
 		matchesQuery,
 		matchesWords,
@@ -107,8 +108,15 @@
 			: current.folders
 	);
 
-	/** Livres trouvés : texte ou format, la recherche couvre tout le sous-arbre. */
-	const foundBooks = $derived(query !== '' || formats.length > 0 ? matchingBooks : current.books);
+	/**
+	 * Livres trouvés : texte ou format, la recherche couvre tout le sous-arbre —
+	 * sauf ceux qu'une série trouvée porte déjà (voir sa tuile).
+	 */
+	const foundBooks = $derived(
+		query !== '' || formats.length > 0
+			? matchingBooks.filter((book) => query === '' || !insideFolders(book.rel, foundSeries))
+			: current.books
+	);
 
 	/**
 	 * Ce que l'on affiche : les deux groupes — parcours comme recherche —,
