@@ -15,7 +15,7 @@ use unrar::{Archive, CursorBeforeHeader, OpenArchive, Process};
 
 use crate::archive;
 use crate::formats::filecache::FileCache;
-use crate::formats::{is_image, is_noise, natural_cmp, normalize_entry, Problem};
+use crate::formats::{Problem, is_image, is_noise, natural_cmp, normalize_entry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Container {
@@ -59,7 +59,9 @@ fn no_pages(files: &[String]) -> Problem {
 /// un fichier de sources au hasard.
 fn is_document(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
-    [".pdf", ".epub", ".djvu", ".mobi"].iter().any(|ext| name.ends_with(ext))
+    [".pdf", ".epub", ".djvu", ".mobi"]
+        .iter()
+        .any(|ext| name.ends_with(ext))
 }
 
 /// Une planche : son nom d'entrée et son contenu.
@@ -318,10 +320,8 @@ mod tests {
             Problem::with("comic.no-pages.only", "name", "notes.txt")
         );
 
-        let (_dir, plusieurs) = zip_with(
-            &[("sketch.ino", b"x"), ("livre.pdf", b"y")],
-            "sources.cbz",
-        );
+        let (_dir, plusieurs) =
+            zip_with(&[("sketch.ino", b"x"), ("livre.pdf", b"y")], "sources.cbz");
         assert_eq!(
             pages(&plusieurs).unwrap_err(),
             Problem::with("comic.no-pages.book", "name", "livre.pdf")

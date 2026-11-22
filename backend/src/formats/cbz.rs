@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use crate::formats::{BookFormat, comic, Problem};
+use crate::formats::{BookFormat, Problem, comic};
 
 /// Format CBZ, tel que l'enregistre [`super::module`].
 pub struct Cbz;

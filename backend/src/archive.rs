@@ -80,8 +80,8 @@ pub fn pooled() -> usize {
 
 /// Ouvre une archive en lecture (ou en emprunte une déjà ouverte).
 pub fn open(path: &Path) -> Result<Borrowed, Problem> {
-    let meta = std::fs::metadata(path)
-        .map_err(|e| Problem::with("io.error", "error", e.to_string()))?;
+    let meta =
+        std::fs::metadata(path).map_err(|e| Problem::with("io.error", "error", e.to_string()))?;
     let size = meta.len();
     let stamp = meta
         .modified()

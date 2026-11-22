@@ -98,7 +98,11 @@ mod tests {
 
         let path = dir.path().join("a");
         std::fs::write(&path, b"a").unwrap();
-        assert!(cache.get_or_load(&path, || Err(Problem::new("test.failure"))).is_err());
+        assert!(
+            cache
+                .get_or_load(&path, || Err(Problem::new("test.failure")))
+                .is_err()
+        );
         assert_eq!(*cache.get_or_load(&path, || Ok(7)).unwrap(), 7);
 
         for name in ["b", "c", "d"] {

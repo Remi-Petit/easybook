@@ -208,7 +208,8 @@ fn outline_from(zip: &mut ZipArchive<File>) -> Result<Outline, Problem> {
 
     // 2. L'OPF : métadonnées, manifeste, spine. Le document emprunte le texte
     //    (local) : il vit le temps de cette fonction, sans copie ni fuite.
-    let bytes = archive::read_named(zip, &opf_path).ok_or_else(|| Problem::new("epub.opf-missing"))?;
+    let bytes =
+        archive::read_named(zip, &opf_path).ok_or_else(|| Problem::new("epub.opf-missing"))?;
     let text = String::from_utf8_lossy(&bytes);
     let opf = Document::parse(&text)
         .map_err(|e| Problem::with("epub.opf-invalid", "error", e.to_string()))?;

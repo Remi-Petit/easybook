@@ -302,10 +302,7 @@ mod tests {
         let counted = open_stat(&path, Format::Cbz, size, 1);
         assert_eq!(counted.pages, None);
         let problem = counted.problem.expect("une raison");
-        assert_eq!(
-            problem,
-            Problem::with("comic.not-archive.7z", "ext", "cbz")
-        );
+        assert_eq!(problem, Problem::with("comic.not-archive.7z", "ext", "cbz"));
         assert!(
             !format!("{problem}").contains(&path.display().to_string()),
             "le chemin est déjà connu de l'appelant : {problem}"
