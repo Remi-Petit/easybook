@@ -13,6 +13,18 @@
 Bibliothèque de livres locale : un dossier `books/`, un backend Rust qui le
 surveille, une interface SvelteKit pour lire ce qu'il contient.
 
+## Aperçus
+
+<img src="docs/screenshots/catalogue.png" width="100%" alt="Page d'accueil : catégories et nombre de livres dans la barre latérale, recherche, rail « Poursuivre la lecture »">
+
+| | |
+|---|---|
+| <img src="docs/screenshots/categorie.png" width="100%" alt="Une catégorie : fil d'Ariane, séries en tuiles, livres à la racine"><br>**Une catégorie** — les sous-dossiers deviennent des séries | <img src="docs/screenshots/serie.png" width="100%" alt="Une série : les couvertures de ses tomes"><br>**Une série** — les tomes de la série |
+| <img src="docs/screenshots/lecteur.png" width="100%" alt="Le lecteur : en-tête en verre dépoli, réglages, aide, plein écran, téléchargement, page et flèches"><br>**Le lecteur** — page seule, barres flottantes | <img src="docs/screenshots/lecteur-double.png" width="100%" alt="Le lecteur en double page, pied de page indiquant 9–10 sur 216"><br>**Double page** — la première à droite en lecture japonaise |
+| <img src="docs/screenshots/vignettes.png" width="100%" alt="La grille des vignettes, page courante encadrée"><br>**Vignettes** (`T`) — sauter à une page | <img src="docs/screenshots/raccourcis.png" width="100%" alt="La boîte des raccourcis clavier, groupés en lecture et réglages"><br>**Raccourcis** (`H`) — la liste, par format |
+| <img src="docs/screenshots/reglages.png" width="100%" alt="Les réglages de lecture : sens, mode, mise en page, échelle"><br>**Réglages** (`S`) — retenus d'un livre à l'autre | <img src="docs/screenshots/comptes.png" width="100%" alt="La gestion des comptes : rôle, état, type local ou SSO"><br>**Comptes** — rôles, SSO ou local |
+| <img src="docs/screenshots/performances.png" width="100%" alt="Performances : mémoire du conteneur et répartition"><br>**Performances** — mémoire et CPU en direct | <img src="docs/screenshots/statistiques.png" width="100%" alt="Statistiques de la bibliothèque : livres, poids, pages"><br>**Statistiques** — ce que contient la bibliothèque |
+
 ## L'idée
 
 - Le **backend ne fait qu'une chose** : décrire `books/` et servir le contenu des
