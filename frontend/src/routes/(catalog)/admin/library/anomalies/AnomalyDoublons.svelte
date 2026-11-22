@@ -81,25 +81,39 @@ function contentLabel(group: AnomalyGroup): string {
 
 			<div class="anomaly-list">
 				{#each list as group (group.signature)}
-					<article class="anomaly-card">
-								<h3>
-									<span>{group.kind === 'content' ? contentLabel(group) : group.label}</span>
-									<span class="nav-count">{t('anomalies.files', { count: group.books.length })}</span>
-								</h3>
-								<ul class="history-list">
-									{#each group.books as entry (entry.rel)}
-										<li class="anomaly-row">
-											<span class="anomaly-main">
-												<a href={readUrl(entry.rel)}>{entry.title}</a>
-												<code class="anomaly-path">{parentOf(entry.rel) || t('stats.root')}</code>
-											</span>
-											<span class="nav-count">
-												{formatLabel(entry.format)} · {formatBytes(entry.size)}
-											</span>
-										</li>
-									{/each}
-								</ul>
-							</article>
+					<details class="anomaly-card">
+						<summary class="anomaly-summary">
+							<span class="anomaly-title">{group.kind === 'content' ? contentLabel(group) : group.label}</span>
+							<span class="nav-count">{t('anomalies.files', { count: group.books.length })}</span>
+							<svg
+								class="anomaly-chevron"
+								width="12"
+								height="12"
+								viewBox="0 0 12 12"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.6"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"
+							>
+								<path d="M3 4.5l3 3 3-3" />
+							</svg>
+						</summary>
+						<ul class="history-list">
+							{#each group.books as entry (entry.rel)}
+								<li class="anomaly-row">
+									<span class="anomaly-main">
+										<a href={readUrl(entry.rel)}>{entry.title}</a>
+										<code class="anomaly-path">{parentOf(entry.rel) || t('stats.root')}</code>
+									</span>
+									<span class="nav-count">
+										{formatLabel(entry.format)} · {formatBytes(entry.size)}
+									</span>
+								</li>
+							{/each}
+						</ul>
+					</details>
 						{/each}
 					</div>
 				</section>

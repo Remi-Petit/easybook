@@ -3913,25 +3913,66 @@ a.link-more {
 	gap: 14px;
 }
 
+/* Une carte = un résumé qu'on déplie (`<details>`) : le nom du groupe et son
+   nombre de livres restent visibles, la liste s'ouvre au clic. */
 .anomaly-card {
-	padding: 14px 16px 4px;
+	padding: 0;
 	border: 1px solid var(--line);
 	border-radius: 12px;
 	background: var(--panel-2);
 }
 
-.anomaly-card h3 {
+.anomaly-summary {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 12px;
-	margin: 0 0 4px;
+	gap: 10px;
+	padding: 12px 16px;
+	cursor: pointer;
+	list-style: none;
+}
+
+.anomaly-summary::-webkit-details-marker {
+	display: none;
+}
+
+.anomaly-summary:hover .anomaly-title {
+	color: var(--accent);
+}
+
+.anomaly-summary:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+	border-radius: 12px;
+}
+
+.anomaly-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	font-size: 14px;
 	font-weight: 600;
 	/* `.group h3` met les mois en Capitales Initiales : ici, on garde le nom
 	   du fichier tel qu'il est sur le disque. */
 	text-transform: none;
 	letter-spacing: normal;
+}
+
+.anomaly-chevron {
+	flex: none;
+	color: var(--muted);
+	transform: rotate(-90deg);
+	transition: transform 140ms ease;
+}
+
+.anomaly-card[open] .anomaly-chevron {
+	transform: rotate(0deg);
+}
+
+.anomaly-card .history-list {
+	margin: 0;
+	padding: 0 16px 4px;
 }
 
 .history-list .anomaly-row {
