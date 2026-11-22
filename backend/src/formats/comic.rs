@@ -25,13 +25,43 @@ enum Container {
 
 /// Noms des planches, dans l'ordre de lecture.
 pub fn pages(path: &Path) -> Result<Vec<String>, String> {
-    let mut names = match container(path)? {
-        Container::Zip => zip_pages(path)?,
-        Container::Rar => rar_pages(path)?,
+    let (mut names, files) = match container(path)? {
+        Container::Zip => zip_entries(path)?,
+        Container::Rar => rar_entries(path)?,
     };
+    // Une archive sans image n'est pas une bande dessinée : la compter « 0 page »
+    // en ferait un livre sain, ouvert sur un lecteur vide.
+    if names.is_empty() {
+        return Err(no_pages(&files));
+    }
     // L'ordre de l'archive n'est pas garanti : `p2` avant `p10`.
     names.sort_by(|a, b| natural_cmp(a, b));
     Ok(names)
+}
+
+/// Raison d'une archive sans planche, en nommant ce qu'elle contient quand il
+/// n'y a qu'un fichier (cas réel : un `.cbr` qui est un RAR de sources et d'un
+/// PDF, pas une bande dessinée).
+fn no_pages(files: &[String]) -> String {
+    if let Some(book) = files.iter().find(|name| is_document(name)) {
+        return format!("l'archive ne contient aucune planche (elle contient un livre, « {book} »)");
+    }
+    match files {
+        [] => "l'archive ne contient aucun fichier".to_string(),
+        [only] => format!("l'archive ne contient aucune planche, seulement « {only} »"),
+        several => format!(
+            "l'archive ne contient aucune planche ({} fichiers, dont « {} »)",
+            several.len(),
+            several[0]
+        ),
+    }
+}
+
+/// Un livre rangé dans une archive de planches : le dire vaut mieux que lister
+/// un fichier de sources au hasard.
+fn is_document(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    [".pdf", ".epub", ".djvu", ".mobi"].iter().any(|ext| name.ends_with(ext))
 }
 
 /// Une planche : son nom d'entrée et son contenu.
@@ -106,14 +136,22 @@ fn kind(head: &[u8]) -> Option<&'static str> {
 
 // ── ZIP ─────────────────────────────────────────────────────────────────────
 
-fn zip_pages(path: &Path) -> Result<Vec<String>, String> {
+/// Contenu d'une archive ZIP : ses planches, puis tous ses fichiers (pour
+/// expliquer une archive vide de planches).
+fn zip_entries(path: &Path) -> Result<(Vec<String>, Vec<String>), String> {
     let zip = archive::open(path)?;
-    Ok(zip
+    let files: Vec<String> = zip
         .file_names()
         .filter_map(|name| name.ok())
-        .filter(|name| !is_noise(name) && is_image(name))
+        .filter(|name| !name.ends_with('/') && !is_noise(name))
         .map(|name| name.into_owned())
-        .collect())
+        .collect();
+    let pages = files
+        .iter()
+        .filter(|name| is_image(name))
+        .cloned()
+        .collect();
+    Ok((pages, files))
 }
 
 fn zip_page(path: &Path, target: &str) -> Result<(String, Vec<u8>), String> {
@@ -125,20 +163,27 @@ fn zip_page(path: &Path, target: &str) -> Result<(String, Vec<u8>), String> {
 
 // ── RAR ─────────────────────────────────────────────────────────────────────
 
-fn rar_pages(path: &Path) -> Result<Vec<String>, String> {
+/// Contenu d'une archive RAR : ses planches, puis tous ses fichiers (pour
+/// expliquer une archive vide de planches).
+fn rar_entries(path: &Path) -> Result<(Vec<String>, Vec<String>), String> {
     let mut archive = rar_open(path)?;
-    let mut names: Vec<String> = Vec::new();
+    let mut files: Vec<String> = Vec::new();
 
     while let Some(header) = archive.read_header().map_err(rar_error)? {
         // Les archives créées sous Windows portent des `\` : on normalise.
         let name = normalize_entry(&header.entry().filename.to_string_lossy());
-        if header.entry().is_file() && !is_noise(&name) && is_image(&name) {
-            names.push(name);
+        if header.entry().is_file() && !is_noise(&name) {
+            files.push(name);
         }
         archive = header.skip().map_err(rar_error)?;
     }
 
-    Ok(names)
+    let pages = files
+        .iter()
+        .filter(|name| is_image(name))
+        .cloned()
+        .collect();
+    Ok((pages, files))
 }
 
 fn rar_page(path: &Path, target: &str) -> Result<(String, Vec<u8>), String> {
@@ -251,6 +296,38 @@ mod tests {
         let path = dir.path().join("texte.cbz");
         std::fs::write(&path, b"bonjour").unwrap();
         assert!(pages(&path).is_err());
+    }
+
+    /// Cas réel : un `.cbr` qui est un RAR de sources et d'un PDF. Sans planche,
+    /// ce n'est pas un livre lisible — et la raison dit ce qu'il contient.
+    #[test]
+    fn an_archive_without_pages_is_an_error() {
+        let (_dir, seul) = zip_with(&[("notes.txt", b"x")], "seul.cbr");
+        assert_eq!(
+            pages(&seul).unwrap_err(),
+            "l'archive ne contient aucune planche, seulement « notes.txt »"
+        );
+
+        let (_dir, plusieurs) = zip_with(
+            &[("sketch.ino", b"x"), ("livre.pdf", b"y")],
+            "sources.cbz",
+        );
+        assert_eq!(
+            pages(&plusieurs).unwrap_err(),
+            "l'archive ne contient aucune planche (elle contient un livre, « livre.pdf »)"
+        );
+
+        let (_dir, sources) = zip_with(&[("a.ino", b"x"), ("b.ino", b"y")], "code.cbz");
+        assert_eq!(
+            pages(&sources).unwrap_err(),
+            "l'archive ne contient aucune planche (2 fichiers, dont « a.ino »)"
+        );
+
+        let (_dir, vide) = zip_with(&[("dossier/", b"")], "vide.cbz");
+        assert_eq!(
+            pages(&vide).unwrap_err(),
+            "l'archive ne contient aucun fichier"
+        );
     }
 
     #[test]

@@ -7,9 +7,9 @@
 
 	/** Format reconnu mais que ce serveur ne sait pas afficher. */
 	const unsupported = $derived(library.books.filter((book) => !book.readable));
-	/** Format reconnu, mais fichier impossible à ouvrir (pages inconnues). */
+	/** Format reconnu, mais fichier impossible à ouvrir (aucune page comptée). */
 	const unopenable = $derived(
-		library.books.filter((book) => book.readable && book.pages === null)
+		library.books.filter((book) => book.readable && (book.pages === null || book.pages === 0))
 	);
 	const clean = $derived(unsupported.length === 0 && unopenable.length === 0);
 

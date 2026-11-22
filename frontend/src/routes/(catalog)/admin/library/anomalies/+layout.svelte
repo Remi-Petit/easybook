@@ -2,7 +2,7 @@
 	// Onglets de la page « Anomalies », portés par l'URL : l'adresse de base est
 	// celle des doublons, `/format` celle des formats. Un lien se partage.
 	import { page } from '$app/state';
-	import { duplicateContents, duplicateNames, duplicateTitles } from '$lib/anomalies';
+	import { duplicateContents, duplicateNames, duplicateTitles, unopenable } from '$lib/anomalies';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
 
@@ -18,7 +18,7 @@
 			duplicateNames(library.books).length +
 			duplicateTitles(library.books).length +
 			duplicateContents(library.books).length,
-		format: library.books.filter((book) => !book.readable || book.pages === null).length
+		format: library.books.filter(unopenable).length
 	});
 
 	const tabs = $derived([

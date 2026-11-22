@@ -83,13 +83,20 @@ export function anomalies(books: BookInfo[]): AnomalyGroup[] {
 }
 
 /**
+ * Un fichier que l'application ne peut pas ouvrir : format inconnu, ou aucune
+ * page comptée (fichier corrompu, ou archive qui ne contient pas de planches).
+ * Un zéro compte comme « inconnu » : le serveur ne le produit plus, mais un
+ * catalogue plus ancien peut encore en porter.
+ */
+export function unopenable(book: BookInfo): boolean {
+	return !book.readable || book.pages === null || book.pages === 0;
+}
+
+/**
  * Total des anomalies, tous onglets confondus : les groupes de doublons plus
  * les fichiers dont le format ne s'ouvre pas. C'est le chiffre de la pastille
  * de la barre latérale.
  */
 export function anomalyCount(books: BookInfo[]): number {
-	return (
-		anomalies(books).length +
-		books.filter((book) => !book.readable || book.pages === null).length
-	);
+	return anomalies(books).length + books.filter(unopenable).length;
 }

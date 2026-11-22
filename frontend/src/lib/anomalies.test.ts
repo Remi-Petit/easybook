@@ -120,6 +120,10 @@ describe('anomalyCount', () => {
 		expect(anomalyCount(books)).toBe(4);
 	});
 
+	it('compte une archive sans planche (0 page) comme illisible', () => {
+		expect(anomalyCount([book('a/vide.cbr', { title: 'Vide', size: 10, pages: 0 })])).toBe(1);
+	});
+
 	it('rend 0 pour une bibliothèque propre', () => {
 		expect(anomalyCount([book('a/x.cbz', { title: 'X', size: 10, pages: 2 })])).toBe(0);
 	});

@@ -186,6 +186,11 @@ impl Cache {
             if !Path::new(&line.path).is_file() {
                 continue;
             }
+            // Un zéro peut venir d'une archive sans planche comptée avant qu'elle
+            // ne soit une erreur : on préfère recomputer que croire un livre sain.
+            if line.pages == 0 {
+                continue;
+            }
             let Some(format) =
                 Format::from_id(&line.format).or_else(|| Format::from_path(&line.path))
             else {
@@ -388,6 +393,24 @@ mod tests {
         );
         assert_eq!(second.get(&gone, Format::Pdf, 10, 20), None);
         assert_eq!(second.get(&broken, Format::Pdf, 10, 20), None);
+    }
+
+    #[test]
+    fn a_zero_from_an_older_count_is_recounted() {
+        let dir = tempfile::tempdir().unwrap();
+        let book = dir.path().join("vide.cbr");
+        std::fs::write(&book, b"x").unwrap();
+        let book = book.display().to_string();
+        let file = dir.path().join(FILE);
+
+        let mut first = Cache::default();
+        first.load(file.clone());
+        first.put(book.clone(), entry(Some(0)));
+        first.save();
+
+        let mut second = Cache::default();
+        second.load(file);
+        assert_eq!(second.get(&book, Format::Pdf, 10, 20), None);
     }
 
     #[test]
