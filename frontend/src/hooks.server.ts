@@ -20,7 +20,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	// Le pliage de l'administration est un choix d'affichage : relu ici, il est
 	// déjà appliqué au rendu serveur (pas de section qui se replie après coup).
-	event.locals.adminOpen = event.cookies.get(ADMIN_OPEN_COOKIE) !== '0';
+	// Sans cookie, c'est l'écran qui décide (voir `Sidebar.svelte`).
+	const adminChoice = event.cookies.get(ADMIN_OPEN_COOKIE);
+	event.locals.adminOpen = adminChoice === '1' ? true : adminChoice === '0' ? false : null;
 
 	// Sans session, aucune page ne s'affiche (sauf la connexion) : l'API refuse de
 	// toute façon, mais l'interface ne doit pas peindre une coquille vide.

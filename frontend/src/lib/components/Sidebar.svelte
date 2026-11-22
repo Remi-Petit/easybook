@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { afterNavigate } from '$app/navigation';
+	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { childFolders, folderUrl } from '$lib/catalog';
 	import { call, displayName, type Session } from '$lib/auth';
@@ -30,13 +32,26 @@
 
 	/**
 	 * Les pages d'administration se plient : elles ne servent pas à tous les
-	 * visiteurs. Le choix vient du cookie (rendu serveur) et y repart au clic.
+	 * visiteurs. Tant qu'aucun choix n'est fait (pas de cookie), l'écran décide :
+	 * dépliées sur un grand écran, repliées en dessous. Un clic fixe le choix.
 	 */
-	let adminOpen = $state(page.data.adminOpen);
+	const WIDE = '(min-width: 901px)';
+	let adminChoice = $state<boolean | null>(page.data.adminOpen);
+	let wide = $state(browser ? window.matchMedia(WIDE).matches : true);
+	const adminOpen = $derived(adminChoice ?? wide);
+
+	onMount(() => {
+		const media = window.matchMedia(WIDE);
+		const sync = () => (wide = media.matches);
+		sync();
+		media.addEventListener('change', sync);
+		return () => media.removeEventListener('change', sync);
+	});
 
 	function toggleAdmin() {
-		adminOpen = !adminOpen;
-		rememberAdminOpen(adminOpen);
+		const next = !adminOpen;
+		adminChoice = next;
+		rememberAdminOpen(next);
 	}
 
 	afterNavigate(() => (open = false));
