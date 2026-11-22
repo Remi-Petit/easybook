@@ -1423,8 +1423,8 @@ code {
 /* ── Lecteur ─────────────────────────────────────────────────────────────── */
 
 .reader {
-	--head-h: calc(52px + env(safe-area-inset-top, 0px));
-	--pager-h: calc(58px + env(safe-area-inset-bottom, 0px));
+	--head-h: calc(64px + env(safe-area-inset-top, 0px));
+	--pager-h: calc(70px + env(safe-area-inset-bottom, 0px));
 	--glass: rgba(15, 15, 19, 0.55);
 	position: relative;
 	height: 100vh;
@@ -1467,7 +1467,7 @@ code {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	color: var(--muted);
-	font-size: 13px;
+	font-size: 14.5px;
 	white-space: nowrap;
 }
 
@@ -1483,7 +1483,7 @@ code {
 	flex: 0 1 auto;
 	min-width: 0;
 	margin: 0;
-	font-size: 15px;
+	font-size: 17px;
 	font-weight: 560;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1505,7 +1505,7 @@ code {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	color: var(--muted);
-	font-size: 12.5px;
+	font-size: 14px;
 	white-space: nowrap;
 	margin-left: auto;
 }
@@ -1521,11 +1521,11 @@ code {
 	flex: 0 0 auto;
 	align-items: center;
 	justify-content: center;
-	width: 26px;
-	height: 26px;
+	width: 34px;
+	height: 34px;
 	padding: 0;
 	border: 0;
-	border-radius: 6px;
+	border-radius: 8px;
 	background: none;
 	color: var(--muted);
 	font: inherit;
@@ -1534,7 +1534,7 @@ code {
 
 /* Le dernier bouton s'aligne optiquement sur la marge droite de l'en-tête. */
 .reader-sub.icon:last-child {
-	margin-right: -4px;
+	margin-right: -6px;
 }
 
 .reader-sub.icon:hover {
@@ -1765,11 +1765,11 @@ code {
 }
 
 .pager .zoom-btn {
-	min-width: 40px;
+	min-width: 46px;
 	justify-content: center;
 	padding-right: 0;
 	padding-left: 0;
-	font-size: 16px;
+	font-size: 18px;
 	line-height: 1;
 }
 
@@ -1798,11 +1798,11 @@ code {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	padding: 8px 16px;
+	padding: 10px 20px;
 	border: 1px solid rgba(255, 255, 255, 0.12);
 	border-radius: 999px;
 	background: rgba(255, 255, 255, 0.06);
-	font-size: 13px;
+	font-size: 15px;
 }
 
 .pager button:disabled {
@@ -1812,7 +1812,7 @@ code {
 
 .pager-pos {
 	color: var(--muted);
-	font-size: 12.5px;
+	font-size: 14.5px;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
@@ -2000,7 +2000,7 @@ code {
 	}
 
 	.reader {
-		--head-h: calc(48px + env(safe-area-inset-top, 0px));
+		--head-h: calc(58px + env(safe-area-inset-top, 0px));
 	}
 
 	.reader-head {
@@ -2025,7 +2025,7 @@ code {
 
 	.reader-title {
 		flex: 1;
-		font-size: 14px;
+		font-size: 15.5px;
 	}
 
 	.pager {
