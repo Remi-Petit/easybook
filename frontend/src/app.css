@@ -1514,25 +1514,30 @@ code {
 	margin-left: 0;
 }
 
-.reader-sub.link:hover {
-	color: var(--text);
-}
-
-/* Le lien vers le fichier n'a plus de libellé visible : une icône de
-   téléchargement. Le nom accessible reste `title`/`aria-label`, et la zone
-   cliquable garde la taille de la ligne. */
-.reader-sub.download {
+/* Boutons-icônes de l'en-tête (plein écran, téléchargement) : il n'y a plus de
+   libellé visible, le nom accessible reste `title`/`aria-label`. */
+.reader-sub.icon {
 	display: inline-flex;
 	flex: 0 0 auto;
 	align-items: center;
 	justify-content: center;
 	width: 26px;
 	height: 26px;
-	margin-right: -4px;
+	padding: 0;
+	border: 0;
 	border-radius: 6px;
+	background: none;
+	color: var(--muted);
+	font: inherit;
+	cursor: pointer;
 }
 
-.reader-sub.download:hover {
+/* Le dernier bouton s'aligne optiquement sur la marge droite de l'en-tête. */
+.reader-sub.icon:last-child {
+	margin-right: -4px;
+}
+
+.reader-sub.icon:hover {
 	color: var(--accent);
 	background: rgba(255, 255, 255, 0.06);
 }
@@ -1932,13 +1937,6 @@ code {
 	}
 }
 
-/* Le chemin du fichier part en premier : il n'apporte rien sur un écran moyen. */
-@media (max-width: 1100px) {
-	.reader-sub.path {
-		display: none;
-	}
-}
-
 /* Sous 1000 px, le texte (44 rem) et le sommaire (260 px) ne tiennent plus
    côte à côte : le sommaire se replie derrière son bouton. */
 @media (max-width: 1000px) {
@@ -2011,13 +2009,13 @@ code {
 		padding-left: max(14px, env(safe-area-inset-left, 0px));
 	}
 
-	/* Seuls le retour et le titre tiennent : chemin, auteur et icône de
-	   téléchargement restent sur grand écran. */
+	/* Seuls le retour et le titre tiennent : auteur et boutons-icônes restent
+	   sur grand écran. */
 	.reader-sub {
 		display: none;
 	}
 
-	.reader-sub.download {
+	.reader-sub.icon {
 		display: none;
 	}
 

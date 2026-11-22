@@ -170,6 +170,8 @@
 	"reader.noContent": "Nada que mostrar",
 	"reader.noContentNote": "Este libro está vacío o su formato no se pudo leer.",
 	"reader.download": "Descargar el archivo",
+	"reader.fullscreen": "Pantalla completa",
+	"reader.exitFullscreen": "Salir de pantalla completa",
 	"reader.chapters": "Capítulos",
 	"reader.chapterError": "Capítulo ilegible",
 	"reader.loadingChapter": "Cargando el capítulo…",

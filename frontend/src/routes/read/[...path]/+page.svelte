@@ -41,6 +41,44 @@
 	 */
 	let chrome = $state(true);
 
+	// ── Plein écran ──────────────────────────────────────────────────────────
+	// Le préfixe `webkit` reste nécessaire à Safari (iPad surtout).
+	type FullscreenDocument = Document & {
+		fullscreenEnabled?: boolean;
+		webkitFullscreenEnabled?: boolean;
+		webkitFullscreenElement?: Element | null;
+		webkitExitFullscreen?: () => Promise<void> | void;
+	};
+
+	function fullscreenElement(): Element | null {
+		const doc = document as FullscreenDocument;
+		return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+	}
+
+	/** Le document est-il **réellement** en plein écran ? C'est le navigateur qui
+	 * répond : l'état survit à F11 et à Échap, qui ne passent pas par nos boutons. */
+	let fullscreen = $state(false);
+	/** Le navigateur sait-il passer en plein écran ? Sinon, pas de bouton. */
+	let canFullscreen = $state(false);
+
+	async function toggleFullscreen() {
+		const doc = document as FullscreenDocument;
+		try {
+			if (fullscreenElement()) {
+				if (doc.exitFullscreen) await doc.exitFullscreen();
+				else await doc.webkitExitFullscreen?.();
+			} else {
+				const root = document.documentElement as HTMLElement & {
+					webkitRequestFullscreen?: () => Promise<void> | void;
+				};
+				if (root.requestFullscreen) await root.requestFullscreen();
+				else await root.webkitRequestFullscreen?.();
+			}
+		} catch {
+			// Refusé (politique du navigateur, geste absent) : rien n'a changé.
+		}
+	}
+
 	// Échap ramène l'en-tête : sans lui, plus de retour vers le dossier.
 	onMount(() => {
 		const onKey = (event: KeyboardEvent) => {
@@ -48,6 +86,19 @@
 		};
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
+	});
+
+	onMount(() => {
+		const doc = document as FullscreenDocument;
+		const sync = () => (fullscreen = fullscreenElement() !== null);
+		canFullscreen = Boolean(doc.fullscreenEnabled ?? doc.webkitFullscreenEnabled);
+		doc.addEventListener('fullscreenchange', sync);
+		doc.addEventListener('webkitfullscreenchange', sync);
+		sync();
+		return () => {
+			doc.removeEventListener('fullscreenchange', sync);
+			doc.removeEventListener('webkitfullscreenchange', sync);
+		};
 	});
 
 	// L'interface sait quel livre est ouvert : il reste dans « poursuivre la
@@ -111,9 +162,55 @@
 			{#if detail?.author}
 				<span class="reader-sub">{detail.author}</span>
 			{/if}
-			<span class="reader-sub path">{rel}</span>
+			{#if canFullscreen}
+				<button
+					type="button"
+					class="reader-sub icon"
+					onclick={toggleFullscreen}
+					title={t(fullscreen ? 'reader.exitFullscreen' : 'reader.fullscreen')}
+					aria-label={t(fullscreen ? 'reader.exitFullscreen' : 'reader.fullscreen')}
+				>
+					{#if fullscreen}
+						<!-- Réduire : les quatre coins rentrent. -->
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.8"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<path d="M9 4v5H4" />
+							<path d="M15 4v5h5" />
+							<path d="M20 15h-5v5" />
+							<path d="M4 15h5v5" />
+						</svg>
+					{:else}
+						<!-- Agrandir : les quatre coins sortent. -->
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.8"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<path d="M9 4H4v5" />
+							<path d="M15 4h5v5" />
+							<path d="M20 15v5h-5" />
+							<path d="M4 15v5h5" />
+						</svg>
+					{/if}
+				</button>
+			{/if}
 			<a
-				class="reader-sub link download"
+				class="reader-sub icon download"
 				href={rawUrl(rel)}
 				download
 				title={t('reader.download')}
