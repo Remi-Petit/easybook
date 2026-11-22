@@ -207,6 +207,9 @@
 		const factor = zoom;
 		const width = viewWidth;
 		const height = viewHeight;
+		// Lu **ici**, avant le moindre `await` : une valeur réactive lue après une
+		// attente n'est plus suivie, et changer d'échelle ne redessinerait rien.
+		const fitMode = scaleMode;
 		if (!lib || !source || !target || !box || !textLayerHost || !width || !height) return;
 
 		let cancelled = false;
@@ -222,11 +225,11 @@
 				// L'échelle choisie (écran par défaut, largeur, hauteur ou 1:1) donne
 				// la taille de départ ; le zoom du pied de page la multiplie.
 				const fit =
-					scaleMode === 'width'
+					fitMode === 'width'
 						? width / natural.width
-						: scaleMode === 'height'
+						: fitMode === 'height'
 							? height / natural.height
-							: scaleMode === 'original'
+							: fitMode === 'original'
 								? 1
 								: Math.min(width / natural.width, height / natural.height);
 				const css = fit * factor;
