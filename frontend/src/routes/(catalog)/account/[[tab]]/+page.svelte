@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { invalidateAll, replaceState } from '$app/navigation';
+	import { goto, invalidateAll, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { formatDate } from '$lib/api';
 	import {
@@ -37,30 +37,35 @@
 	let fresh = $state('');
 	let busy = $state(false);
 
-	// Onglets du compte : la collection s'ouvre par défaut, puis la lecture, puis
-	// la sécurité. SSO n'existe que si un fournisseur est configuré.
-	type Tab = 'collection' | 'reading' | 'password' | 'sso';
-	let tab = $state<Tab>('collection');
+	// Onglets du compte : chacun a son adresse (`/account/collection`, `/reading`,
+	// `/password`, `/sso`). SSO n'existe que si un fournisseur est configuré.
+	const labels = {
+		collection: 'account.tab.collection',
+		reading: 'account.tab.reading',
+		password: 'account.password.tab',
+		sso: 'users.type.sso'
+	} as const;
+	type Tab = keyof typeof labels;
 	const tabs = $derived<Tab[]>(
 		oidc
 			? ['collection', 'reading', 'password', 'sso']
 			: ['collection', 'reading', 'password']
 	);
-	const tabLabel = (id: Tab) =>
-		id === 'collection'
-			? t('account.tab.collection')
-			: id === 'reading'
-				? t('account.tab.reading')
-				: id === 'password'
-					? t('account.password.tab')
-					: t('users.type.sso');
+	/** Onglet de l'URL ; `/account` sans suffixe ouvre la collection. */
+	const tab = $derived<Tab>(
+		tabs.includes(page.params.tab as Tab) ? (page.params.tab as Tab) : 'collection'
+	);
+	const tabLabel = (id: Tab) => t(labels[id]);
 
-	function tabKeys(event: KeyboardEvent) {
+	async function tabKeys(event: KeyboardEvent) {
 		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
 		if (!step) return;
 		event.preventDefault();
-		tab = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]!;
-		document.getElementById(`account-tab-${tab}`)?.focus();
+		const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]!;
+		// Le focus suit l'onglet : on attend la navigation, sinon le lien est
+		// encore l'ancien au moment de le focaliser.
+		await goto(`/account/${next}`);
+		document.getElementById(`account-tab-${next}`)?.focus();
 	}
 
 	// Période de lecture : le mois en cours, l'année en cours, ou tout.
@@ -127,7 +132,7 @@
 		const params = page.url.searchParams;
 		if (params.get('linked')) notify(t('account.linked'), { tone: 'ok' });
 		else if (params.get('error')) notify(t(errorKey(params.get('error'))), { tone: 'error' });
-		if (params.get('linked') || params.get('error')) replaceState('/account', {});
+		if (params.get('linked') || params.get('error')) replaceState(`/account/${tab}`, {});
 
 		// Les épingles du compte : la collection ne dépend pas du catalogue.
 		startPins();
@@ -252,17 +257,16 @@
 	{#if user}
 		<div class="tabs" role="tablist" tabindex="-1" onkeydown={tabKeys}>
 			{#each tabs as id (id)}
-				<button
-					type="button"
+				<a
 					role="tab"
 					id="account-tab-{id}"
+					href="/account/{id}"
 					aria-selected={tab === id}
 					aria-controls="account-panel"
 					tabindex={tab === id ? 0 : -1}
-					onclick={() => (tab = id)}
 				>
 					{tabLabel(id)}
-				</button>
+				</a>
 			{/each}
 		</div>
 
