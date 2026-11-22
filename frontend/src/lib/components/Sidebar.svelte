@@ -269,9 +269,16 @@
 					<a
 						class="nav-item"
 						href="/admin/library/stats"
-						aria-current={active('/admin/library') ? 'page' : undefined}
+						aria-current={active('/admin/library/stats') ? 'page' : undefined}
 					>
 						<span class="name">{t('nav.stats')}</span>
+					</a>
+					<a
+						class="nav-item"
+						href="/admin/library/anomalies"
+						aria-current={active('/admin/library/anomalies') ? 'page' : undefined}
+					>
+						<span class="name">{t('nav.anomalies')}</span>
 					</a>
 				</div>
 			{/if}

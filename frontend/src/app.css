@@ -3899,3 +3899,59 @@ a.link-more {
 	align-items: center;
 	gap: 8px;
 }
+
+/* Page « Anomalies » : un cadre par groupe de doublons. */
+.anomaly-hint {
+	margin: -8px 0 14px;
+	color: var(--muted);
+	font-size: 12.5px;
+}
+
+.anomaly-list {
+	display: grid;
+	gap: 14px;
+}
+
+.anomaly-card {
+	padding: 14px 16px 4px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: var(--panel-2);
+}
+
+.anomaly-card h3 {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin: 0 0 4px;
+	font-size: 14px;
+	font-weight: 600;
+	/* `.group h3` met les mois en Capitales Initiales : ici, on garde le nom
+	   du fichier tel qu'il est sur le disque. */
+	text-transform: none;
+	letter-spacing: normal;
+}
+
+.history-list .anomaly-row {
+	align-items: center;
+}
+
+.anomaly-main {
+	display: grid;
+	gap: 2px;
+	min-width: 0;
+}
+
+.anomaly-path {
+	color: var(--muted);
+	font-size: 11.5px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.anomaly-row .nav-count {
+	flex: none;
+	margin-left: auto;
+}
