@@ -33,6 +33,24 @@ export function childBooks(books: BookInfo[], parent: string): BookInfo[] {
 	return books.filter((book) => parentOf(book.rel) === parent);
 }
 
+/**
+ * Le livre qui suit `rel` dans sa série : même dossier, dans l'ordre du
+ * catalogue (le serveur trie naturellement : `T02` avant `T10`).
+ *
+ * Un livre posé directement dans une **catégorie** (dossier de premier niveau)
+ * n'a pas de tome suivant : une catégorie n'est pas une série. Un livre
+ * impossible à ouvrir est sauté — mieux vaut proposer celui d'après que
+ * d'envoyer sur une page d'erreur.
+ */
+export function nextInSeries(books: BookInfo[], rel: string): BookInfo | null {
+	const folder = parentOf(rel);
+	if (!folder.includes('/')) return null;
+	const siblings = childBooks(books, folder);
+	const at = siblings.findIndex((book) => book.rel === rel);
+	if (at < 0) return null;
+	return siblings.slice(at + 1).find((book) => book.readable && (book.pages ?? 0) > 0) ?? null;
+}
+
 /** Livres de `folder` **et** de tous ses sous-dossiers (`""` = tout). */
 export function subtreeBooks(books: BookInfo[], folder: string): BookInfo[] {
 	const prefix = folder ? `${folder}/` : '';

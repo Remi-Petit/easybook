@@ -170,6 +170,7 @@
 	"reader.noContent": "Nichts anzuzeigen",
 	"reader.noContentNote": "Dieses Buch ist leer oder sein Format konnte nicht gelesen werden.",
 	"reader.download": "Datei herunterladen",
+	"reader.nextBook": "Nächster Band",
 	"reader.fullscreen": "Vollbild",
 	"reader.exitFullscreen": "Vollbild beenden",
 	"reader.chapters": "Kapitel",

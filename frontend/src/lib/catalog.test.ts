@@ -11,6 +11,7 @@ import {
 	matchesQuery,
 	matchesWords,
 	matchScore,
+	nextInSeries,
 	noveltyRails,
 	parentOf,
 	previewBook,
@@ -37,6 +38,41 @@ function book(rel: string, format: BookInfo['format'] = 'cbz', pages: number | n
 function folder(rel: string, count = 1): FolderInfo {
 	return { rel, name: rel.split('/').pop() ?? rel, count, modified: 1 };
 }
+
+describe('nextInSeries', () => {
+	const series = [
+		book('Mangas/Solo/T01.cbz'),
+		book('Mangas/Solo/T02.cbz'),
+		book('Mangas/Solo/T03.cbz'),
+		book('Mangas/Autre/T01.cbz')
+	];
+
+	it('rend le tome qui suit, dans l’ordre du catalogue', () => {
+		expect(nextInSeries(series, 'Mangas/Solo/T01.cbz')?.rel).toBe('Mangas/Solo/T02.cbz');
+	});
+
+	it('ne propose rien après le dernier tome', () => {
+		expect(nextInSeries(series, 'Mangas/Solo/T03.cbz')).toBeNull();
+	});
+
+	it('ne propose rien pour un livre posé dans une catégorie', () => {
+		const books = [book('Mangas/Racine.cbz'), book('Mangas/Solo/T01.cbz')];
+		expect(nextInSeries(books, 'Mangas/Racine.cbz')).toBeNull();
+	});
+
+	it('saute un tome impossible à ouvrir', () => {
+		const books = [
+			book('Mangas/S/T01.cbz'),
+			book('Mangas/S/T02.cbz', 'cbz', null),
+			book('Mangas/S/T03.cbz')
+		];
+		expect(nextInSeries(books, 'Mangas/S/T01.cbz')?.rel).toBe('Mangas/S/T03.cbz');
+	});
+
+	it('rend null pour un livre absent du catalogue', () => {
+		expect(nextInSeries(series, 'Mangas/Solo/T99.cbz')).toBeNull();
+	});
+});
 
 describe('noveltyRails', () => {
 	const dated = (rel: string, modified: number | null): BookInfo => ({

@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { bookUrl, rawUrl, type BookDetail } from '$lib/api';
-	import { folderUrl, parentOf } from '$lib/catalog';
+	import { bookUrl, rawUrl, readUrl, type BookDetail } from '$lib/api';
+	import { folderUrl, nextInSeries, parentOf } from '$lib/catalog';
 	import { t } from '$lib/i18n/state.svelte';
-	import { setCurrentBook } from '$lib/reading.svelte';
+	import { library } from '$lib/library.svelte';
+	import { progressOf, setCurrentBook } from '$lib/reading.svelte';
 	import { errorText, problemText } from '$lib/problems';
 	import ComicReader from '$lib/reader/ComicReader.svelte';
 	import EpubReader from '$lib/reader/EpubReader.svelte';
@@ -109,6 +110,34 @@
 		if (!path) return;
 		setCurrentBook(path);
 		return () => setCurrentBook(null);
+	});
+
+	// ── Fin de livre : proposer le tome suivant ───────────────────────────────
+	// La position vient du magasin `reading` : chaque page tournée y est écrite
+	// tout de suite (voir `reportPosition`), sans attendre le serveur.
+	const progress = $derived(progressOf(rel));
+	/** Le tome suivant dans la série, s'il y en a un. */
+	const nextUp = $derived(nextInSeries(library.books, rel));
+	/** La proposition n'apparaît qu'**au moment** où la dernière page est
+	 *  atteinte en avançant : rouvrir un livre déjà terminé n'affiche rien. */
+	let proposeNext = $state(false);
+	/** Dernière position observée pour le livre ouvert. */
+	let seen = { path: '', page: -1, pages: 0 };
+
+	$effect(() => {
+		const path = rel;
+		const position = progress;
+		if (!position) return;
+		// Nouveau livre : on repart de sa position de reprise.
+		if (path !== seen.path) {
+			seen = { path, page: position.page, pages: position.pages };
+			proposeNext = false;
+			return;
+		}
+		const atEnd = position.pages > 0 && position.page + 1 >= position.pages;
+		if (position.page > seen.page && atEnd) proposeNext = true;
+		else if (!atEnd) proposeNext = false;
+		seen = { path, page: position.page, pages: position.pages };
 	});
 
 	// Le sommaire est relu à chaque changement de livre : c'est une lecture
@@ -233,6 +262,52 @@
 				</svg>
 			</a>
 		</header>
+	{/if}
+
+	{#if proposeNext && nextUp}
+		<aside class="reader-next" aria-live="polite">
+			<a class="reader-next-link" href={readUrl(nextUp.rel)}>
+				<span class="reader-next-text">
+					<span class="reader-next-label">{t('reader.nextBook')}</span>
+					<span class="reader-next-title">{nextUp.title}</span>
+				</span>
+				<svg
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M5 12h14" />
+					<path d="M13 6l6 6-6 6" />
+				</svg>
+			</a>
+			<button
+				type="button"
+				class="reader-next-close"
+				aria-label={t('common.dismiss')}
+				title={t('common.dismiss')}
+				onclick={() => (proposeNext = false)}
+			>
+				<svg
+					width="14"
+					height="14"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					aria-hidden="true"
+				>
+					<path d="M6 6l12 12" />
+					<path d="M18 6L6 18" />
+				</svg>
+			</button>
+		</aside>
 	{/if}
 
 	{#if loading}

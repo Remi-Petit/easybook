@@ -1542,6 +1542,81 @@ code {
 	background: rgba(255, 255, 255, 0.06);
 }
 
+/* Fin de livre : le tome suivant de la série, proposé au-dessus du pager. */
+.reader-next {
+	position: absolute;
+	z-index: 3;
+	left: 50%;
+	bottom: calc(var(--pager-h) + 14px);
+	transform: translateX(-50%);
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	max-width: min(560px, calc(100vw - 32px));
+	padding: 6px 8px 6px 16px;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 14px;
+	background: rgba(15, 15, 19, 0.78);
+	-webkit-backdrop-filter: blur(16px) saturate(1.4);
+	backdrop-filter: blur(16px) saturate(1.4);
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+.reader-next-link {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	min-width: 0;
+	padding: 6px 4px;
+	color: var(--text);
+}
+
+.reader-next-link:hover {
+	color: var(--accent);
+}
+
+.reader-next-text {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+}
+
+.reader-next-label {
+	color: var(--muted);
+	font-size: 11.5px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.reader-next-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 15px;
+	font-weight: 560;
+}
+
+.reader-next-close {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	padding: 0;
+	border: 0;
+	border-radius: 8px;
+	background: none;
+	color: var(--muted);
+	cursor: pointer;
+}
+
+.reader-next-close:hover {
+	color: var(--text);
+	background: rgba(255, 255, 255, 0.08);
+}
+
 .reader-body {
 	position: absolute;
 	inset: 0;

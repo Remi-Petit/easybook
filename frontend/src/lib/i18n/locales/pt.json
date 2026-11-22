@@ -168,6 +168,7 @@
 	"reader.noContent": "Nada para mostrar",
 	"reader.noContentNote": "Este livro está vazio ou o seu formato não pôde ser lido.",
 	"reader.download": "Transferir o ficheiro",
+	"reader.nextBook": "Volume seguinte",
 	"reader.fullscreen": "Ecrã inteiro",
 	"reader.exitFullscreen": "Sair do ecrã inteiro",
 	"reader.chapters": "Capítulos",

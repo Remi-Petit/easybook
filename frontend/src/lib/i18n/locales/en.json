@@ -168,6 +168,7 @@
 	"reader.noContent": "Nothing to show",
 	"reader.noContentNote": "This book is empty or its format could not be read.",
 	"reader.download": "Download the file",
+	"reader.nextBook": "Next volume",
 	"reader.fullscreen": "Full screen",
 	"reader.exitFullscreen": "Exit full screen",
 	"reader.chapters": "Chapters",
