@@ -1,6 +1,7 @@
 <script lang="ts">
-	// Onglets de la page « Anomalies », portés par l'URL : l'adresse de base est
-	// celle des doublons, `/format` celle des formats. Un lien se partage.
+	// Onglets de la page « Anomalies », portés par l'URL : chaque onglet a son
+	// adresse et chaque sous-onglet la sienne — `/duplicate/name`, `/duplicate/title`,
+	// `/duplicate/content`, puis `/format`. Un lien se partage.
 	import { page } from '$app/state';
 	import { duplicateContents, duplicateNames, duplicateTitles, unopenable } from '$lib/anomalies';
 	import { formatNumber, t } from '$lib/i18n/state.svelte';
@@ -22,8 +23,18 @@
 	});
 
 	const tabs = $derived([
-		{ id: 'doublons', href: BASE, label: 'anomalies.tab.duplicates' as const, count: counts.doublons },
-		{ id: 'format', href: `${BASE}/format`, label: 'anomalies.tab.format' as const, count: counts.format }
+		{
+			id: 'doublons',
+			href: `${BASE}/duplicate/name`,
+			label: 'anomalies.tab.duplicates' as const,
+			count: counts.doublons
+		},
+		{
+			id: 'format',
+			href: `${BASE}/format`,
+			label: 'anomalies.tab.format' as const,
+			count: counts.format
+		}
 	]);
 </script>
 

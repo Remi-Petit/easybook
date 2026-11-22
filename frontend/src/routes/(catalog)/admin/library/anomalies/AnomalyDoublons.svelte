@@ -17,32 +17,33 @@ import { library } from '$lib/library.svelte';
 
 const BASE = '/admin/library/anomalies';
 
-/** Une famille = un sous-onglet, avec son adresse propre. */
+/** Une famille = un sous-onglet, avec son adresse propre (`/duplicate/<famille>`). */
 const SUBTABS = [
 	{
 		kind: 'name' as const,
-		href: BASE,
+		href: `${BASE}/duplicate/name`,
 		title: 'anomalies.sameName' as const,
 		hint: 'anomalies.sameName.hint' as const
 	},
 	{
 		kind: 'title' as const,
-		href: `${BASE}/titre`,
+		href: `${BASE}/duplicate/title`,
 		title: 'anomalies.sameTitle' as const,
 		hint: 'anomalies.sameTitle.hint' as const
 	},
 	{
 		kind: 'content' as const,
-		href: `${BASE}/contenu`,
+		href: `${BASE}/duplicate/content`,
 		title: 'anomalies.sameContent' as const,
 		hint: 'anomalies.sameContent.hint' as const
 	}
 ];
 
 const path = $derived(decodeURIComponent(page.url.pathname));
-/** L'adresse de base montre les noms de fichiers ; les autres ont la leur. */
+/** Le sous-onglet se lit dans le dernier segment de l'adresse
+ *  (`…/duplicate/title`, `…/duplicate/content`, sinon les noms). */
 const current = $derived<AnomalyKind>(
-	path === BASE ? 'name' : path.endsWith('/titre') ? 'title' : 'content'
+	path.endsWith('/title') ? 'title' : path.endsWith('/content') ? 'content' : 'name'
 );
 
 const groups = $derived({
