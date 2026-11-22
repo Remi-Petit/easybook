@@ -2,7 +2,9 @@
 	// Onglets de la page « Anomalies », portés par l'URL : l'adresse de base est
 	// celle des doublons, `/format` celle des formats. Un lien se partage.
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n/state.svelte';
+	import { duplicateContents, duplicateNames, duplicateTitles } from '$lib/anomalies';
+	import { formatNumber, t } from '$lib/i18n/state.svelte';
+	import { library } from '$lib/library.svelte';
 
 	let { children } = $props();
 
@@ -10,10 +12,19 @@
 	const path = $derived(decodeURIComponent(page.url.pathname));
 	const tab = $derived(path === BASE ? 'doublons' : 'format');
 
-	const tabs = [
-		{ id: 'doublons', href: BASE, label: 'anomalies.tab.duplicates' as const },
-		{ id: 'format', href: `${BASE}/format`, label: 'anomalies.tab.format' as const }
-	];
+	/** Ce que chaque onglet compte : groupes de doublons, fichiers incompatibles. */
+	const counts = $derived({
+		doublons:
+			duplicateNames(library.books).length +
+			duplicateTitles(library.books).length +
+			duplicateContents(library.books).length,
+		format: library.books.filter((book) => !book.readable || book.pages === null).length
+	});
+
+	const tabs = $derived([
+		{ id: 'doublons', href: BASE, label: 'anomalies.tab.duplicates' as const, count: counts.doublons },
+		{ id: 'format', href: `${BASE}/format`, label: 'anomalies.tab.format' as const, count: counts.format }
+	]);
 </script>
 
 <svelte:head>
@@ -36,6 +47,7 @@
 				aria-controls="panel-{entry.id}"
 			>
 				{t(entry.label)}
+				<span class="tab-count">({formatNumber(entry.count)})</span>
 			</a>
 		{/each}
 	</div>

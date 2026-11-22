@@ -3955,3 +3955,15 @@ a.link-more {
 	flex: none;
 	margin-left: auto;
 }
+
+/* Compteur d'anomalies à côté du libellé d'un onglet : « Format (0) ». */
+.tab-count {
+	color: var(--muted);
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+}
+
+.tabs a[aria-selected='true'] .tab-count {
+	color: inherit;
+	opacity: 0.8;
+}
