@@ -18,6 +18,13 @@
 	"anomalies.sameTitle.hint": "Diese Bücher haben denselben Titel, ohne Akzente und Groß-/Kleinschreibung.",
 	"anomalies.sameContent": "Gleiche Datei, kopiert",
 	"anomalies.sameContent.hint": "Gleiche Größe, gleiches Format und gleiche Seitenzahl: dieselbe Datei an einem anderen Ort.",
+	"anomalies.tab.duplicates": "Duplikate",
+	"anomalies.tab.format": "Format",
+	"anomalies.format.unsupported": "Nicht unterstütztes Format",
+	"anomalies.format.unsupported.hint": "Die App kann diese Formate nicht öffnen.",
+	"anomalies.format.unopenable": "Unlesbare Datei",
+	"anomalies.format.unopenable.hint": "Das Format ist erkannt, aber die Datei ließ sich nicht öffnen (beschädigtes Archiv, abgeschnittenes PDF …).",
+	"anomalies.format.ok": "Alle Dateien haben ein unterstütztes Format und lassen sich öffnen.",
 	"anomalies.files": {
 		"one": "{count} Buch",
 		"other": "{count} Bücher"

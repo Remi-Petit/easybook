@@ -18,6 +18,13 @@
 	"anomalies.sameTitle.hint": "Estes livros têm o mesmo título, ignorando acentos e maiúsculas.",
 	"anomalies.sameContent": "Mesmo ficheiro, copiado",
 	"anomalies.sameContent.hint": "Mesmo tamanho, formato e número de páginas: o mesmo ficheiro noutro sítio.",
+	"anomalies.tab.duplicates": "Duplicados",
+	"anomalies.tab.format": "Formato",
+	"anomalies.format.unsupported": "Formato não suportado",
+	"anomalies.format.unsupported.hint": "A aplicação não consegue abrir estes formatos.",
+	"anomalies.format.unopenable": "Ficheiro ilegível",
+	"anomalies.format.unopenable.hint": "O formato é reconhecido, mas o ficheiro não pôde ser aberto (arquivo danificado, PDF truncado…).",
+	"anomalies.format.ok": "Todos os ficheiros têm um formato suportado e abrem corretamente.",
 	"anomalies.files": {
 		"one": "{count} livro",
 		"other": "{count} livros"

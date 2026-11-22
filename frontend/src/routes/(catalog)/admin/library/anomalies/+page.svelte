@@ -34,16 +34,7 @@ function contentLabel(group: AnomalyGroup): string {
 }
 </script>
 
-<svelte:head>
-	<title>{t('anomalies.title')} · easybook</title>
-</svelte:head>
-
-<div class="page">
-	<section class="intro">
-		<h1>{t('anomalies.title')}</h1>
-		<p>{t('anomalies.intro')}</p>
-	</section>
-
+<div role="tabpanel" id="panel-doublons" aria-labelledby="tab-doublons">
 	{#if library.status === 'connecting'}
 		<p class="notice">{t('status.connecting')}</p>
 	{:else if total === 0}
