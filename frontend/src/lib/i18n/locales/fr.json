@@ -169,6 +169,7 @@
 	"reader.noContentNote": "Ce livre est vide ou son format n’a pas pu être lu.",
 	"reader.download": "Télécharger le fichier",
 	"reader.nextBook": "Tome suivant",
+	"reader.previousBook": "Tome précédent",
 	"reader.fullscreen": "Plein écran",
 	"reader.exitFullscreen": "Quitter le plein écran",
 	"reader.chapters": "Chapitres",

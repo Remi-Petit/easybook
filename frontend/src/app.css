@@ -1542,12 +1542,12 @@ code {
 	background: rgba(255, 255, 255, 0.06);
 }
 
-/* Fin de livre : le tome suivant de la série, proposé au-dessus du pager. */
-.reader-next {
+/* Tome voisin proposé dans le lecteur : au-dessus du pager pour le suivant,
+   sous l'en-tête pour le précédent. */
+.reader-hint {
 	position: absolute;
 	z-index: 3;
 	left: 50%;
-	bottom: calc(var(--pager-h) + 14px);
 	transform: translateX(-50%);
 	display: flex;
 	align-items: center;
@@ -1562,7 +1562,15 @@ code {
 	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
 }
 
-.reader-next-link {
+.reader-hint[data-direction='next'] {
+	bottom: calc(var(--pager-h) + 14px);
+}
+
+.reader-hint[data-direction='previous'] {
+	top: calc(var(--head-h) + 14px);
+}
+
+.reader-hint-link {
 	display: flex;
 	align-items: center;
 	gap: 14px;
@@ -1571,25 +1579,25 @@ code {
 	color: var(--text);
 }
 
-.reader-next-link:hover {
+.reader-hint-link:hover {
 	color: var(--accent);
 }
 
-.reader-next-text {
+.reader-hint-text {
 	display: flex;
 	flex-direction: column;
 	gap: 1px;
 	min-width: 0;
 }
 
-.reader-next-label {
+.reader-hint-label {
 	color: var(--muted);
 	font-size: 11.5px;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 }
 
-.reader-next-title {
+.reader-hint-title {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -1597,7 +1605,7 @@ code {
 	font-weight: 560;
 }
 
-.reader-next-close {
+.reader-hint-close {
 	display: inline-flex;
 	flex: 0 0 auto;
 	align-items: center;
@@ -1612,7 +1620,7 @@ code {
 	cursor: pointer;
 }
 
-.reader-next-close:hover {
+.reader-hint-close:hover {
 	color: var(--text);
 	background: rgba(255, 255, 255, 0.08);
 }

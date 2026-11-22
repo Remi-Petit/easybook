@@ -43,12 +43,33 @@ export function childBooks(books: BookInfo[], parent: string): BookInfo[] {
  * d'envoyer sur une page d'erreur.
  */
 export function nextInSeries(books: BookInfo[], rel: string): BookInfo | null {
+	const around = aroundSeries(books, rel);
+	if (!around) return null;
+	return around.siblings.slice(around.at + 1).find(openable) ?? null;
+}
+
+/** Le tome qui précède `rel` dans sa série (mêmes règles que [`nextInSeries`]). */
+export function previousInSeries(books: BookInfo[], rel: string): BookInfo | null {
+	const around = aroundSeries(books, rel);
+	if (!around) return null;
+	return around.siblings.slice(0, around.at).reverse().find(openable) ?? null;
+}
+
+/** Un livre qu'on peut proposer sans envoyer sur une page d'erreur. */
+function openable(book: BookInfo): boolean {
+	return book.readable && (book.pages ?? 0) > 0;
+}
+
+/** Les tomes de la série de `rel` et sa position dedans, `null` hors série. */
+function aroundSeries(
+	books: BookInfo[],
+	rel: string
+): { siblings: BookInfo[]; at: number } | null {
 	const folder = parentOf(rel);
 	if (!folder.includes('/')) return null;
 	const siblings = childBooks(books, folder);
 	const at = siblings.findIndex((book) => book.rel === rel);
-	if (at < 0) return null;
-	return siblings.slice(at + 1).find((book) => book.readable && (book.pages ?? 0) > 0) ?? null;
+	return at < 0 ? null : { siblings, at };
 }
 
 /** Livres de `folder` **et** de tous ses sous-dossiers (`""` = tout). */

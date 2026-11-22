@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { bookUrl, rawUrl, readUrl, type BookDetail } from '$lib/api';
-	import { folderUrl, nextInSeries, parentOf } from '$lib/catalog';
+	import { bookUrl, rawUrl, type BookDetail } from '$lib/api';
+	import { folderUrl, nextInSeries, parentOf, previousInSeries } from '$lib/catalog';
 	import { t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
 	import { progressOf, setCurrentBook } from '$lib/reading.svelte';
@@ -10,6 +10,7 @@
 	import ComicReader from '$lib/reader/ComicReader.svelte';
 	import EpubReader from '$lib/reader/EpubReader.svelte';
 	import PdfReader from '$lib/reader/PdfReader.svelte';
+	import BookHint from '$lib/reader/BookHint.svelte';
 
 	const rel = $derived(page.params.path ?? '');
 	const fallbackTitle = $derived(rel.split('/').pop()?.replace(/\.[^.]+$/, '') ?? '');
@@ -116,11 +117,13 @@
 	// La position vient du magasin `reading` : chaque page tournée y est écrite
 	// tout de suite (voir `reportPosition`), sans attendre le serveur.
 	const progress = $derived(progressOf(rel));
-	/** Le tome suivant dans la série, s'il y en a un. */
+	/** Le tome suivant et le précédent dans la série, s'il y en a un. */
 	const nextUp = $derived(nextInSeries(library.books, rel));
-	/** La proposition n'apparaît qu'**au moment** où la dernière page est
-	 *  atteinte en avançant : rouvrir un livre déjà terminé n'affiche rien. */
-	let proposeNext = $state(false);
+	const previousUp = $derived(previousInSeries(library.books, rel));
+	/** La proposition n'apparaît qu'**au moment** où l'on atteint le bout du livre
+	 *  en avançant (le suivant) ou son début en reculant (le précédent) :
+	 *  ouvrir un livre déjà terminé, ou à sa première page, n'affiche rien. */
+	let hint = $state<'next' | 'previous' | null>(null);
 	/** Dernière position observée pour le livre ouvert. */
 	let seen = { path: '', page: -1, pages: 0 };
 
@@ -131,13 +134,13 @@
 		// Nouveau livre : on repart de sa position de reprise.
 		if (path !== seen.path) {
 			seen = { path, page: position.page, pages: position.pages };
-			proposeNext = false;
+			hint = null;
 			return;
 		}
-		const atEnd = position.pages > 0 && position.page + 1 >= position.pages;
-		if (position.page > seen.page && atEnd) proposeNext = true;
-		else if (!atEnd) proposeNext = false;
+		const moved = position.page - seen.page;
 		seen = { path, page: position.page, pages: position.pages };
+		if (moved > 0) hint = position.page + 1 >= position.pages ? 'next' : null;
+		else if (moved < 0) hint = position.page <= 0 ? 'previous' : null;
 	});
 
 	// Le sommaire est relu à chaque changement de livre : c'est une lecture
@@ -264,50 +267,15 @@
 		</header>
 	{/if}
 
-	{#if proposeNext && nextUp}
-		<aside class="reader-next" aria-live="polite">
-			<a class="reader-next-link" href={readUrl(nextUp.rel)}>
-				<span class="reader-next-text">
-					<span class="reader-next-label">{t('reader.nextBook')}</span>
-					<span class="reader-next-title">{nextUp.title}</span>
-				</span>
-				<svg
-					width="18"
-					height="18"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
-					<path d="M5 12h14" />
-					<path d="M13 6l6 6-6 6" />
-				</svg>
-			</a>
-			<button
-				type="button"
-				class="reader-next-close"
-				aria-label={t('common.dismiss')}
-				title={t('common.dismiss')}
-				onclick={() => (proposeNext = false)}
-			>
-				<svg
-					width="14"
-					height="14"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					aria-hidden="true"
-				>
-					<path d="M6 6l12 12" />
-					<path d="M18 6L6 18" />
-				</svg>
-			</button>
-		</aside>
+	{#if hint === 'next' && nextUp}
+		<BookHint book={nextUp} label="reader.nextBook" direction="next" onDismiss={() => (hint = null)} />
+	{:else if hint === 'previous' && previousUp}
+		<BookHint
+			book={previousUp}
+			label="reader.previousBook"
+			direction="previous"
+			onDismiss={() => (hint = null)}
+		/>
 	{/if}
 
 	{#if loading}
