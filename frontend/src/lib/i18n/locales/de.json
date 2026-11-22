@@ -172,6 +172,7 @@
 	"reader.download": "Datei herunterladen",
 	"reader.nextBook": "Nächster Band",
 	"reader.previousBook": "Vorheriger Band",
+	"reader.hint.press": "Nochmals {arrow} drücken zum Öffnen",
 	"reader.fullscreen": "Vollbild",
 	"reader.exitFullscreen": "Vollbild beenden",
 	"reader.chapters": "Kapitel",

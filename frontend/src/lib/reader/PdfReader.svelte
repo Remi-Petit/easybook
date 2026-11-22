@@ -11,13 +11,20 @@
 		rel,
 		resume,
 		chrome = true,
-		onToggleChrome = () => {}
+		onToggleChrome = () => {},
+		onNextBook,
+		onPreviousBook
 	}: {
 		rel: string;
 		/** Page enregistrée côté serveur : elle prime sur la position locale. */
 		resume?: number;
 		chrome?: boolean;
 		onToggleChrome?: () => void;
+		/** Appui « suivant » au-delà de la dernière page : le lecteur propose le
+		 *  tome suivant (absent = pas de tome, flèche désactivée). */
+		onNextBook?: () => void;
+		/** Appui « précédent » avant la première page. */
+		onPreviousBook?: () => void;
 	} = $props();
 
 	/** Niveaux de zoom : 1 = page entière dans l'écran. */
@@ -49,7 +56,9 @@
 	const atEnd = $derived(index >= pages - 1);
 
 	function go(target: number) {
-		if (target < 0 || target >= pages) return;
+		// Au-delà du livre : c'est un tome voisin que l'on demande.
+		if (target < 0) return onPreviousBook?.();
+		if (target >= pages) return onNextBook?.();
 		index = target;
 		try {
 			localStorage.setItem(storageKey, String(target));
@@ -275,11 +284,11 @@
 
 		{#if chrome && doc}
 			<nav class="pager">
-				<button disabled={atStart} aria-label={t('reader.previous')} onclick={() => go(index - 1)}>
+				<button disabled={atStart && !onPreviousBook} aria-label={t('reader.previous')} onclick={() => go(index - 1)}>
 					<span aria-hidden="true">←</span><span class="label">{t('reader.previous')}</span>
 				</button>
 				<span class="pager-pos">{index + 1} / {pages}</span>
-				<button disabled={atEnd} aria-label={t('reader.next')} onclick={() => go(index + 1)}>
+				<button disabled={atEnd && !onNextBook} aria-label={t('reader.next')} onclick={() => go(index + 1)}>
 					<span class="label">{t('reader.next')}</span><span aria-hidden="true">→</span>
 				</button>
 				<button

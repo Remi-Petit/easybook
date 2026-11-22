@@ -43,6 +43,9 @@
 		<span class="reader-hint-text">
 			<span class="reader-hint-label">{t(label)}</span>
 			<span class="reader-hint-title">{book.title}</span>
+			<span class="reader-hint-press">
+				{t('reader.hint.press', { arrow: direction === 'previous' ? '←' : '→' })}
+			</span>
 		</span>
 		{#if direction === 'next'}
 			<svg

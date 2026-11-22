@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { bookUrl, rawUrl, type BookDetail } from '$lib/api';
+	import { bookUrl, rawUrl, readUrl, type BookDetail } from '$lib/api';
 	import { folderUrl, nextInSeries, parentOf, previousInSeries } from '$lib/catalog';
 	import { t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
@@ -113,35 +114,56 @@
 		return () => setCurrentBook(null);
 	});
 
-	// ── Fin de livre : proposer le tome suivant ───────────────────────────────
-	// La position vient du magasin `reading` : chaque page tournée y est écrite
-	// tout de suite (voir `reportPosition`), sans attendre le serveur.
+	// ── Tomes voisins : double appui ─────────────────────────────────────────
+	// Au bout d'un livre, la flèche ne tourne plus de page : le **premier** appui
+	// annonce la suite, le **second** (pendant que l'avis est visible) l'ouvre.
+	// Passé quelques secondes, l'avis s'efface et il faut recommencer.
 	const progress = $derived(progressOf(rel));
 	/** Le tome suivant et le précédent dans la série, s'il y en a un. */
 	const nextUp = $derived(nextInSeries(library.books, rel));
 	const previousUp = $derived(previousInSeries(library.books, rel));
-	/** La proposition n'apparaît qu'**au moment** où l'on atteint le bout du livre
-	 *  en avançant (le suivant) ou son début en reculant (le précédent) :
-	 *  ouvrir un livre déjà terminé, ou à sa première page, n'affiche rien. */
+	/** Avis affiché (« next »/« previous »), et la minuterie qui l'éteint. */
 	let hint = $state<'next' | 'previous' | null>(null);
-	/** Dernière position observée pour le livre ouvert. */
-	let seen = { path: '', page: -1, pages: 0 };
+	let hintTimer: ReturnType<typeof setTimeout> | null = null;
+	const HINT_MS = 4000;
 
-	$effect(() => {
-		const path = rel;
-		const position = progress;
-		if (!position) return;
-		// Nouveau livre : on repart de sa position de reprise.
-		if (path !== seen.path) {
-			seen = { path, page: position.page, pages: position.pages };
-			hint = null;
+	function clearHint() {
+		if (hintTimer !== null) clearTimeout(hintTimer);
+		hintTimer = null;
+		hint = null;
+	}
+
+	function askPeer(direction: 'next' | 'previous') {
+		const peer = direction === 'next' ? nextUp : previousUp;
+		if (!peer) return;
+		if (hint === direction) {
+			// Deuxième appui pendant l'avis : on ouvre le tome voisin.
+			clearHint();
+			void goto(readUrl(peer.rel));
 			return;
 		}
-		const moved = position.page - seen.page;
-		seen = { path, page: position.page, pages: position.pages };
-		if (moved > 0) hint = position.page + 1 >= position.pages ? 'next' : null;
-		else if (moved < 0) hint = position.page <= 0 ? 'previous' : null;
+		clearHint();
+		hint = direction;
+		hintTimer = setTimeout(() => {
+			hint = null;
+			hintTimer = null;
+		}, HINT_MS);
+	}
+
+	// L'avis ne survit pas à un changement de livre ni à un retour dans les pages.
+	let seenPath = '';
+	let seenPage = -1;
+	$effect(() => {
+		const path = rel;
+		const page = progress?.page ?? -1;
+		if (path !== seenPath || page !== seenPage) {
+			seenPath = path;
+			seenPage = page;
+			clearHint();
+		}
 	});
+
+	onDestroy(clearHint);
 
 	// Le sommaire est relu à chaque changement de livre : c'est une lecture
 	// d'archive, pas un scan du dossier.
@@ -268,13 +290,13 @@
 	{/if}
 
 	{#if hint === 'next' && nextUp}
-		<BookHint book={nextUp} label="reader.nextBook" direction="next" onDismiss={() => (hint = null)} />
+		<BookHint book={nextUp} label="reader.nextBook" direction="next" onDismiss={clearHint} />
 	{:else if hint === 'previous' && previousUp}
 		<BookHint
 			book={previousUp}
 			label="reader.previousBook"
 			direction="previous"
-			onDismiss={() => (hint = null)}
+			onDismiss={clearHint}
 		/>
 	{/if}
 
@@ -301,6 +323,8 @@
 				{detail}
 				{chrome}
 				onToggleChrome={() => (chrome = !chrome)}
+				onNextBook={nextUp ? () => askPeer('next') : undefined}
+				onPreviousBook={previousUp ? () => askPeer('previous') : undefined}
 			/>
 		{:else if (detail.format === 'cbz' || detail.format === 'cbr') && detail.pages != null}
 			<!-- CBZ et CBR sont la même lecture : une image par page. -->
@@ -311,6 +335,8 @@
 				resume={detail.progress?.page}
 				{chrome}
 				onToggleChrome={() => (chrome = !chrome)}
+				onNextBook={nextUp ? () => askPeer('next') : undefined}
+				onPreviousBook={previousUp ? () => askPeer('previous') : undefined}
 			/>
 		{:else if detail.format === 'pdf'}
 			<PdfReader
@@ -318,6 +344,8 @@
 				resume={detail.progress?.page}
 				{chrome}
 				onToggleChrome={() => (chrome = !chrome)}
+				onNextBook={nextUp ? () => askPeer('next') : undefined}
+				onPreviousBook={previousUp ? () => askPeer('previous') : undefined}
 			/>
 		{:else}
 			<div class="state">

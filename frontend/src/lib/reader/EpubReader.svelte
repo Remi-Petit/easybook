@@ -10,12 +10,19 @@
 		rel,
 		detail,
 		chrome = true,
-		onToggleChrome = () => {}
+		onToggleChrome = () => {},
+		onNextBook,
+		onPreviousBook
 	}: {
 		rel: string;
 		detail: BookDetail;
 		chrome?: boolean;
 		onToggleChrome?: () => void;
+		/** Appui « suivant » au-delà du dernier chapitre : le lecteur propose le
+		 *  tome suivant (absent = pas de tome, flèche désactivée). */
+		onNextBook?: () => void;
+		/** Appui « précédent » avant le premier chapitre. */
+		onPreviousBook?: () => void;
 	} = $props();
 
 	const chapters = $derived(detail.chapters ?? []);
@@ -37,7 +44,9 @@
 	onDestroy(() => flushPositions());
 
 	function go(target: number) {
-		if (target < 0 || target >= chapters.length) return;
+		// Au-delà du livre : c'est un tome voisin que l'on demande.
+		if (target < 0) return onPreviousBook?.();
+		if (target >= chapters.length) return onNextBook?.();
 		index = target;
 	}
 
@@ -177,11 +186,11 @@
 				>
 					<span aria-hidden="true">☰</span>
 				</button>
-				<button disabled={atStart} aria-label={t('reader.previous')} onclick={() => go(index - 1)}>
+				<button disabled={atStart && !onPreviousBook} aria-label={t('reader.previous')} onclick={() => go(index - 1)}>
 					<span aria-hidden="true">←</span><span class="label">{t('reader.previous')}</span>
 				</button>
 				<span class="pager-pos">{index + 1} / {chapters.length}</span>
-				<button disabled={atEnd} aria-label={t('reader.next')} onclick={() => go(index + 1)}>
+				<button disabled={atEnd && !onNextBook} aria-label={t('reader.next')} onclick={() => go(index + 1)}>
 					<span class="label">{t('reader.next')}</span><span aria-hidden="true">→</span>
 				</button>
 			</nav>

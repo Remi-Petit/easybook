@@ -170,6 +170,7 @@
 	"reader.download": "Scarica il file",
 	"reader.nextBook": "Volume successivo",
 	"reader.previousBook": "Volume precedente",
+	"reader.hint.press": "Premi di nuovo {arrow} per aprire",
 	"reader.fullscreen": "Schermo intero",
 	"reader.exitFullscreen": "Esci da schermo intero",
 	"reader.chapters": "Capitoli",

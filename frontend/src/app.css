@@ -1605,6 +1605,12 @@ code {
 	font-weight: 560;
 }
 
+/* Consigne du double appui : c'est elle qui apprend le geste. */
+.reader-hint-press {
+	color: var(--muted);
+	font-size: 12px;
+}
+
 .reader-hint-close {
 	display: inline-flex;
 	flex: 0 0 auto;
