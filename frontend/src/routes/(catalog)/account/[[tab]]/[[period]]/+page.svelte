@@ -68,10 +68,14 @@
 		document.getElementById(`account-tab-${next}`)?.focus();
 	}
 
-	// Période de lecture : le mois en cours, l'année en cours, ou tout.
-	type Period = 'month' | 'year' | 'all';
-	const PERIODS: Period[] = ['month', 'year', 'all'];
-	let period = $state<Period>('month');
+	// Période de lecture : le mois en cours, l'année en cours, ou tout — elle a
+	// aussi son adresse (`/account/reading/year`) ; `/account/reading` seul ouvre
+	// le mois en cours.
+	const periods = ['month', 'year', 'all'] as const;
+	type Period = (typeof periods)[number];
+	const period = $derived<Period>(
+		periods.includes(page.params.period as Period) ? (page.params.period as Period) : 'month'
+	);
 	const periodLabel = (id: Period) => t(`account.reading.period.${id}`);
 
 	/** Premier instant de la période, en secondes Unix (`0` pour « tout »). */
@@ -93,9 +97,12 @@
 	// de lecture (les sessions ne sont pas toutes envoyées au client).
 	const summaries = $state<Partial<Record<Period, ReadingHistory['summary']>>>({});
 	const loaded = $state<Record<Period, boolean>>({ month: false, year: false, all: false });
+	/** Périodes en cours de chargement : un second appel ne repart pas. */
+	const pending = new Set<Period>();
 
 	async function loadPeriod(id: Period) {
-		if (loaded[id]) return;
+		if (loaded[id] || pending.has(id)) return;
+		pending.add(id);
 		const since = periodStart(id);
 		// Seul « tout » a besoin de la liste entière ; pour le mois et l'année, seuls
 		// les chiffres servent — une ligne suffit à remplir le résumé.
@@ -111,19 +118,16 @@
 			}
 		}
 		loaded[id] = true;
+		pending.delete(id);
 	}
 
-	async function selectPeriod(id: Period) {
-		period = id;
-		await loadPeriod(id);
-	}
-
-	function periodKeys(event: KeyboardEvent) {
+	async function periodKeys(event: KeyboardEvent) {
 		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
 		if (!step) return;
 		event.preventDefault();
-		const next = PERIODS[(PERIODS.indexOf(period) + step + PERIODS.length) % PERIODS.length]!;
-		void selectPeriod(next);
+		const next = periods[(periods.indexOf(period) + step + periods.length) % periods.length]!;
+		// Le focus suit l'onglet (voir `tabKeys`).
+		await goto(`/account/reading/${next}`);
 		document.getElementById(`account-period-${next}`)?.focus();
 	}
 
@@ -136,9 +140,16 @@
 
 		// Les épingles du compte : la collection ne dépend pas du catalogue.
 		startPins();
-		// La liste entière d'abord (livres terminés, séries), puis la période
-		// affichée : elle n'a besoin que de ses chiffres.
-		await Promise.all([loadPeriod('all'), loadPeriod(period)]);
+		// La liste entière (livres terminés, séries) : la collection en vit aussi ;
+		// les chiffres de la période affichée sont chargés par l'effet ci-dessous.
+		await loadPeriod('all');
+	});
+
+	// La période vient de l'URL : ses chiffres sont demandés au serveur — une
+	// fois par période, `loaded` garde le résultat quand on revient dessus.
+	$effect(() => {
+		if (tab !== 'reading') return;
+		void loadPeriod(period);
 	});
 
 	/** Début de la période affichée : la même borne pour les cartes et la liste. */
@@ -299,18 +310,17 @@
 					</section>
 				{:else if tab === 'reading'}
 					<div class="tabs sub" role="tablist" tabindex="-1" onkeydown={periodKeys}>
-						{#each PERIODS as id (id)}
-							<button
-								type="button"
+						{#each periods as id (id)}
+							<a
 								role="tab"
 								id="account-period-{id}"
+								href="/account/reading/{id}"
 								aria-selected={period === id}
 								aria-controls="account-reading"
 								tabindex={period === id ? 0 : -1}
-								onclick={() => void selectPeriod(id)}
 							>
 								{periodLabel(id)}
-							</button>
+							</a>
 						{/each}
 					</div>
 
