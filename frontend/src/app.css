@@ -3993,9 +3993,9 @@ a.link-more {
 	white-space: nowrap;
 }
 
-/* Raison de l'anomalie : le message du serveur (« archive illisible »…),
-   sous le chemin. C'est un diagnostic : il reste en monospace, un peu plus
-   lisible que le chemin mais moins que le titre. */
+/* Raison de l'anomalie : le message du serveur (« le fichier est une archive
+   7z, pas une archive .cbz »…), sous le chemin. C'est un diagnostic : il reste
+   en monospace, un peu plus lisible que le chemin mais moins que le titre. */
 .anomaly-reason {
 	color: var(--text);
 	opacity: 0.72;

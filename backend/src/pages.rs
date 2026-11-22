@@ -283,7 +283,10 @@ mod tests {
         let counted = open_stat(&path, Format::Cbz, size, 1);
         assert_eq!(counted.pages, None);
         let problem = counted.problem.expect("une raison");
-        assert_eq!(problem, "archive illisible");
+        assert_eq!(
+            problem,
+            "le fichier est une archive 7z, pas une archive .cbz"
+        );
         assert!(
             !problem.contains(&path.display().to_string()),
             "le chemin est déjà connu de l'appelant : {problem}"

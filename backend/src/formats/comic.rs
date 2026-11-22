@@ -71,8 +71,37 @@ fn container(path: &Path) -> Result<Container, String> {
     } else if head.starts_with(b"PK\x03\x04") {
         Ok(Container::Zip)
     } else {
-        Err(format!("{} : archive illisible", path.display()))
+        // Ni ZIP ni RAR : on nomme ce que les octets disent, confronté à
+        // l'extension attendue. C'est la raison de l'anomalie à l'écran.
+        let expected = path
+            .extension()
+            .map(|ext| ext.to_string_lossy().into_owned());
+        Err(match (kind(head), expected.as_deref()) {
+            (Some(kind), Some(ext)) => format!("le fichier est {kind}, pas une archive .{ext}"),
+            (Some(kind), None) => format!("le fichier est {kind}, pas une archive"),
+            (None, Some(ext)) => format!("le contenu ne correspond pas à l'extension .{ext}"),
+            (None, None) => "le contenu n'est pas une archive".to_string(),
+        })
     }
+}
+
+/// Ce qu'est réellement le fichier, d'après ses premiers octets.
+///
+/// Répond `None` quand ces octets ne disent rien de connu (fichier vide,
+/// conteneur exotique) : on ne devine pas.
+fn kind(head: &[u8]) -> Option<&'static str> {
+    const KNOWN: [(&[u8], &str); 5] = [
+        (b"7z\xbc\xaf\x27\x1c", "une archive 7z"),
+        (b"%PDF", "un PDF"),
+        (b"\x1f\x8b", "une archive gzip"),
+        (b"BZh", "une archive bzip2"),
+        (b"\xfd7zXZ\x00", "une archive xz"),
+    ];
+
+    KNOWN
+        .iter()
+        .find(|(magic, _)| head.starts_with(magic))
+        .map(|(_, name)| *name)
 }
 
 // ── ZIP ─────────────────────────────────────────────────────────────────────
@@ -231,7 +260,18 @@ mod tests {
         // Cas réel : des `.cbz` qui sont en fait des archives 7z.
         std::fs::write(&path, b"7z\xbc\xaf\x27\x1c\x00\x04reste").unwrap();
         let error = pages(&path).unwrap_err();
-        assert!(error.contains("archive illisible"), "{error}");
+        assert_eq!(error, "le fichier est une archive 7z, pas une archive .cbz");
+
+        let renamed = dir.path().join("tome.cbr");
+        std::fs::write(&renamed, b"%PDF-1.4reste").unwrap();
+        let error = pages(&renamed).unwrap_err();
+        assert_eq!(error, "le fichier est un PDF, pas une archive .cbr");
+
+        // Octets méconnus : on ne prononce pas de type, seulement le désaccord.
+        let opaque = dir.path().join("bizarre.cbz");
+        std::fs::write(&opaque, b"bonjour").unwrap();
+        let error = pages(&opaque).unwrap_err();
+        assert_eq!(error, "le contenu ne correspond pas à l'extension .cbz");
     }
 
     #[test]
