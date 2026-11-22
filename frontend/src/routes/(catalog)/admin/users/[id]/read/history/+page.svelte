@@ -146,26 +146,26 @@
 		<div class="admin-stack wide">
 			<section class="perf-panel">
 				<div class="perf-grid compact">
-					<div class="perf-stat">
-						<p class="stat-label">{t('users.reading.books')}</p>
+					<section class="perf-card kpi" style="--kpi: #e0a54a">
+						<h2>{t('users.reading.books')}</h2>
 						<p class="stat-value">{formatNumber(history.summary.books)}</p>
-					</div>
-					<div class="perf-stat">
-						<p class="stat-label">{t('users.reading.finished')}</p>
+					</section>
+					<section class="perf-card kpi" style="--kpi: #5cc98a">
+						<h2>{t('users.reading.finished')}</h2>
 						<p class="stat-value">{formatNumber(history.summary.finished)}</p>
-					</div>
-					<div class="perf-stat">
-						<p class="stat-label">{t('users.reading.pages')}</p>
+					</section>
+					<section class="perf-card kpi" style="--kpi: #6aa5e0">
+						<h2>{t('users.reading.pages')}</h2>
 						<p class="stat-value">{formatNumber(history.summary.pages)}</p>
-					</div>
-					<div class="perf-stat">
-						<p class="stat-label">{t('users.reading.last')}</p>
+					</section>
+					<section class="perf-card kpi" style="--kpi: #b98ae0">
+						<h2>{t('users.reading.last')}</h2>
 						<p class="stat-value small">
 							{history.summary.lastAt > 0
 								? formatDateTime(history.summary.lastAt)
 								: t('users.reading.never')}
 						</p>
-					</div>
+					</section>
 				</div>
 			</section>
 

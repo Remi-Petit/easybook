@@ -44,6 +44,21 @@ export function formatNumber(value: number, digits = 0): string {
 	return new Intl.NumberFormat(intlLocale(), { maximumFractionDigits: digits }).format(value);
 }
 
+/**
+ * Une durée de lecture, lisible d'un coup d'œil : « 2 h 05 », « 47 min »,
+ * « 12 s ». Arrondie à la minute au-delà d'une minute.
+ */
+export function formatReadingDuration(seconds: number): string {
+	const total = Math.max(0, Math.round(seconds));
+	if (total < 60) return t('account.reading.duration.seconds', { count: total });
+	const minutes = Math.round(total / 60);
+	if (minutes < 60) return t('account.reading.duration.minutes', { count: minutes });
+	return t('account.reading.duration.hours', {
+		hours: formatNumber(Math.floor(minutes / 60)),
+		minutes: String(minutes % 60).padStart(2, '0')
+	});
+}
+
 function adopt(code: Locale): void {
 	current = code;
 	if (browser) document.documentElement.lang = code;

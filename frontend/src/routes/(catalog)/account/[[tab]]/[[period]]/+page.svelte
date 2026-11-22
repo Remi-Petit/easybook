@@ -17,7 +17,7 @@
 	import FolderCard from '$lib/components/FolderCard.svelte';
 	import PasswordField from '$lib/components/PasswordField.svelte';
 	import Rail from '$lib/components/Rail.svelte';
-	import { formatNumber, intlLocale, t } from '$lib/i18n/state.svelte';
+	import { formatNumber, formatReadingDuration, intlLocale, t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
 	import { pins, startPins, unpinCompleted } from '$lib/pins.svelte';
 	import {
@@ -208,17 +208,6 @@
 	);
 
 	/** « 2 h 05 », « 47 min », « 12 s » : une durée se lit d'un coup d'œil. */
-	function duration(seconds: number): string {
-		const total = Math.max(0, Math.round(seconds));
-		if (total < 60) return t('account.reading.duration.seconds', { count: total });
-		const minutes = Math.round(total / 60);
-		if (minutes < 60) return t('account.reading.duration.minutes', { count: minutes });
-		return t('account.reading.duration.hours', {
-			hours: formatNumber(Math.floor(minutes / 60)),
-			minutes: String(minutes % 60).padStart(2, '0')
-		});
-	}
-
 	async function changePassword(event: SubmitEvent) {
 		event.preventDefault();
 		busy = true;
@@ -343,7 +332,7 @@
 							</section>
 							<section class="perf-card kpi" style="--kpi: #6aa5e0">
 								<h2>{t('account.reading.kpi.time')}</h2>
-								<p class="stat-value">{duration(summary?.seconds ?? 0)}</p>
+								<p class="stat-value">{formatReadingDuration(summary?.seconds ?? 0)}</p>
 							</section>
 							<section class="perf-card kpi" style="--kpi: #5cc98a">
 								<h2>{t('account.reading.kpi.series')}</h2>

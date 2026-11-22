@@ -2084,6 +2084,14 @@ code {
 	font-size: 26px;
 }
 
+/* Une date n'a pas la même échelle qu'un compteur, même dans une carte KPI. */
+.perf-card.kpi .stat-value.small {
+	font-size: 15px;
+	font-weight: 600;
+	letter-spacing: 0;
+	font-variant-numeric: normal;
+}
+
 /* Le rappel des séries terminées d'une tranche, à droite du compteur d'une
    rangée (même barre de titre que l'accueil, sans les majuscules). */
 .group h2 .group-series {
