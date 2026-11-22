@@ -71,21 +71,25 @@
 
 			<p class="nav-section">{t('nav.library')}</p>
 
-			{#if categories.length > 0}
-				{#each categories as category (category.rel)}
-					<a
-						class="nav-item"
-						href={folderUrl(category.rel)}
-						aria-current={active(folderUrl(category.rel)) ? 'page' : undefined}
-						title={category.name}
-					>
-						<span class="name">{category.name}</span>
-						<span class="nav-count">{category.count}</span>
-					</a>
-				{/each}
-			{:else if library.status !== 'connecting'}
-				<p class="nav-empty">{t('nav.empty')}</p>
-			{/if}
+			<!-- Seule cette liste défile : l'administration et le pied de la barre
+			     restent visibles, même avec beaucoup de bibliothèques. -->
+			<div class="nav-scroll">
+				{#if categories.length > 0}
+					{#each categories as category (category.rel)}
+						<a
+							class="nav-item"
+							href={folderUrl(category.rel)}
+							aria-current={active(folderUrl(category.rel)) ? 'page' : undefined}
+							title={category.name}
+						>
+							<span class="name">{category.name}</span>
+							<span class="nav-count">{category.count}</span>
+						</a>
+					{/each}
+				{:else if library.status !== 'connecting'}
+					<p class="nav-empty">{t('nav.empty')}</p>
+				{/if}
+			</div>
 
 			{#if isAdmin}
 				<p class="nav-section">{t('nav.admin')}</p>

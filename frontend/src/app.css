@@ -71,15 +71,17 @@ code {
 }
 
 /* La barre latérale reste en place pendant que le contenu défile : le
-   catalogue peut faire des centaines de couvertures de haut. */
+   catalogue peut faire des centaines de couvertures de haut. `overflow-y` ne
+   sert que de filet : si même les blocs fixes (marque, administration, pied)
+   dépassent la hauteur de l'écran, c'est toute la barre qui défile. */
 .sidebar {
 	position: sticky;
 	top: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 26px;
+	gap: 16px;
 	height: 100vh;
-	padding: 26px 14px 16px;
+	padding: 20px 14px 14px;
 	background: #101015;
 	border-right: 1px solid var(--line);
 	overflow-y: auto;
@@ -89,6 +91,10 @@ code {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
+	/* La navigation prend la place qui reste, et peut se réduire : c'est la
+	   liste des bibliothèques qui cède la première, en défilant. */
+	flex: 1 1 auto;
+	min-height: 0;
 }
 
 /* Grand écran : la barre et son panneau n'existent pas comme blocs, leurs
@@ -123,7 +129,7 @@ code {
 }
 
 .nav-section {
-	margin: 18px 10px 6px;
+	margin: 12px 10px 6px;
 	font-size: 10.5px;
 	font-weight: 600;
 	letter-spacing: 0.12em;
@@ -182,6 +188,51 @@ code {
 	margin: 0 10px;
 	color: var(--muted);
 	font-size: 12.5px;
+}
+
+/* La liste des bibliothèques a son propre défilement : le titre « Bibliothèque »
+   au-dessus et l'administration en dessous ne bougent pas. Barre fine et
+   discrète, qui ne s'épaissit qu'au survol. */
+.nav-scroll {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding-right: 3px;
+	scrollbar-width: thin;
+	scrollbar-color: #2c2c36 transparent;
+}
+
+.nav-scroll::-webkit-scrollbar {
+	width: 8px;
+}
+
+.nav-scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.nav-scroll::-webkit-scrollbar-thumb {
+	background: #2c2c36;
+	border-radius: 999px;
+}
+
+.nav-scroll:hover::-webkit-scrollbar-thumb {
+	background: #3c3c49;
+}
+
+/* Écran large mais très bas : la liste n'aurait plus une ligne à elle. On
+   revient au défilement de toute la barre pour que les catégories restent
+   atteignables. */
+@media (max-height: 560px) {
+	.sidebar nav {
+		flex: 0 0 auto;
+		min-height: auto;
+	}
+
+	.nav-scroll {
+		flex: 0 0 auto;
+		overflow: visible;
+	}
 }
 
 .sidebar-foot {
@@ -1719,6 +1770,14 @@ code {
 	/* Menu ouvert : la page derri\u00e8re ne d\u00e9file plus. */
 	html:has(.sidebar[data-open='true']) {
 		overflow: hidden;
+	}
+
+	/* Le menu mobile défile d'un bloc : la liste des bibliothèques n'a pas son
+	   propre défilement, sinon elle en aurait deux. */
+	.nav-scroll {
+		flex: none;
+		overflow: visible;
+		padding-right: 0;
 	}
 
 	.sidebar-foot {
