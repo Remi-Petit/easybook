@@ -11,45 +11,10 @@
 Bibliothèque de livres locale : un dossier `books/`, un backend Rust qui le
 surveille, une interface SvelteKit pour lire ce qu'il contient.
 
-```
-easybook/
-├── books/            # tes livres (EPUB, CBZ, CBR, PDF), à plat ou en dossiers
-├── backend/          # Rust — scan, lecture des formats, API HTTP, WebSocket
-│   ├── src/
-│   │   ├── main.rs       # démarrage + watcher
-│   │   ├── api.rs        # routes HTTP et WebSocket
-│   │   ├── library.rs    # scan récursif de books/
-│   │   ├── formats/      # **un fichier par format** (voir plus bas)
-│   │   ├── archive.rs    # helpers ZIP partagés (EPUB, CBZ)
-│   │   ├── rewrite.rs    # réécriture des URL d'un document (HTML, CSS)
-│   │   ├── thumbnail.rs  # couvertures : extraction, vignette, cache
-│   │   ├── watcher.rs    # interprétation des événements du disque
-│   │   └── config.rs     # config.yml
-│   ├── tests/            # tests d'intégration (routeur complet, vrais fichiers)
-│   └── config.yml
-├── frontend/         # SvelteKit — bibliothèque + lecteurs
-│   ├── src/routes/(catalog)/+layout.svelte   # coquille : barre latérale + contenu
-│   ├── src/routes/(catalog)/+page.svelte     # accueil : tous les livres
-│   ├── src/routes/(catalog)/folder/[...path]/ # une catégorie / une série
-│   ├── src/routes/read/[...path]/       # le lecteur (plein écran)
-│   ├── src/lib/catalog.ts               # découpage des listes plates en arborescence
-│   ├── src/lib/library.svelte.ts        # état partagé + WebSocket
-│   ├── src/lib/i18n/                    # langues (un fichier JSON par langue)
-│   ├── src/hooks.server.ts              # langue de la requête + attribut `lang`
-│   ├── src/lib/components/              # Sidebar, BookCard, FolderCard
-│   └── src/lib/reader/                  # EPUB, bande dessinée, PDF
-├── docker/
-│   ├── nginx.conf          # point d'entrée : /api et /ws vers l'API, le reste vers SvelteKit
-│   └── docker-compose.yml  # déploiement (image publiée sur GHCR)
-├── Dockerfile          # **une** image : nginx + interface + API
-├── docker-compose.release.yml  # image de production construite en local (release)
-└── docker-compose.yml  # développement (construit l'image, backend en profil dev)
-```
-
 ## L'idée
 
 - Le **backend ne fait qu'une chose** : décrire `books/` et servir le contenu des
-  livres. Aucune base de données, aucun index à maintenir.
+  livres. Aucune base de données, aucun index à maintenir **pour le catalogue**.
 - On peut **aussi ranger ses livres depuis l'interface** : deux icônes à droite du
   titre de la page — « + » ouvre une boîte pour créer un dossier (une catégorie
   à la racine), « ? » explique les dépôts. **Glisser-déposer** un fichier, ou un
@@ -91,12 +56,57 @@ easybook/
 - La **page d'accueil** montre la totalité des livres, toutes catégories
   confondues (avec la recherche). Le lecteur s'ouvre en plein écran, et son lien
   de retour ramène au dossier du livre.
-- Dans le lecteur (BD et EPUB), la **zone de lecture est découpée en trois** :
-  clic à gauche → page précédente, à droite → page suivante, au milieu →
-  l'en-tête, le pied de page et le sommaire s'effacent, **marges comprises**, pour
-  laisser toute la place au livre (un second clic les ramène, comme **Échap**).
-  Les flèches du clavier font la même chose, et un lien du livre reste un lien :
-  suivre une note ne tourne pas la page.
+- Le lecteur se commande au clavier et retient ses **réglages de lecture**
+  (sens, mode, mise en page, échelle) d'un livre à l'autre : voir
+  [Le lecteur](#le-lecteur). Un lien du livre reste un lien — suivre une note ne
+  tourne pas la page.
+
+## Le lecteur
+
+Le livre occupe tout l'écran. L'en-tête (retour, titre, auteur, puis réglages,
+aide « ? », plein écran et téléchargement), le pied de page (page et flèches) et
+le sommaire EPUB flottent par-dessus, en verre dépoli : les montrer ou les cacher
+ne déplace jamais la page.
+
+- **Zone de lecture en trois** (BD, PDF, EPUB) : clic à gauche → page précédente,
+  à droite → page suivante, au milieu → les barres s'effacent, **marges
+  comprises**, pour laisser toute la place au livre. Un second clic les ramène,
+  comme **Échap**.
+- **Au clavier**, les mêmes gestes et le reste :
+
+  | Touche | Effet |
+  |---|---|
+  | `←` `→` `↑` `↓` | page précédente / suivante (inversées en lecture de droite à gauche) |
+  | `Home` / `End` | début / fin du livre |
+  | `L` / `R` | lecture de gauche à droite / de droite à gauche (manga) |
+  | `V` / `W` | défilement par pages / défilement continu (webtoon) — BD |
+  | `C` | échelle : écran → largeur → hauteur → taille d'origine |
+  | `D` | mise en page : page seule → double page → double sans couverture — BD |
+  | `T` | vignettes des pages — BD ; sommaire — EPUB |
+  | `F` | plein écran |
+  | `M` | afficher ou masquer les barres |
+  | `S` | réglages de lecture |
+  | `H` ou `?` | aide des raccourcis |
+  | `Échap` | fermer la boîte ouverte, sinon ramener l'en-tête |
+
+  Le bouton **« ? »** de l'en-tête ouvre cette liste, **par format** : un PDF
+  n'a ni doubles pages ni vignettes, et il ajoute `+` `−` `0` pour le zoom.
+- **Au bout du livre**, la flèche ne tourne plus à vide : le premier appui
+  annonce le tome voisin (« Réappuyez sur → pour ouvrir »), le second l'ouvre —
+  passé quelques secondes, l'avis s'efface et il faut recommencer. Même chose en
+  arrière, à la première page. La carte de l'avis reste aussi un lien direct.
+- **Réglages de lecture** (bouton voisin, ou `S`) : sens, mode, mise en page et
+  échelle. Ils valent pour **tous** les livres et sont retenus par le navigateur
+  (`localStorage`, clé `easybook:reader`) : on règle son sens manga une fois pour
+  toutes. Un bandeau nomme le réglage qui vient de changer.
+  - **Double page** : les deux planches côte à côte, la première **à droite** en
+    lecture de droite à gauche, et le pied de page affiche « 12–13 / 193 » ;
+    « double page sans couverture » laisse la couverture seule.
+  - **Défilement par pages** : une planche par écran, qui s'aligne au défilement ;
+    **défilement continu** colle les planches bout à bout (webtoon). Dans les deux,
+    la position suit ce qui est lu au milieu de l'écran.
+- `T` (**vignettes**) ouvre la grille des planches pour sauter à une page ; les
+  images ne sont demandées qu'à l'ouverture de la boîte.
 
 ## Langues
 
@@ -122,7 +132,7 @@ portugais** ; la langue se choisit dans le pied de la barre latérale.
 | `.epub` | ✅ | celle déclarée par le livre (`properties="cover-image"` ou `<meta name="cover">`) | sommaire (`spine` + `toc.ncx` / navigation EPUB 3), chapitres affichés dans l'interface ; images, CSS et polices servis par l'API |
 | `.cbz` | ✅ | première page de l'archive | archive ZIP d'images, pages triées naturellement (`p2` avant `p10`) |
 | `.cbr` | ✅ | première page de l'archive | archive RAR, lue avec unrar (compilé avec le projet) |
-| `.pdf` | ✅ | première image **dessinée** sur la page 1 | lecteur intégré ([pdf.js](https://mozilla.github.io/pdf.js/)) : une page à la fois, texte sélectionnable, zoom, lecture par plages |
+| `.pdf` | ✅ | première image **dessinée** sur la page 1 | lecteur intégré ([pdf.js](https://mozilla.github.io/pdf.js/)) : une page à la fois, texte sélectionnable, échelle et zoom, lecture par plages |
 
 Le **conteneur** d'une bande dessinée est détecté par les octets du fichier, pas
 par son extension : beaucoup de `.cbr` distribués en ligne sont des ZIP
@@ -131,7 +141,9 @@ renommés, et ils se lisent aussi (et inversement).
 Un fichier qui commence par `%PDF` est ouvert comme un **PDF**, quelle que soit
 son extension : des `.cbr` téléchargés sont parfois des PDF. L'extension reste
 la règle quand elle est tenable — un fichier au contenu inconnu est signalé
-comme anomalie, avec la raison.
+comme anomalie, avec la raison. La page *Administration → Anomalies* les
+rassemble (formats illisibles, doublons de nom, de titre ou de contenu), et la
+barre latérale en affiche le nombre en pastille.
 
 Chaque carte annonce **le nombre de pages** (`N pages`) sous le livre. Pour un
 EPUB, c'est le nombre de **chapitres** : son texte se recompose à l'écran, il
@@ -281,7 +293,7 @@ puis à chaque changement.
 
 ```bash
 cd backend  && cargo test        # unitaires + intégration (api, auth, oidc)
-cd frontend && bun run test      # catalogue, langues, URL, dépôts, connexion (Vitest)
+cd frontend && bun run test      # catalogue, langues, URL, dépôts, connexion, lecteur (Vitest)
 
 # contre un vrai Keycloak (docker compose up -d keycloak)
 cd backend  && cargo test --test keycloak -- --ignored
@@ -316,7 +328,11 @@ cd backend  && cargo test --test keycloak -- --ignored
   première sous-série), fil d'Ariane, URL. `i18n.test.ts` : mêmes clés dans
   toutes les langues, pluriels, remplacement des paramètres, négociation de la
   langue. `api.test.ts` : URL de l'API, tailles et dates dans chaque langue,
-  changement de langue.
+  changement de langue. `reader/` : `zones.test.ts` (tiers de la zone de lecture,
+  inversés en lecture de droite à gauche), `prefs.test.ts` (cycles des réglages,
+  valeurs relues du stockage, découpe en doubles pages), `shortcuts.test.ts`
+  (touches, flèches selon le sens, et le catalogue de l'aide n'annonce que des
+  libellés traduits).
 - **E2E navigateur** : non installés ici — ils demanderaient Chromium + les deux
   process lancés, pour vérifier ce que les tests d'intégration couvrent déjà
   côté API. L'interface a été vérifiée manuellement (catalogue, dossiers,
@@ -390,8 +406,9 @@ node scripts/coverage.mjs --check  # exit 1 s'ils sont périmés
 
 Périmètre : les lignes que les tests **unitaires** peuvent atteindre.
 
-- **Frontend** : les modules de logique (`catalog.ts`, `api.ts`,
-  `i18n/messages.ts`, `i18n/state.svelte.ts`). Les composants et les pages
+- **Frontend** : les modules de logique (`catalog.ts`, `api.ts`, `auth.ts`,
+  `i18n/messages.ts`, `i18n/state.svelte.ts`, `reader/prefs.ts`,
+  `reader/shortcuts.ts`, `reader/zones.ts`). Les composants et les pages
   `.svelte` sont vérifiés dans le navigateur ; les compter afficherait 0 % pour
   du code qui fonctionne (voir `frontend/vitest.config.ts`).
 - **Backend** : tout le crate, `main.rs` compris. Son `main()` (bannière,
