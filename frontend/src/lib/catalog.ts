@@ -206,6 +206,27 @@ export function insideFolders(rel: string, folders: { rel: string }[]): boolean 
 }
 
 /**
+ * Dossiers dont le sous-arbre contient au moins un livre de l'un de ces
+ * formats. C'est ainsi qu'un filtre de format s'applique aussi aux séries :
+ * une série n'a pas de format à elle, mais elle en contient.
+ */
+export function foldersWithFormats(books: BookInfo[], formats: string[]): Set<string> {
+	const wanted = new Set(formats);
+	const found = new Set<string>();
+	if (wanted.size === 0) return found;
+	for (const book of books) {
+		if (!wanted.has(book.format)) continue;
+		// Tous les parents, jusqu'à la racine ; inutile de remonter une branche
+		// déjà marquée, ses ancêtres le sont forcément.
+		for (let rel = parentOf(book.rel); rel; rel = parentOf(rel)) {
+			if (found.has(rel)) break;
+			found.add(rel);
+		}
+	}
+	return found;
+}
+
+/**
  * Contenu d'un niveau du catalogue : ses sous-dossiers, puis ses livres.
  *
  * C'est la règle d'affichage de la page d'un dossier — et elle est récursive,

@@ -4,6 +4,7 @@ import {
 	childBooks,
 	childFolders,
 	folderUrl,
+	foldersWithFormats,
 	formatLabel,
 	insideFolders,
 	level,
@@ -340,6 +341,40 @@ describe('insideFolders', () => {
 	it('ne prend ni un livre voisin, ni un dossier au nom proche', () => {
 		expect(insideFolders('mangas/T01.cbz', found)).toBe(false);
 		expect(insideFolders('mangas/Chainsaw Man 2/T01.cbz', found)).toBe(false);
+	});
+});
+
+describe('foldersWithFormats', () => {
+	const books = [
+		book('mangas/Chainsaw Man/T01.cbz'),
+		book('mangas/Chainsaw Man/Bonus/One Shot.pdf', 'pdf'),
+		book('mangas/Frieren/T01.epub', 'epub'),
+		book('livres/Dune.pdf', 'pdf'),
+		book('mangas2/T01.cbz')
+	];
+
+	it('marque un dossier et tous ses ancêtres', () => {
+		const folders = foldersWithFormats(books, ['cbz']);
+		expect(folders.has('mangas/Chainsaw Man')).toBe(true);
+		expect(folders.has('mangas')).toBe(true);
+	});
+
+	it('ne garde que les dossiers contenant un livre du format demandé', () => {
+		const folders = foldersWithFormats(books, ['epub']);
+		expect(folders.has('mangas/Frieren')).toBe(true);
+		expect(folders.has('mangas/Chainsaw Man')).toBe(false);
+		expect(folders.has('livres')).toBe(false);
+	});
+
+	it('ne confond pas un dossier avec son homonyme préfixé', () => {
+		const folders = foldersWithFormats(books, ['pdf']);
+		expect(folders.has('mangas/Chainsaw Man')).toBe(true);
+		expect(folders.has('livres')).toBe(true);
+		expect(folders.has('mangas2')).toBe(false);
+	});
+
+	it('sans format coché, ne marque rien', () => {
+		expect(foldersWithFormats(books, []).size).toBe(0);
 	});
 });
 

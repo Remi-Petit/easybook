@@ -6,6 +6,7 @@
 	import BookCard from '$lib/components/BookCard.svelte';
 	import FolderCard from '$lib/components/FolderCard.svelte';
 	import {
+		foldersWithFormats,
 		formatLabel,
 		insideFolders,
 		level,
@@ -96,6 +97,16 @@
 	);
 
 	/**
+	 * Un format ne décrit qu'un fichier : une série n'en a pas, mais elle en
+	 * contient. Elle reste donc affichée si son sous-arbre porte au moins un
+	 * livre du format retenu (`null` = aucun format coché, tout passe).
+	 */
+	const formatFolders = $derived(
+		formats.length === 0 ? null : foldersWithFormats(scopeBooks, formats)
+	);
+	const allowedFolder = (rel: string) => formatFolders === null || formatFolders.has(rel);
+
+	/**
 	 * Séries trouvées : leur **nom** seul fait foi (pas le chemin, sinon une
 	 * catégorie ramènerait tout son contenu), et une catégorie — un dossier de
 	 * premier niveau — n'est jamais une série : elle ne se cherche pas.
@@ -103,9 +114,9 @@
 	 * égalités, `sort` étant stable).
 	 */
 	const foundSeries = $derived.by(() => {
-		if (!query) return current.folders;
+		if (!query) return current.folders.filter((folder) => allowedFolder(folder.rel));
 		return subtreeFolders(library.folders, scope)
-			.filter((folder) => parentOf(folder.rel) !== '')
+			.filter((folder) => parentOf(folder.rel) !== '' && allowedFolder(folder.rel))
 			.map((folder) => ({ folder, score: matchScore(folder.name, query) }))
 			.filter((entry) => entry.score > 0)
 			.sort((a, b) => b.score - a.score)
@@ -211,7 +222,7 @@
 			/>
 		</label>
 
-		{#if (types.length === 0 || types.includes('books')) && formatChoices.length > 0}
+		{#if formatChoices.length > 0}
 			<details class="menu" name="browse-filter">
 				<summary class="tool-btn">
 					{t('stats.col.format')}
