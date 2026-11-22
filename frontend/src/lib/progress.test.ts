@@ -9,6 +9,7 @@ import {
 	isFinished,
 	percentRead,
 	readingBuckets,
+	readingYears,
 	seriesProgress,
 	seriesTotal,
 	watchLaterEntries
@@ -462,5 +463,61 @@ describe('readingBuckets', () => {
 	it('ignore les livres terminés qui ne sont plus au catalogue', () => {
 		const items = [entry('mangas/Disparu/T1.cbz', NOVEMBRE)];
 		expect(readingBuckets(books, items, 'all')).toEqual([]);
+	});
+});
+
+describe('readingYears', () => {
+	const book = (rel: string): BookInfo => ({
+		rel,
+		name: rel,
+		folder: '',
+		format: 'cbz',
+		readable: true,
+		size: 1,
+		modified: 1,
+		pages: 100,
+		title: rel
+	});
+
+	const entry = (rel: string, at: number): BookProgress => ({
+		book: rel,
+		title: rel,
+		format: 'cbz',
+		page: 99,
+		pages: 100,
+		startedAt: at,
+		updatedAt: at
+	});
+
+	// 15 novembre 2026, 3 février 2026, 20 décembre 2025 (UTC).
+	const NOVEMBRE = Date.UTC(2026, 10, 15) / 1000;
+	const FEVRIER = Date.UTC(2026, 1, 3) / 1000;
+	const DECEMBRE = Date.UTC(2025, 11, 20) / 1000;
+
+	const books = [book('mangas/A/T1.cbz'), book('mangas/A/T2.cbz'), book('mangas/B/T1.cbz')];
+
+	it('imbrique les mois sous leur année, du plus récent au plus ancien', () => {
+		const items = [
+			entry('mangas/A/T1.cbz', NOVEMBRE),
+			entry('mangas/A/T2.cbz', FEVRIER),
+			entry('mangas/B/T1.cbz', DECEMBRE)
+		];
+		const years = readingYears(books, items);
+		expect(years.map((year) => year.key)).toEqual(['2026', '2025']);
+		expect(years[0]!.months.map((month) => month.key)).toEqual(['2026-11', '2026-02']);
+		expect(years[0]!.books.map((item) => item.rel)).toEqual([
+			'mangas/A/T1.cbz',
+			'mangas/A/T2.cbz'
+		]);
+	});
+
+	it('compte une série achevée sur l’année de son dernier tome, une seule fois', () => {
+		const items = [
+			entry('mangas/A/T1.cbz', DECEMBRE),
+			entry('mangas/A/T2.cbz', FEVRIER)
+		];
+		const years = readingYears(books, items);
+		expect(years.find((year) => year.key === '2026')!.series).toEqual(['mangas/A']);
+		expect(years.find((year) => year.key === '2025')!.series).toEqual([]);
 	});
 });

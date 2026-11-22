@@ -233,10 +233,10 @@ export type ReadingBucket = {
 /**
  * Range les livres terminés — et les séries achevées — par mois ou par année.
  *
- * `span` : `'year'` groupe par mois (l'onglet « Année »), `'all'` par année
- * (l'onglet « Tout »), `'month'` rend une seule tranche sans titre (la période
- * est déjà annoncée par l'onglet). Du plus récent au plus ancien, comme
- * l'historique.
+ * `span` : `'year'` groupe par mois (l'onglet « Année »), `'all'` par année,
+ * `'month'` rend une seule tranche sans titre (la période est déjà annoncée par
+ * l'onglet). Du plus récent au plus ancien, comme l'historique. Pour les deux
+ * niveaux à la fois (année puis mois), voir `readingYears`.
  */
 export function readingBuckets(
 	books: BookInfo[],
@@ -280,6 +280,46 @@ export function readingBuckets(
 	}
 
 	return [...buckets.values()].sort((a, b) => b.at - a.at);
+}
+
+/** Une année de l'historique : ses mois, ses livres et ses séries terminées. */
+export type ReadingYear = {
+	/** `2026`. */
+	key: string;
+	/** Instant le plus récent de l'année : c'est lui qui l'ordonne. */
+	at: number;
+	books: BookInfo[];
+	/** Chemins des séries achevées dans l'année. */
+	series: string[];
+	/** Ses mois, du plus récent au plus ancien. */
+	months: ReadingBucket[];
+};
+
+/**
+ * Range l'historique par année, puis par mois dans chaque année.
+ *
+ * C'est le découpage de l'onglet « Tout » : le total d'une année, et les mois
+ * qui la composent — les mêmes tranches mensuelles que l'onglet « Année ».
+ */
+export function readingYears(
+	books: BookInfo[],
+	items: BookProgress[],
+	since = 0
+): ReadingYear[] {
+	const years = new Map<string, ReadingYear>();
+	for (const month of readingBuckets(books, items, 'year', since)) {
+		const key = month.key.slice(0, 4);
+		let year = years.get(key);
+		if (!year) {
+			year = { key, at: month.at, books: [], series: [], months: [] };
+			years.set(key, year);
+		}
+		year.at = Math.max(year.at, month.at);
+		year.books.push(...month.books);
+		year.series.push(...month.series);
+		year.months.push(month);
+	}
+	return [...years.values()].sort((a, b) => b.at - a.at);
 }
 
 if (typeof window !== 'undefined') {

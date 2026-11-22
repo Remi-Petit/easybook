@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto, invalidateAll, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
-	import { formatDate } from '$lib/api';
+	import { formatDate, type BookInfo } from '$lib/api';
 	import {
 		call,
 		displayName,
@@ -24,6 +24,7 @@
 		completedSeries,
 		isFinished,
 		readingBuckets,
+		readingYears,
 		watchLaterEntries
 	} from '$lib/progress';
 	import { notify } from '$lib/toasts.svelte';
@@ -181,23 +182,29 @@
 	const monthFormat = $derived(
 		new Intl.DateTimeFormat(intlLocale(), { month: 'long', year: 'numeric' })
 	);
+	const monthName = $derived(new Intl.DateTimeFormat(intlLocale(), { month: 'long' }));
 	const yearFormat = $derived(new Intl.DateTimeFormat(intlLocale(), { year: 'numeric' }));
 
 	/** Le dossier d'une série, s'il est encore au catalogue. */
 	const folderOf = (rel: string) => library.folders.find((entry) => entry.rel === rel);
 
 	/**
-	 * Les livres terminés de la période, rangés mois par mois dans « Année » et
-	 * année par année dans « Tout » (une seule tranche, sans titre, dans « Mois »).
+	 * Les livres terminés des onglets « Mois » et « Année » : une seule tranche
+	 * (sans titre) pour le mois, et mois par mois pour l'année.
 	 */
 	const groups = $derived(
-		readingBuckets(library.books, finished, period, since).map((bucket) => ({
-			...bucket,
-			label:
-				bucket.key === 'month'
-					? null
-					: (period === 'year' ? monthFormat : yearFormat).format(new Date(bucket.at * 1000))
-		}))
+		period === 'all'
+			? []
+			: readingBuckets(library.books, finished, period, since).map((bucket) => ({
+					...bucket,
+					label:
+						bucket.key === 'month' ? null : monthFormat.format(new Date(bucket.at * 1000))
+				}))
+	);
+
+	/** Onglet « Tout » : les années, chacune avec ses mois. */
+	const years = $derived(
+		period === 'all' ? readingYears(library.books, finished, since) : []
 	);
 
 	/** « 2 h 05 », « 47 min », « 12 s » : une durée se lit d'un coup d'œil. */
@@ -240,6 +247,19 @@
 <svelte:head>
 	<title>{t('account.title')} · easybook</title>
 </svelte:head>
+
+<!-- Les cartes d'une tranche : ses séries achevées, puis ses livres. -->
+{#snippet readingCards(books: BookInfo[], series: string[])}
+	{#each series as rel (rel)}
+		{@const folder = folderOf(rel)}
+		{#if folder}
+			<FolderCard {folder} preview={previewBook(library.folders, library.books, rel)} />
+		{/if}
+	{/each}
+	{#each books as book (book.rel)}
+		<BookCard {book} />
+	{/each}
+{/snippet}
 
 <div class="page">
 	<section class="intro">
@@ -336,6 +356,36 @@
 
 						{#if !loaded.all}
 							<p class="panel-hint">{t('status.connecting')}</p>
+						{:else if period === 'all'}
+							{#if years.length === 0}
+								<p class="panel-hint">{t('account.reading.empty')}</p>
+							{:else}
+								<!-- « Tout » : chaque année, avec le total de l'année, puis ses mois. -->
+								{#each years as year (year.key)}
+									{@const label = yearFormat.format(new Date(year.at * 1000))}
+									<section class="group">
+										<h2>
+											{label}
+											<span class="count">{year.books.length}</span>
+											{#if year.series.length > 0}
+												<span class="group-series">
+													{t('account.reading.group.series', { count: year.series.length })}
+												</span>
+											{/if}
+										</h2>
+										{#each year.months as month (month.key)}
+											{@const monthLabel = monthName.format(new Date(month.at * 1000))}
+											<h3>
+												{monthLabel}
+												<span class="count">{month.books.length}</span>
+											</h3>
+											<Rail label={monthLabel}>
+												{@render readingCards(month.books, month.series)}
+											</Rail>
+										{/each}
+									</section>
+								{/each}
+							{/if}
 						{:else if groups.length === 0}
 							<p class="panel-hint">{t('account.reading.empty')}</p>
 						{:else}
@@ -354,18 +404,7 @@
 										{/if}
 									</h2>
 									<Rail {label}>
-										{#each group.series as rel (rel)}
-											{@const folder = folderOf(rel)}
-											{#if folder}
-												<FolderCard
-													{folder}
-													preview={previewBook(library.folders, library.books, rel)}
-												/>
-											{/if}
-										{/each}
-										{#each group.books as book (book.rel)}
-											<BookCard {book} />
-										{/each}
+										{@render readingCards(group.books, group.series)}
 									</Rail>
 								</section>
 							{/each}

@@ -2095,6 +2095,23 @@ code {
 	text-transform: none;
 }
 
+/* Le mois d'une année (onglet « Tout ») : un cran sous la rangée, sans filet. */
+.group h3 {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 18px 0 10px;
+	font-size: 12.5px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: capitalize;
+}
+
+/* La même rangée que le titre de groupe : le compteur à droite du filet. */
+.group h3 .count {
+	margin-left: auto;
+}
+
 /* Le « / 4 » d'un compteur « 3 / 4 » : lisible sans peser comme un chiffre. */
 .stat-of {
 	margin-left: 2px;
