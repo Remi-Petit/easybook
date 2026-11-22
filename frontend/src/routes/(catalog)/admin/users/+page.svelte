@@ -27,11 +27,14 @@
 		displayName,
 		errorKey,
 		type Activity,
+		type BookProgress,
+		type ReadingHistory,
 		type Role,
 		type Session,
 		type User
 	} from '$lib/auth';
-	import { t } from '$lib/i18n/state.svelte';
+	import { formatNumber, t } from '$lib/i18n/state.svelte';
+	import { percentRead } from '$lib/progress';
 	import { onActivity } from '$lib/library.svelte';
 	import { notify } from '$lib/toasts.svelte';
 
@@ -228,10 +231,12 @@
 	}
 
 	// Onglets du tiroir ; SSO n'existe que si OIDC est configuré.
-	type Tab = 'role' | 'password' | 'sso' | 'sessions';
+	type Tab = 'role' | 'password' | 'sso' | 'reading' | 'sessions';
 	let tab = $state<Tab>('role');
 	const tabs = $derived<Tab[]>(
-		oidc ? ['role', 'password', 'sso', 'sessions'] : ['role', 'password', 'sessions']
+		oidc
+			? ['role', 'password', 'sso', 'sessions', 'reading']
+			: ['role', 'password', 'sessions', 'reading']
 	);
 	const tabLabel = (id: Tab) =>
 		id === 'role'
@@ -240,7 +245,9 @@
 				? t('auth.password')
 				: id === 'sso'
 					? t('users.type.sso')
-					: t('users.tab.sessions');
+					: id === 'reading'
+						? t('users.tab.reading')
+						: t('users.tab.sessions');
 	const methodLabel = (method: string | null) =>
 		method === 'sso' ? t('users.type.sso') : method === 'password' ? t('auth.password') : null;
 
@@ -267,6 +274,32 @@
 		if (id) void loadActivity(id);
 	});
 
+	// Les derniers livres lus, chargés à la première ouverture de l'onglet Lecture.
+	const RECENT_SHOWN = 5;
+	let reading = $state<BookProgress[] | null>(null);
+	let readingLoading = $state(false);
+
+	async function loadReading(id: string) {
+		readingLoading = true;
+		const result = await call<ReadingHistory>(
+			'GET',
+			`/api/admin/users/${id}/read/history?limit=${RECENT_SHOWN}`
+		);
+		if (selectedId !== id) return;
+		readingLoading = false;
+		if (result.ok) reading = result.data.recent;
+		else {
+			reading = [];
+			fail(result.code);
+		}
+	}
+
+	$effect(() => {
+		const id = selectedId;
+		if (!id || tab !== 'reading' || reading !== null) return;
+		void loadReading(id);
+	});
+
 	function tabKeys(event: KeyboardEvent) {
 		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
 		if (!step) return;
@@ -281,6 +314,7 @@
 		resetPassword = subject = '';
 		resetTemporary = false;
 		invitation = null;
+		reading = null;
 		if (!drawer?.open) drawer?.showModal();
 	}
 
@@ -822,6 +856,32 @@
 						<div><button type="submit" class="btn-main">{t('users.link.add')}</button></div>
 					</form>
 				{/if}
+			{:else if tab === 'reading'}
+				{#if readingLoading || reading === null}
+					<p class="panel-hint">{t('status.connecting')}</p>
+				{:else if reading.length === 0}
+					<p class="panel-hint">{t('users.reading.empty')}</p>
+				{:else}
+					<ul class="history-list">
+						{#each reading as book (book.book)}
+							{@const percent = percentRead(book.page, book.pages)}
+							<li>
+								<div>
+									<strong>{book.title}</strong>
+									<span class="muted">
+										{formatDateTime(book.updatedAt)}
+										{#if percent !== null}
+											· {formatNumber(percent)} %
+										{/if}
+									</span>
+								</div>
+							</li>
+						{/each}
+					</ul>
+					<a class="link-more" href="/admin/users/{selected.id}/read/history">
+						{t('users.reading.more')}
+					</a>
+				{/if}
 			{:else if tab === 'sessions'}
 				{#if activityLoading || !activity}
 					<p class="panel-hint">{t('status.connecting')}</p>
@@ -863,9 +923,6 @@
 								{t('users.history.more')}
 							</a>
 						{/if}
-						<a class="link-more" href="/admin/users/{selected.id}/read/history">
-							{t('users.reading.link')}
-						</a>
 					{/if}
 				{/if}
 			{/if}
