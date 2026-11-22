@@ -112,8 +112,28 @@
 				<span class="reader-sub">{detail.author}</span>
 			{/if}
 			<span class="reader-sub path">{rel}</span>
-			<a class="reader-sub link" href={rawUrl(rel)} target="_blank" rel="noopener">
-				{t('reader.openFile')}
+			<a
+				class="reader-sub link download"
+				href={rawUrl(rel)}
+				download
+				title={t('reader.download')}
+				aria-label={t('reader.download')}
+			>
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.8"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M12 4v11" />
+					<path d="M7 11l5 5 5-5" />
+					<path d="M4 19.5h16" />
+				</svg>
 			</a>
 		</header>
 	{/if}

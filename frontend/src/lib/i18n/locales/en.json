@@ -167,7 +167,7 @@
 	"reader.unsupportedNote": "This format cannot be opened for now.",
 	"reader.noContent": "Nothing to show",
 	"reader.noContentNote": "This book is empty or its format could not be read.",
-	"reader.openFile": "open the file",
+	"reader.download": "Download the file",
 	"reader.chapters": "Chapters",
 	"reader.chapterError": "Unreadable chapter",
 	"reader.loadingChapter": "Loading the chapter…",

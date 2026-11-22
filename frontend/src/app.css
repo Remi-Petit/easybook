@@ -1518,6 +1518,25 @@ code {
 	color: var(--text);
 }
 
+/* Le lien vers le fichier n'a plus de libellé visible : une icône de
+   téléchargement. Le nom accessible reste `title`/`aria-label`, et la zone
+   cliquable garde la taille de la ligne. */
+.reader-sub.download {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	margin-right: -4px;
+	border-radius: 6px;
+}
+
+.reader-sub.download:hover {
+	color: var(--accent);
+	background: rgba(255, 255, 255, 0.06);
+}
+
 .reader-body {
 	position: absolute;
 	inset: 0;
@@ -1992,9 +2011,13 @@ code {
 		padding-left: max(14px, env(safe-area-inset-left, 0px));
 	}
 
-	/* Seuls le retour et le titre tiennent : chemin, auteur et lien vers le fichier
-	   restent sur grand écran. */
+	/* Seuls le retour et le titre tiennent : chemin, auteur et icône de
+	   téléchargement restent sur grand écran. */
 	.reader-sub {
+		display: none;
+	}
+
+	.reader-sub.download {
 		display: none;
 	}
 
