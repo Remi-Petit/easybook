@@ -114,7 +114,9 @@ function tokenScore(token: string, titleWords: string[], foldedTitle: string): n
 	let best = 0;
 	for (const word of titleWords) {
 		if (word === token) return 1;
-		if (token.length >= 2 && word.startsWith(token)) best = Math.max(best, 0.9);
+		// Une seule lettre suffit à démarrer un mot (« c » → Chainsaw, Comte,
+		// Coraline) ; au milieu d'un mot, il en faut deux, sinon tout sort.
+		if (word.startsWith(token)) best = Math.max(best, 0.9);
 		else if (token.length >= 2 && word.includes(token)) best = Math.max(best, 0.8);
 	}
 	if (best > 0) return best;

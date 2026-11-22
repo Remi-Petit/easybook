@@ -302,6 +302,15 @@ describe('matchScore', () => {
 		expect(matchScore('Chainsaw Man T01', 'sawc')).toBeGreaterThan(0);
 	});
 
+	it('trouve dès une lettre, au début d’un mot', () => {
+		expect(matchScore('Chainsaw Man T03', 'c')).toBeGreaterThan(0);
+		expect(matchScore('Chainsaw Man T03', 'm')).toBeGreaterThan(0);
+		expect(matchScore('Dune', 'du')).toBeGreaterThan(0);
+		// Au milieu d’un mot, une seule lettre ne suffit pas.
+		expect(matchScore('Dune', 'c')).toBe(0);
+		expect(matchScore('Dune', 'e')).toBe(0);
+	});
+
 	it('classe une correspondance littérale devant une correspondance floue', () => {
 		expect(matchScore('Chainsaw Man T03', 'chainsaw man')).toBeGreaterThan(
 			matchScore('Chainsaw Man T03', 'chainswa man')
