@@ -5,6 +5,7 @@
 	import { errorText } from '$lib/problems';
 	import { flushPositions, reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
+	import { arrowStep, isEditable, isPlainKey, shortcutAction } from './shortcuts';
 
 	let {
 		rel,
@@ -104,9 +105,33 @@
 				: start;
 
 		const onKey = (event: KeyboardEvent) => {
-			if (event.target instanceof HTMLInputElement) return;
-			if (event.key === 'ArrowLeft') go(index - 1);
-			if (event.key === 'ArrowRight') go(index + 1);
+			if (event.defaultPrevented || !isPlainKey(event) || isEditable(event.target)) return;
+			// Une boîte ouverte (aide, réglages) garde le clavier.
+			if (document.querySelector('dialog[open]')) return;
+
+			// Les chapitres suivent le texte : la touche de gauche recule toujours.
+			const step = arrowStep(event.key, false);
+			if (step) {
+				event.preventDefault();
+				go(step === 'next' ? index + 1 : index - 1);
+				return;
+			}
+
+			switch (shortcutAction(event.key)) {
+				case 'first':
+					event.preventDefault();
+					go(0);
+					break;
+				case 'last':
+					event.preventDefault();
+					go(chapters.length - 1);
+					break;
+				// T : le sommaire (ses vignettes, en bande dessinée).
+				case 'thumbs':
+					if (!chrome) onToggleChrome();
+					tocOpen = !tocOpen;
+					break;
+			}
 		};
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);

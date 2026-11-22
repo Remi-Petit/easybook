@@ -6,6 +6,8 @@
 	import { t } from '$lib/i18n/state.svelte';
 	import { flushPositions, reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
+	import { prefs, cycleScale, setReadingDirection } from './prefs.svelte';
+	import { arrowStep, isEditable, isPlainKey, shortcutAction } from './shortcuts';
 
 	let {
 		rel,
@@ -54,6 +56,10 @@
 	const zoom = $derived(ZOOMS[zoomStep]);
 	const atStart = $derived(index <= 0);
 	const atEnd = $derived(index >= pages - 1);
+	/** Sens de lecture (L/R) : il inverse les flèches et le clic. */
+	const rtl = $derived(prefs.direction === 'rtl');
+	/** Échelle choisie (C) : la page entière, la largeur, la hauteur ou 1:1. */
+	const scaleMode = $derived(prefs.scale);
 
 	function go(target: number) {
 		// Au-delà du livre : c'est un tome voisin que l'on demande.
@@ -127,13 +133,42 @@
 		})();
 
 		const onKey = (event: KeyboardEvent) => {
-			if (event.target instanceof HTMLInputElement) return;
+			if (event.defaultPrevented || !isPlainKey(event) || isEditable(event.target)) return;
+			// Une boîte ouverte (aide, réglages) garde le clavier.
+			if (document.querySelector('dialog[open]')) return;
+
 			// Zoomée, la page se parcourt aux flèches : on ne la tourne pas.
-			if (event.key === 'ArrowLeft' && zoomStep === 0) go(index - 1);
-			else if (event.key === 'ArrowRight' && zoomStep === 0) go(index + 1);
-			else if (event.key === '+' || event.key === '=') setZoom(zoomStep + 1);
+			const step = arrowStep(event.key, rtl);
+			if (step && zoomStep === 0) {
+				event.preventDefault();
+				if (step === 'next') go(index + 1);
+				else go(index - 1);
+				return;
+			}
+
+			if (event.key === '+' || event.key === '=') setZoom(zoomStep + 1);
 			else if (event.key === '-') setZoom(zoomStep - 1);
 			else if (event.key === '0') setZoom(0);
+			else
+				switch (shortcutAction(event.key)) {
+					case 'first':
+						event.preventDefault();
+						go(0);
+						break;
+					case 'last':
+						event.preventDefault();
+						go(pages - 1);
+						break;
+					case 'direction-ltr':
+						setReadingDirection('ltr');
+						break;
+					case 'direction-rtl':
+						setReadingDirection('rtl');
+						break;
+					case 'scale':
+						cycleScale();
+						break;
+				}
 		};
 		window.addEventListener('keydown', onKey);
 
@@ -152,7 +187,7 @@
 		if (!host) return;
 		const handler = (event: MouseEvent) => {
 			const selection = window.getSelection();
-			const zone = readingZone(event, selection !== null && !selection.isCollapsed);
+			const zone = readingZone(event, selection !== null && !selection.isCollapsed, rtl);
 			if (zone === 'previous') go(index - 1);
 			else if (zone === 'next') go(index + 1);
 			else if (zone === 'toggle') onToggleChrome();
@@ -184,8 +219,17 @@
 				if (cancelled) return;
 
 				const natural = page.getViewport({ scale: 1 });
-				// Zoom 1 : la page entière, à la taille maximale de l'écran (comme une planche de BD).
-				const css = Math.min(width / natural.width, height / natural.height) * factor;
+				// L'échelle choisie (écran par défaut, largeur, hauteur ou 1:1) donne
+				// la taille de départ ; le zoom du pied de page la multiplie.
+				const fit =
+					scaleMode === 'width'
+						? width / natural.width
+						: scaleMode === 'height'
+							? height / natural.height
+							: scaleMode === 'original'
+								? 1
+								: Math.min(width / natural.width, height / natural.height);
+				const css = fit * factor;
 				const ratio = window.devicePixelRatio || 1;
 				let scale = css * ratio;
 				const pixels = natural.width * natural.height * scale * scale;
@@ -285,11 +329,11 @@
 		{#if chrome && doc}
 			<nav class="pager">
 				<button disabled={atStart && !onPreviousBook} aria-label={t('reader.previous')} onclick={() => go(index - 1)}>
-					<span aria-hidden="true">←</span><span class="label">{t('reader.previous')}</span>
+					<span aria-hidden="true">{rtl ? '→' : '←'}</span><span class="label">{t('reader.previous')}</span>
 				</button>
 				<span class="pager-pos">{index + 1} / {pages}</span>
 				<button disabled={atEnd && !onNextBook} aria-label={t('reader.next')} onclick={() => go(index + 1)}>
-					<span class="label">{t('reader.next')}</span><span aria-hidden="true">→</span>
+					<span class="label">{t('reader.next')}</span><span aria-hidden="true">{rtl ? '←' : '→'}</span>
 				</button>
 				<button
 					class="zoom-btn"

@@ -45,4 +45,13 @@ describe('clics qui ne commandent pas la lecture', () => {
 		expect(readingZone(left, true)).toBeNull();
 		expect(readingZone(left, false)).toBe('previous');
 	});
+
+	it('inverse les tiers en lecture de droite à gauche', () => {
+		const host = { getBoundingClientRect: () => ({ left: 0, width: 300 }) as DOMRect };
+		const at = (clientX: number) => ({ button: 0, clientX, target: { tagName: 'IMG' }, currentTarget: host });
+		// La suite est à gauche, le retour à droite.
+		expect(readingZone(at(10), false, true)).toBe('next');
+		expect(readingZone(at(290), false, true)).toBe('previous');
+		expect(readingZone(at(150), false, true)).toBe('toggle');
+	});
 });

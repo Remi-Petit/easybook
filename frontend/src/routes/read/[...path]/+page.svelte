@@ -12,6 +12,11 @@
 	import EpubReader from '$lib/reader/EpubReader.svelte';
 	import PdfReader from '$lib/reader/PdfReader.svelte';
 	import BookHint from '$lib/reader/BookHint.svelte';
+	import ShortcutHelp from '$lib/reader/ShortcutHelp.svelte';
+	import ReaderSettings from '$lib/reader/ReaderSettings.svelte';
+	import { LABELS } from '$lib/reader/prefs';
+	import { loadPrefs, prefs } from '$lib/reader/prefs.svelte';
+	import { isEditable, isPlainKey, shortcutAction, type ReaderKind } from '$lib/reader/shortcuts';
 
 	const rel = $derived(page.params.path ?? '');
 	const fallbackTitle = $derived(rel.split('/').pop()?.replace(/\.[^.]+$/, '') ?? '');
@@ -43,6 +48,14 @@
 	 * les cache : le livre occupe alors tout l'écran, sans rien autour.
 	 */
 	let chrome = $state(true);
+
+	/** Format du livre ouvert : chaque lecteur a ses raccourcis (voir `shortcutGroups`). */
+	const kind = $derived<ReaderKind>(
+		detail?.format === 'epub' ? 'epub' : detail?.format === 'pdf' ? 'pdf' : 'comic'
+	);
+	/** Boîtes du lecteur : aide des raccourcis et réglages (touches H et S). */
+	let helpOpen = $state(false);
+	let settingsOpen = $state(false);
 
 	// ── Plein écran ──────────────────────────────────────────────────────────
 	// Le préfixe `webkit` reste nécessaire à Safari (iPad surtout).
@@ -82,10 +95,85 @@
 		}
 	}
 
-	// Échap ramène l'en-tête : sans lui, plus de retour vers le dossier.
+	// Les réglages de lecture sont ceux du navigateur : relus au montage.
+	onMount(loadPrefs);
+
+	// ── Réglage annoncé ──────────────────────────────────────────────────────
+	// Changer de sens ou de mode au clavier ne se voit pas toujours tout de
+	// suite : un bandeau nomme le réglage choisi, puis s'efface (comme Komga).
+	let notice = $state<string | null>(null);
+	let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function flash(text: string) {
+		notice = text;
+		if (noticeTimer !== null) clearTimeout(noticeTimer);
+		noticeTimer = setTimeout(() => {
+			notice = null;
+			noticeTimer = null;
+		}, 1800);
+	}
+
+	/** Dernier état connu des réglages (`direction|mode|layout|scale`). */
+	let seenPrefs = '';
+	$effect(() => {
+		const values = [prefs.direction, prefs.mode, prefs.layout, prefs.scale] as const;
+		const current = values.join('|');
+		// Premier passage : les réglages relus ne s'annoncent pas.
+		if (seenPrefs === '') {
+			seenPrefs = current;
+			return;
+		}
+		if (current === seenPrefs) return;
+		const before = seenPrefs.split('|');
+		seenPrefs = current;
+		if (values[0] !== before[0]) flash(t(LABELS.direction[prefs.direction]));
+		else if (values[1] !== before[1]) flash(t(LABELS.mode[prefs.mode]));
+		else if (values[2] !== before[2]) flash(t(LABELS.layout[prefs.layout]));
+		else flash(t(LABELS.scale[prefs.scale]));
+	});
+
+	onDestroy(() => {
+		if (noticeTimer !== null) clearTimeout(noticeTimer);
+	});
+
+	// Échap ramène l'en-tête : sans lui, plus de retour vers le dossier. Les
+	// autres touches sont celles du décor (plein écran, barres, aide, réglages) ;
+	// les lecteurs s'occupent de la navigation et des réglages de lecture.
 	onMount(() => {
 		const onKey = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') chrome = true;
+			if (event.defaultPrevented || !isPlainKey(event) || isEditable(event.target)) return;
+
+			// Une boîte ouverte garde le clavier : Échap la referme (le natif ne
+			// suffit pas partout, et la boîte peut venir d'un lecteur).
+			const modal = document.querySelector<HTMLDialogElement>('dialog[open]');
+			if (modal) {
+				if (event.key === 'Escape') {
+					event.preventDefault();
+					helpOpen = false;
+					settingsOpen = false;
+					modal.close();
+				}
+				return;
+			}
+
+			switch (shortcutAction(event.key)) {
+				case 'fullscreen':
+					event.preventDefault();
+					void toggleFullscreen();
+					break;
+				case 'chrome':
+					chrome = !chrome;
+					break;
+				case 'help':
+					helpOpen = true;
+					break;
+				case 'settings':
+					settingsOpen = true;
+					break;
+				case 'close':
+					chrome = true;
+					break;
+			}
 		};
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
@@ -204,7 +292,7 @@
 </svelte:head>
 
 <!-- Échap (voir `onMount`) ramène l'en-tête : sans lui, plus de retour au dossier. -->
-<div class="reader">
+<div class="reader" data-scale={prefs.scale}>
 	{#if chrome}
 		<header class="reader-head">
 			<a class="back" href={collectionUrl} onclick={goBack}>← {t('reader.back')}</a>
@@ -216,6 +304,57 @@
 			{#if detail?.author}
 				<span class="reader-sub">{detail.author}</span>
 			{/if}
+			<button
+				type="button"
+				class="reader-sub icon"
+				onclick={() => (settingsOpen = true)}
+				title={t('reader.settings')}
+				aria-label={t('reader.settings')}
+			>
+				<!-- Réglages : deux curseurs. -->
+				<svg
+					width="20"
+					height="20"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M4 7h9" />
+					<circle cx="16" cy="7" r="2" />
+					<path d="M18 7h2" />
+					<path d="M4 17h2" />
+					<circle cx="8" cy="17" r="2" />
+					<path d="M10 17h10" />
+				</svg>
+			</button>
+			<button
+				type="button"
+				class="reader-sub icon"
+				onclick={() => (helpOpen = true)}
+				title={t('reader.shortcuts')}
+				aria-label={t('reader.shortcuts')}
+			>
+				<!-- Aide : le point d'interrogation des raccourcis. -->
+				<svg
+					width="20"
+					height="20"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<circle cx="12" cy="12" r="9" />
+					<path d="M9.2 9a2.9 2.9 0 0 1 5.5 1.2c0 1.6-2.2 1.9-2.6 3.2" />
+					<path d="M12 17.2h.01" />
+				</svg>
+			</button>
 			{#if canFullscreen}
 				<button
 					type="button"
@@ -289,6 +428,10 @@
 		</header>
 	{/if}
 
+	{#if notice}
+		<div class="reader-toast" role="status">{notice}</div>
+	{/if}
+
 	{#if hint === 'next' && nextUp}
 		<BookHint book={nextUp} label="reader.nextBook" direction="next" onDismiss={clearHint} />
 	{:else if hint === 'previous' && previousUp}
@@ -357,3 +500,7 @@
 		{/if}
 	{/if}
 </div>
+
+<!-- Le clavier du lecteur : ce qui s'annonce dans l'aide est ce qui existe. -->
+<ShortcutHelp open={helpOpen} {kind} onClose={() => (helpOpen = false)} />
+<ReaderSettings open={settingsOpen} {kind} onClose={() => (settingsOpen = false)} />

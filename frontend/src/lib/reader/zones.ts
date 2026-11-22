@@ -40,6 +40,9 @@ export function isInteractive(target: unknown): boolean {
 /**
  * Zone visée par un clic, ou `null` si le clic ne commande pas la lecture
  * (élément interactif, sélection de texte, bouton autre que le gauche).
+ *
+ * En lecture de droite à gauche (`rtl`), les tiers s'inversent : la planche
+ * suivante est à gauche, comme dans un manga.
  */
 export function readingZone(
 	event: {
@@ -48,7 +51,8 @@ export function readingZone(
 		target: unknown;
 		currentTarget: unknown;
 	},
-	selected: boolean
+	selected: boolean,
+	rtl = false
 ): Zone | null {
 	if (event.button !== undefined && event.button !== 0) return null;
 	if (selected) return null;
@@ -57,5 +61,7 @@ export function readingZone(
 	const host = event.currentTarget as { getBoundingClientRect?: () => DOMRect };
 	const rect = host?.getBoundingClientRect?.();
 	if (!rect) return null;
-	return zoneAt(event.clientX, rect.left, rect.width);
+	const zone = zoneAt(event.clientX, rect.left, rect.width);
+	if (!rtl || zone === 'toggle') return zone;
+	return zone === 'previous' ? 'next' : 'previous';
 }

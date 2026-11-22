@@ -1631,6 +1631,163 @@ code {
 	background: rgba(255, 255, 255, 0.08);
 }
 
+/* Réglage annoncé après un raccourci : il nomme ce qui vient de changer, puis
+   s'efface. Il ne prend pas la souris (aucun clic à intercepter). */
+.reader-toast {
+	position: absolute;
+	z-index: 4;
+	top: calc(var(--head-h) + 14px);
+	left: 50%;
+	transform: translateX(-50%);
+	max-width: calc(100vw - 32px);
+	overflow: hidden;
+	padding: 8px 16px;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 999px;
+	background: rgba(15, 15, 19, 0.82);
+	-webkit-backdrop-filter: blur(16px) saturate(1.4);
+	backdrop-filter: blur(16px) saturate(1.4);
+	color: var(--text);
+	font-size: 13.5px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	pointer-events: none;
+}
+
+/* Aide des raccourcis et réglages du lecteur : plus larges que les boîtes du
+   catalogue, et défilantes quand la liste est longue. */
+.dialog.sheet {
+	max-width: min(620px, calc(100vw - 32px));
+}
+
+.dialog.sheet .dialog-body {
+	max-height: min(82vh, 760px);
+	overflow-y: auto;
+}
+
+.dialog kbd {
+	display: inline-block;
+	min-width: 1.7em;
+	margin-right: 3px;
+	padding: 1px 5px;
+	border: 1px solid var(--line);
+	border-bottom-width: 2px;
+	border-radius: 5px;
+	background: var(--panel);
+	color: var(--text);
+	font: inherit;
+	font-size: 11.5px;
+	line-height: 1.6;
+	text-align: center;
+}
+
+.help-groups {
+	display: grid;
+	gap: 18px;
+}
+
+.help-groups h3 {
+	margin: 0 0 6px;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.shortcuts {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13.5px;
+}
+
+.shortcuts td {
+	padding: 4px 0;
+	vertical-align: top;
+}
+
+.shortcuts td:first-child {
+	width: 132px;
+	padding-right: 12px;
+	white-space: nowrap;
+}
+
+.shortcuts td:last-child {
+	color: var(--muted);
+}
+
+/* Rangée de réglage : libellé (et son raccourci), puis choix exclusifs. */
+.pref {
+	display: grid;
+	gap: 6px;
+}
+
+.pref-label {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px;
+	font-size: 12.5px;
+	color: var(--muted);
+}
+
+.seg {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.seg button {
+	padding: 6px 12px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	background: var(--panel);
+	color: var(--muted);
+	font-size: 13px;
+}
+
+.seg button[aria-pressed='true'] {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+
+/* Vignettes des planches */
+.thumbs-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+	gap: 10px;
+}
+
+.thumb {
+	display: grid;
+	gap: 4px;
+	padding: 4px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	background: none;
+	color: var(--muted);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+.thumb img {
+	width: 100%;
+	height: auto;
+	border-radius: 5px;
+	background: #0b0b0e;
+}
+
+.thumb:hover {
+	border-color: var(--line);
+	background: var(--panel);
+}
+
+.thumb[aria-current='true'] {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
 .reader-body {
 	position: absolute;
 	inset: 0;
@@ -1693,7 +1850,10 @@ code {
 
 .viewport {
 	height: 100%;
-	overflow-y: auto;
+	/* Les échelles « largeur », « hauteur » et « origine » peuvent déborder
+	   horizontalement : la zone de lecture défile dans les deux sens. */
+	overflow: auto;
+	overscroll-behavior: contain;
 }
 
 /* Texte d'un EPUB : largeur de lecture confortable, styles du livre conservés.
@@ -1762,6 +1922,91 @@ code {
 	height: 100%;
 	/* La planche est toujours entière, à la taille maximale de l'écran. */
 	object-fit: contain;
+}
+
+/* Double page : deux planches côte à côte, chacune sur la moitié de l'écran.
+   En lecture de droite à gauche, c'est le document qui inverse l'ordre. */
+.spread {
+	display: flex;
+	height: 100%;
+}
+
+.spread .page-view {
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+/* Échelle : « écran » (défaut) montre la planche entière ; « largeur » et
+   « hauteur » la font déborder dans un sens, et la zone défile ; « origine »
+   garde les pixels de l'image. */
+.reader[data-scale='width'] .page-view {
+	height: auto;
+}
+
+.reader[data-scale='width'] .page-view img {
+	position: static;
+	display: block;
+	width: 100%;
+	height: auto;
+	object-fit: fill;
+}
+
+.reader[data-scale='height'] .page-view {
+	display: grid;
+	place-items: center;
+}
+
+.reader[data-scale='height'] .page-view img {
+	position: static;
+	display: block;
+	width: auto;
+	height: 100%;
+	max-width: none;
+	object-fit: fill;
+}
+
+.reader[data-scale='original'] .page-view {
+	height: auto;
+}
+
+.reader[data-scale='original'] .page-view img {
+	position: static;
+	display: block;
+	width: auto;
+	height: auto;
+	max-width: none;
+	margin: 0 auto;
+	object-fit: fill;
+}
+
+/* Modes continus : les planches s'empilent dans un flux. */
+.stream {
+	display: flex;
+	flex-direction: column;
+}
+
+/* Défilement par pages : chaque planche occupe l'écran et s'aligne au début. */
+.viewport[data-mode='vertical'] {
+	scroll-snap-type: y mandatory;
+}
+
+.stream[data-mode='vertical'] .page-view {
+	height: 100dvh;
+	scroll-snap-align: start;
+	scroll-snap-stop: always;
+}
+
+/* Défilement continu : les planches se suivent sur toute la largeur. */
+.stream[data-mode='webtoon'] .page-view {
+	height: auto;
+}
+
+.stream[data-mode='webtoon'] .page-view img {
+	position: static;
+	display: block;
+	width: 100%;
+	height: auto;
+	object-fit: fill;
 }
 
 /* PDF : une page dessinée sur un canvas, à la taille de l'écran ; zoomée, elle défile. */
