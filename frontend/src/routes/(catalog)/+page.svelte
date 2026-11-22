@@ -1,14 +1,11 @@
 <script lang="ts">
 	import Add from '$lib/components/Add.svelte';
 	import BookCard from '$lib/components/BookCard.svelte';
-	import FolderCard from '$lib/components/FolderCard.svelte';
 	import LibraryBrowser from '$lib/components/LibraryBrowser.svelte';
 	import Rail from '$lib/components/Rail.svelte';
-	import type { BookInfo, FolderInfo } from '$lib/api';
-	import { folderUrl, noveltyRails, previewBook } from '$lib/catalog';
+	import { folderUrl, noveltyRails } from '$lib/catalog';
 	import { library, reload } from '$lib/library.svelte';
-	import { pins, unpinCompleted } from '$lib/pins.svelte';
-	import { inProgress, isComplete } from '$lib/progress';
+	import { inProgress } from '$lib/progress';
 	import { reading } from '$lib/reading.svelte';
 	import { t } from '$lib/i18n/state.svelte';
 
@@ -28,34 +25,6 @@
 
 	/** Une ligne de nouveautés par catégorie : ses livres les plus récents. */
 	const novelties = $derived(noveltyRails(library.folders, library.books, NOVELTIES));
-
-	/** Une épingle : une série ou un livre, encore présent au catalogue. */
-	type WatchLater =
-		| { rel: string; folder: FolderInfo; book?: undefined }
-		| { rel: string; folder?: undefined; book: BookInfo };
-
-	/**
-	 * Les épingles, dans l'ordre où elles ont été posées, réduites à ce qui est
-	 * encore au catalogue — une série épinglée, un livre épinglé, ou rien.
-	 *
-	 * Un livre ou une série déjà lu en entier n'a plus rien à regarder : il
-	 * disparaît de la rangée et son épingle est détachée (voir l'effet plus bas).
-	 */
-	const watchLater = $derived<WatchLater[]>(
-		pins.items.flatMap((pin): WatchLater[] => {
-			if (isComplete(pin.item, library.books, reading.items)) return [];
-			const folder = library.folders.find((candidate) => candidate.rel === pin.item);
-			if (folder) return [{ rel: pin.item, folder }];
-			const book = library.books.find((candidate) => candidate.rel === pin.item);
-			return book ? [{ rel: pin.item, book }] : [];
-		})
-	);
-
-	// Un livre ou une série lu en entier n'a plus rien à rappeler : l'épingle
-	// est détachée pour de bon dès que l'historique le dit.
-	$effect(() => {
-		void unpinCompleted(library.books, reading.items);
-	});
 </script>
 
 <svelte:head>
@@ -100,32 +69,6 @@
 						<Rail label={t('home.continue')}>
 							{#each continuing as book (book.rel)}
 								<BookCard {book} />
-							{/each}
-						</Rail>
-					</section>
-				{/if}
-
-				<!-- « À regarder plus tard » : les épingles, justement sous les lectures en cours. -->
-				{#if watchLater.length > 0}
-					<section class="group">
-						<h2>
-							{t('home.watchLater')}
-							<span class="count">{watchLater.length}</span>
-						</h2>
-						<Rail label={t('home.watchLater')}>
-							{#each watchLater as entry (entry.rel)}
-								{#if entry.folder}
-									<FolderCard
-										folder={entry.folder}
-										preview={previewBook(
-											library.folders,
-											library.books,
-											entry.folder.rel
-										)}
-									/>
-								{:else if entry.book}
-									<BookCard book={entry.book} />
-								{/if}
 							{/each}
 						</Rail>
 					</section>

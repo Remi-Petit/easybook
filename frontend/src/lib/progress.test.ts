@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BookInfo } from './api';
+import type { BookInfo, FolderInfo } from './api';
 import type { BookProgress } from './auth';
 import {
 	completedSeries,
@@ -10,7 +10,8 @@ import {
 	percentRead,
 	readingBuckets,
 	seriesProgress,
-	seriesTotal
+	seriesTotal,
+	watchLaterEntries
 } from './progress';
 
 describe('percentRead', () => {
@@ -177,6 +178,67 @@ describe('isComplete', () => {
 
 	it('ne conclut rien pour un dossier vide', () => {
 		expect(isComplete('mangas', [], [])).toBe(false);
+	});
+});
+
+describe('watchLaterEntries', () => {
+	const book = (rel: string): BookInfo => ({
+		rel,
+		name: rel,
+		folder: '',
+		format: 'cbz',
+		readable: true,
+		size: 1,
+		modified: 1,
+		pages: 100,
+		title: rel
+	});
+
+	const folder = (rel: string): FolderInfo => ({ rel, name: rel, count: 2, modified: 1 });
+
+	const entry = (book: string, page: number, pages: number): BookProgress => ({
+		book,
+		title: book,
+		format: 'cbz',
+		page,
+		pages,
+		startedAt: 1,
+		updatedAt: 2
+	});
+
+	it('rend les épingles dans leur ordre, livres et séries mêlés', () => {
+		const books = [book('serie/t1.cbz'), book('a-lire/t1.cbz')];
+		const entries = watchLaterEntries(
+			['serie', 'a-lire/t1.cbz'],
+			[folder('serie')],
+			books,
+			[]
+		);
+		expect(entries.map((item) => item.rel)).toEqual(['serie', 'a-lire/t1.cbz']);
+		expect(entries[0]!.folder?.rel).toBe('serie');
+		expect(entries[1]!.book?.rel).toBe('a-lire/t1.cbz');
+	});
+
+	it('écarte un livre terminé et une série entièrement lue', () => {
+		const books = [book('fini.cbz'), book('serie/t1.cbz')];
+		const entries = watchLaterEntries(
+			['fini.cbz', 'serie'],
+			[folder('serie')],
+			books,
+			[entry('fini.cbz', 99, 100), entry('serie/t1.cbz', 99, 100)]
+		);
+		expect(entries).toEqual([]);
+	});
+
+	it('garde une série dont un tome reste, et ignore un chemin disparu', () => {
+		const books = [book('serie/t1.cbz'), book('serie/t2.cbz')];
+		const entries = watchLaterEntries(
+			['inconnu', 'serie'],
+			[folder('serie')],
+			books,
+			[entry('serie/t1.cbz', 99, 100)]
+		);
+		expect(entries.map((item) => item.rel)).toEqual(['serie']);
 	});
 });
 

@@ -18,7 +18,13 @@
 	import PasswordField from '$lib/components/PasswordField.svelte';
 	import { formatNumber, intlLocale, t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
-	import { completedSeries, isFinished, readingBuckets } from '$lib/progress';
+	import { pins, startPins, unpinCompleted } from '$lib/pins.svelte';
+	import {
+		completedSeries,
+		isFinished,
+		readingBuckets,
+		watchLaterEntries
+	} from '$lib/progress';
 	import { notify } from '$lib/toasts.svelte';
 
 	let { data }: { data: { session: Session } } = $props();
@@ -31,17 +37,23 @@
 	let fresh = $state('');
 	let busy = $state(false);
 
-	// Onglets du compte : la lecture d'abord, puis la sécurité. SSO n'existe que
-	// si un fournisseur est configuré.
-	type Tab = 'reading' | 'password' | 'sso';
+	// Onglets du compte : la collection d'abord, puis la lecture, puis la sécurité.
+	// SSO n'existe que si un fournisseur est configuré.
+	type Tab = 'collection' | 'reading' | 'password' | 'sso';
 	let tab = $state<Tab>('reading');
-	const tabs = $derived<Tab[]>(oidc ? ['reading', 'password', 'sso'] : ['reading', 'password']);
+	const tabs = $derived<Tab[]>(
+		oidc
+			? ['collection', 'reading', 'password', 'sso']
+			: ['collection', 'reading', 'password']
+	);
 	const tabLabel = (id: Tab) =>
-		id === 'reading'
-			? t('account.tab.reading')
-			: id === 'password'
-				? t('account.password.tab')
-				: t('users.type.sso');
+		id === 'collection'
+			? t('account.tab.collection')
+			: id === 'reading'
+				? t('account.tab.reading')
+				: id === 'password'
+					? t('account.password.tab')
+					: t('users.type.sso');
 
 	function tabKeys(event: KeyboardEvent) {
 		const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -117,6 +129,8 @@
 		else if (params.get('error')) notify(t(errorKey(params.get('error'))), { tone: 'error' });
 		if (params.get('linked') || params.get('error')) replaceState('/account', {});
 
+		// Les épingles du compte : la collection ne dépend pas du catalogue.
+		startPins();
 		// La liste entière d'abord (livres terminés, séries), puis la période
 		// affichée : elle n'a besoin que de ses chiffres.
 		await Promise.all([loadPeriod('all'), loadPeriod(period)]);
@@ -139,6 +153,23 @@
 	/** Séries terminées : les dossiers dont tous les livres sont finis, et dont le
 	 *  dernier tome a été terminé dans la période. */
 	const series = $derived(completedSeries(library.books, finished, since));
+
+	/** Les épingles « à regarder plus tard » : encore au catalogue, pas encore lues. */
+	const collection = $derived(
+		watchLaterEntries(
+			pins.items.map((pin) => pin.item),
+			library.folders,
+			library.books,
+			finished
+		)
+	);
+
+	// Une épingle dont le livre — ou la série — est entièrement lu n'a plus rien
+	// à regarder : elle est détachée, ici comme sur l'accueil.
+	$effect(() => {
+		if (!loaded.all) return;
+		void unpinCompleted(library.books, finished);
+	});
 
 	const monthFormat = $derived(
 		new Intl.DateTimeFormat(intlLocale(), { month: 'long', year: 'numeric' })
@@ -237,7 +268,32 @@
 
 		<div id="account-panel" class="tab-panel" role="tabpanel" aria-labelledby="account-tab-{tab}">
 			<div class="admin-stack">
-				{#if tab === 'reading'}
+				{#if tab === 'collection'}
+					<section class="panel-card">
+						<h2>
+							{t('account.collection.title')}
+							<span class="perf-count">{collection.length}</span>
+						</h2>
+						{#if !pins.loaded}
+							<p class="panel-hint">{t('status.connecting')}</p>
+						{:else if collection.length === 0}
+							<p class="panel-hint">{t('account.collection.empty')}</p>
+						{:else}
+							<div class="grid">
+								{#each collection as entry (entry.rel)}
+									{#if entry.folder}
+										<FolderCard
+											folder={entry.folder}
+											preview={previewBook(library.folders, library.books, entry.rel)}
+										/>
+									{:else if entry.book}
+										<BookCard book={entry.book} />
+									{/if}
+								{/each}
+							</div>
+						{/if}
+					</section>
+				{:else if tab === 'reading'}
 					<div class="tabs sub" role="tablist" tabindex="-1" onkeydown={periodKeys}>
 						{#each PERIODS as id (id)}
 							<button

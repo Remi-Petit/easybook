@@ -10,7 +10,7 @@
 // `reading` est mis à jour tout de suite, pour que la couverture soit juste au
 // retour dans le catalogue, sans attendre le serveur.
 
-import type { BookInfo } from './api';
+import type { BookInfo, FolderInfo } from './api';
 import { call, type BookProgress } from './auth';
 import { parentOf, subtreeBooks } from './catalog';
 import { notePosition } from './reading.svelte';
@@ -116,6 +116,32 @@ export function isComplete(rel: string, books: BookInfo[], items: BookProgress[]
 	const subtree = subtreeBooks(books, rel);
 	if (subtree.length > 0) return subtree.every((book) => finished.has(book.rel));
 	return finished.has(rel);
+}
+
+/** Une épingle prête à afficher : une série ou un livre encore au catalogue. */
+export type WatchEntry =
+	| { rel: string; folder: FolderInfo; book?: undefined }
+	| { rel: string; folder?: undefined; book: BookInfo };
+
+/**
+ * Les épingles « à regarder plus tard », dans l'ordre où elles ont été posées.
+ *
+ * Un chemin disparu du disque est omis (rien à nettoyer côté client), comme un
+ * livre ou une série déjà lu en entier : il n'y a plus rien à regarder.
+ */
+export function watchLaterEntries(
+	paths: string[],
+	folders: FolderInfo[],
+	books: BookInfo[],
+	progress: BookProgress[]
+): WatchEntry[] {
+	return paths.flatMap((rel): WatchEntry[] => {
+		if (isComplete(rel, books, progress)) return [];
+		const folder = folders.find((candidate) => candidate.rel === rel);
+		if (folder) return [{ rel, folder }];
+		const book = books.find((candidate) => candidate.rel === rel);
+		return book ? [{ rel, book }] : [];
+	});
 }
 
 /** Une série, c'est au moins deux tomes : un dossier qui n'en range qu'un n'en est pas une. */
