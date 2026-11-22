@@ -37,10 +37,10 @@
 	let fresh = $state('');
 	let busy = $state(false);
 
-	// Onglets du compte : la collection d'abord, puis la lecture, puis la sécurité.
-	// SSO n'existe que si un fournisseur est configuré.
+	// Onglets du compte : la collection s'ouvre par défaut, puis la lecture, puis
+	// la sécurité. SSO n'existe que si un fournisseur est configuré.
 	type Tab = 'collection' | 'reading' | 'password' | 'sso';
-	let tab = $state<Tab>('reading');
+	let tab = $state<Tab>('collection');
 	const tabs = $derived<Tab[]>(
 		oidc
 			? ['collection', 'reading', 'password', 'sso']
