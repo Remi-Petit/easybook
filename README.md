@@ -3,6 +3,7 @@
 [![CI](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
 [![sécurité](https://github.com/Remi-Petit/easybook/actions/workflows/security.yml/badge.svg)](https://github.com/Remi-Petit/easybook/actions/workflows/security.yml)
 [![license](https://img.shields.io/github/license/Remi-Petit/easybook)](LICENSE)
+[![version](https://img.shields.io/github/v/release/Remi-Petit/easybook?color=blue&label=version&sort=semver)](https://github.com/Remi-Petit/easybook/releases)
 [![image](https://img.shields.io/badge/image-ghcr.io%2Fremi--petit%2Feasybook-blue)](https://github.com/Remi-Petit/easybook/pkgs/container/easybook)
 <!-- couverture:start -->
 [![couverture backend](https://img.shields.io/badge/coverage%20backend-88.8%25-green)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml) [![couverture frontend](https://img.shields.io/badge/coverage%20frontend-96.7%25-brightgreen)](https://github.com/Remi-Petit/easybook/actions/workflows/ci.yml)
