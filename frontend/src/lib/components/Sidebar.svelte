@@ -10,6 +10,8 @@
 	import { LOCALES, chooseLocale, formatNumber, locale, t } from '$lib/i18n/state.svelte';
 	import { rememberAdminOpen } from '$lib/nav-prefs';
 	import { anomalyCount } from '$lib/anomalies';
+	import { offline } from '$lib/offline/store.svelte';
+	import { sync } from '$lib/offline/sync.svelte';
 
 	const REPOSITORY = 'https://github.com/Remi-Petit/easybook';
 
@@ -115,7 +117,12 @@
 
 	<div class="sidebar-panel" id="sidebar-panel">
 		<nav aria-label={t('nav.label')}>
-			<a class="nav-item" href="/" aria-current={path === '/' ? 'page' : undefined}>
+			<a
+				class="nav-item"
+				href="/"
+				aria-current={path === '/' ? 'page' : undefined}
+				data-sveltekit-reload={sync.online ? undefined : ''}
+			>
 				<svg
 					class="nav-icon"
 					width="16"
@@ -200,6 +207,7 @@
 							href={folderUrl(category.rel)}
 							aria-current={active(folderUrl(category.rel)) ? 'page' : undefined}
 							title={category.name}
+							data-sveltekit-reload={sync.online ? undefined : ''}
 						>
 							<span class="name">{category.name}</span>
 							<span class="nav-count">{category.count}</span>
@@ -211,6 +219,34 @@
 					<p class="nav-empty">{t('nav.empty')}</p>
 				{/if}
 			</div>
+
+			<a
+				class="nav-item"
+				href="/offline"
+				aria-current={active('/offline') ? 'page' : undefined}
+				title={t('nav.offline')}
+				data-sveltekit-reload={sync.online ? undefined : ''}
+			>
+				<svg
+					class="nav-icon"
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.8"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M12 4v10m0 0 4-4m-4 4-4-4" />
+					<path d="M4 19h16" />
+				</svg>
+				<span class="name">{t('nav.offline')}</span>
+				{#if offline.items.length > 0}
+					<span class="nav-count">{offline.items.length}</span>
+				{/if}
+			</a>
 
 			{#if isAdmin}
 				<button

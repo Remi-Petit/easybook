@@ -1,0 +1,49 @@
+{
+	"name": "easybook — bibliothèque locale",
+	"short_name": "easybook",
+	"description": "Bibliothèque de livres numériques, bandes dessinées et mangas, installable et lisible hors connexion.",
+	"id": "/",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"orientation": "any",
+	"background_color": "#0f0f13",
+	"theme_color": "#0f0f13",
+	"lang": "fr",
+	"dir": "ltr",
+	"categories": ["books", "entertainment"],
+	"icons": [
+		{
+			"src": "/icons/icon-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/icons/icon-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/icons/icon-maskable-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
+		},
+		{
+			"src": "/icons/icon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml",
+			"purpose": "any"
+		}
+	],
+	"shortcuts": [
+		{
+			"name": "Hors ligne",
+			"short_name": "Hors ligne",
+			"url": "/offline",
+			"icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+		}
+	]
+}

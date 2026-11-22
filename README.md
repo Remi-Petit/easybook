@@ -122,6 +122,41 @@ ne déplace jamais la page.
 - `T` (**vignettes**) ouvre la grille des planches pour sauter à une page ; les
   images ne sont demandées qu'à l'ouverture de la boîte.
 
+## Application installable (PWA) et lecture hors ligne
+
+L'interface est une **application web installable** : un manifeste, un service
+worker et des icônes permettent de l'ajouter à l'écran d'accueil d'un téléphone
+ou de l'installer depuis un navigateur de bureau. Elle s'ouvre alors sans barre
+d'adresse, comme une application.
+
+- **Télécharger un livre** : menu « … » d'une carte de livre →
+  *Télécharger hors ligne*. Une série entière se télécharge depuis le menu de sa
+  tuile (*Télécharger la série*). La page **Hors ligne** (barre latérale) liste
+  ce qui est sur l'appareil, l'espace utilisé et permet de tout retirer.
+- **Lire sans réseau** : un livre téléchargé passe **avant** le serveur, même
+  quand il répond. Les planches, chapitres EPUB et leurs images, les PDF entiers,
+  la couverture et la page du lecteur sont rangés dans le cache
+  `easybook-offline` (Cache API). Le service worker sert aussi la coquille de
+  l'application, les ressources de pdf.js et les pages déjà visitées.
+- **Reprendre la lecture** : la position de chaque page est d'abord enregistrée
+  localement ; si l'envoi au serveur échoue (avion, serveur absent), elle rejoint
+  la file `easybook:pending:progress` (`localStorage`). La file repart dans
+  l'ordre au retour du réseau (`online`, focus, onglet visible) et un message
+  indique le nombre de positions synchronisées.
+- **Limites** : les téléchargements sont liés à l'**appareil et à l'origine**,
+  pas au compte (comme tout cache de navigateur). Sur un appareil partagé,
+  retire les téléchargements avant de fermer la session. Le navigateur peut
+  évincer ces données s'il manque de place : la page Hors ligne propose de
+  *protéger les téléchargements* (`navigator.storage.persist`).
+
+Fichiers concernés : `frontend/src/service-worker.ts` (caches et stratégies),
+`frontend/src/lib/offline/` (`plan.ts` pur, `store.svelte.ts` pour le
+téléchargement, `queue.ts`/`sync.svelte.ts` pour la synchronisation),
+`frontend/static/manifest.webmanifest` et `frontend/static/icons/`
+(régénérables avec `bun scripts/make-icons.mjs`). En développement, le service
+worker n'est **pas** enregistré (`import.meta.env.DEV`) : il faut l'image Docker
+ou `bun run build` pour l'essayer.
+
 ## Langues
 
 L'interface parle **français, anglais, allemand, espagnol, italien et

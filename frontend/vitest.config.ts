@@ -15,6 +15,9 @@ export default defineConfig({
 	],
 	resolve: {
 		alias: {
+			// SvelteKit fournit cet alias à l'application ; Vitest ne passe pas par
+			// son greffon, il faut donc le redonner ici.
+			$lib: fileURLToPath(new URL('./src/lib', import.meta.url)),
 			'$app/environment': fileURLToPath(
 				new URL('./src/test/stubs/app-environment.ts', import.meta.url)
 			),
@@ -41,7 +44,9 @@ export default defineConfig({
 				'src/lib/i18n/state.svelte.ts',
 				'src/lib/reader/prefs.ts',
 				'src/lib/reader/shortcuts.ts',
-				'src/lib/reader/zones.ts'
+				'src/lib/reader/zones.ts',
+				'src/lib/offline/plan.ts',
+				'src/lib/offline/queue.ts'
 			],
 			exclude: ['**/*.test.ts']
 		}

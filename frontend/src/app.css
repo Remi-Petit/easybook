@@ -4394,3 +4394,239 @@ a.link-more {
 	color: inherit;
 	opacity: 0.8;
 }
+
+/* ── Hors ligne : bandeau, marque de carte et page des téléchargements ───── */
+
+.offline-notice {
+	position: sticky;
+	top: 0;
+	z-index: 30;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 7px 16px;
+	background: rgba(224, 165, 74, 0.12);
+	border-bottom: 1px solid rgba(224, 165, 74, 0.28);
+	color: var(--accent);
+	font-size: 12.5px;
+}
+
+.offline-notice[data-online='false'] {
+	background: rgba(224, 113, 92, 0.12);
+	border-bottom-color: rgba(224, 113, 92, 0.32);
+	color: var(--danger);
+}
+
+.offline-notice svg {
+	flex: none;
+}
+
+.offline-mark {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	margin-left: 6px;
+	color: var(--accent);
+}
+
+.offline-word {
+	font-size: 11px;
+}
+
+.offline-page .intro {
+	margin-bottom: 6px;
+}
+
+.offline-panel {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 14px;
+	margin: 18px 0 10px;
+}
+
+.offline-kpi {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 16px 18px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+}
+
+.offline-label {
+	color: var(--muted);
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.offline-kpi strong {
+	font-size: 21px;
+	font-weight: 650;
+}
+
+.offline-sub {
+	color: var(--muted);
+	font-size: 12.5px;
+}
+
+.storage-bar {
+	display: block;
+	width: 100%;
+	height: 6px;
+	border-radius: 99px;
+	background: var(--panel-2);
+	overflow: hidden;
+}
+
+.storage-bar > span {
+	display: block;
+	height: 100%;
+	background: var(--accent);
+	border-radius: 99px;
+	transition: width 200ms ease;
+}
+
+.offline-protect,
+.offline-install,
+.offline-sync {
+	padding: 5px 11px;
+	border: 1px solid var(--line);
+	border-radius: 99px;
+	color: var(--accent);
+	font-size: 12.5px;
+}
+
+.offline-protect:hover,
+.offline-install:hover,
+.offline-sync:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.offline-jobs {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin: 14px 0;
+}
+
+.offline-job {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 150px auto;
+	align-items: center;
+	gap: 14px;
+	padding: 10px 14px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	font-size: 13px;
+}
+
+.offline-job-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.offline-job-count {
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+	font-size: 12px;
+}
+
+.offline-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin: 24px 0 10px;
+	color: var(--muted);
+	font-size: 12.5px;
+}
+
+.offline-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0 0 64px;
+	padding: 0;
+	list-style: none;
+}
+
+.offline-row {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 10px 14px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 12px;
+}
+
+.offline-row-main {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.offline-title {
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.offline-meta {
+	color: var(--muted);
+	font-size: 12.5px;
+}
+
+.offline-remove {
+	flex: none;
+	color: var(--danger);
+	font-size: 13px;
+}
+
+.offline-remove:hover {
+	color: var(--danger);
+	filter: brightness(1.15);
+}
+
+.offline-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	margin-top: 18px;
+	padding: 30px 24px;
+	background: var(--panel);
+	border: 1px dashed var(--line);
+	border-radius: var(--radius);
+	color: var(--muted);
+	text-align: center;
+}
+
+.offline-empty a {
+	color: var(--accent);
+}
+
+.offline-note {
+	color: var(--muted);
+	font-size: 13px;
+}
+
+@media (max-width: 640px) {
+	.offline-job {
+		grid-template-columns: minmax(0, 1fr) auto;
+	}
+
+	.offline-job .storage-bar {
+		grid-column: 1 / -1;
+	}
+}

@@ -13,6 +13,8 @@
 import type { BookInfo, FolderInfo } from './api';
 import { call, type BookProgress } from './auth';
 import { parentOf, subtreeBooks } from './catalog';
+import { queuePosition } from './offline/sync.svelte';
+import { retryable } from './offline/queue';
 import { notePosition } from './reading.svelte';
 
 /** Fenêtre de regroupement, en millisecondes. */
@@ -49,10 +51,16 @@ export function flushPositions(): void {
 	}
 	lastFlush = Date.now();
 	for (const position of pending.values()) {
-		// L'échec est sans conséquence : la position locale est déjà à jour.
-		void call('POST', '/api/read/progress', position);
+		// Échec réseau : la position rejoint la file persistante et repartira
+		// au retour de la connexion (voir `$lib/offline/sync.svelte`).
+		void send(position);
 	}
 	pending.clear();
+}
+
+async function send(position: Position): Promise<void> {
+	const result = await call('POST', '/api/read/progress', position);
+	if (!result.ok && retryable(result.status)) queuePosition(position);
 }
 
 /** Part du livre lue, en pourcentage (0–100), `null` si le total est inconnu. */

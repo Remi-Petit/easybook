@@ -12,6 +12,9 @@
 
 import { call, type BookProgress, type ReadingHistory } from './auth';
 
+/** La dernière liste connue survit à un rechargement, même hors connexion. */
+const STORAGE_KEY = 'easybook:reading';
+
 export const reading = $state({
 	/** Du plus récemment lu au plus ancien. */
 	items: [] as BookProgress[],
@@ -22,10 +25,45 @@ export const reading = $state({
 
 let started = false;
 
+/** Relit ce qui était affiché avant le rechargement (hors ligne, surtout). */
+function restore(): void {
+	if (typeof window === 'undefined' || reading.items.length > 0) return;
+	try {
+		const raw = localStorage.getItem(STORAGE_KEY);
+		if (!raw) return;
+		const items = JSON.parse(raw) as unknown;
+		if (!Array.isArray(items)) return;
+		reading.items = items.filter(isProgress);
+	} catch {
+		// Stockage indisponible ou contenu illisible : la liste repart du serveur.
+	}
+}
+
+function isProgress(value: unknown): value is BookProgress {
+	const item = value as Partial<BookProgress> | null;
+	return Boolean(
+		item &&
+			typeof item.book === 'string' &&
+			typeof item.page === 'number' &&
+			typeof item.pages === 'number' &&
+			typeof item.updatedAt === 'number'
+	);
+}
+
+function remember(): void {
+	if (typeof window === 'undefined') return;
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(reading.items));
+	} catch {
+		// Navigation privée : la persistance est un confort.
+	}
+}
+
 /** Charge les lectures en cours et branche le rattrapage (une seule fois). */
 export function startReading(): void {
 	if (started || typeof window === 'undefined') return;
 	started = true;
+	restore();
 	void loadReading();
 	const refresh = () => void loadReading();
 	document.addEventListener('visibilitychange', () => {
@@ -49,6 +87,7 @@ export async function loadReading(): Promise<void> {
 	}
 	reading.items = [...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt);
 	reading.loaded = true;
+	remember();
 }
 
 /**
@@ -71,6 +110,7 @@ export function notePosition(rel: string, page: number, pages: number): void {
 	};
 	reading.items = [entry, ...reading.items.filter((item) => item.book !== rel)];
 	reading.loaded = true;
+	remember();
 }
 
 /** La position enregistrée d'un livre, s'il a été commencé. */
@@ -86,6 +126,7 @@ export function progressOf(rel: string): BookProgress | undefined {
  */
 export function forgetPosition(rel: string): void {
 	reading.items = reading.items.filter((item) => item.book !== rel);
+	remember();
 }
 
 /**
