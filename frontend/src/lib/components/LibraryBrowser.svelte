@@ -10,7 +10,7 @@
 		insideFolders,
 		level,
 		matchesQuery,
-		matchesWords,
+		matchScore,
 		parentOf,
 		previewBook,
 		subtreeBooks,
@@ -99,24 +99,36 @@
 	 * Séries trouvées : leur **nom** seul fait foi (pas le chemin, sinon une
 	 * catégorie ramènerait tout son contenu), et une catégorie — un dossier de
 	 * premier niveau — n'est jamais une série : elle ne se cherche pas.
+	 * Les plus proches passent devant (le tri du catalogue départage les
+	 * égalités, `sort` étant stable).
 	 */
-	const foundSeries = $derived(
-		query
-			? subtreeFolders(library.folders, scope).filter(
-					(folder) => parentOf(folder.rel) !== '' && matchesWords(folder.name, query)
-				)
-			: current.folders
-	);
+	const foundSeries = $derived.by(() => {
+		if (!query) return current.folders;
+		return subtreeFolders(library.folders, scope)
+			.filter((folder) => parentOf(folder.rel) !== '')
+			.map((folder) => ({ folder, score: matchScore(folder.name, query) }))
+			.filter((entry) => entry.score > 0)
+			.sort((a, b) => b.score - a.score)
+			.map((entry) => entry.folder);
+	});
 
 	/**
 	 * Livres trouvés : texte ou format, la recherche couvre tout le sous-arbre —
-	 * sauf ceux qu'une série trouvée porte déjà (voir sa tuile).
+	 * sauf ceux qu'une série trouvée porte déjà (voir sa tuile). Quand une
+	 * requête est tapée, les titres les plus proches viennent en tête.
 	 */
-	const foundBooks = $derived(
-		query !== '' || formats.length > 0
-			? matchingBooks.filter((book) => query === '' || !insideFolders(book.rel, foundSeries))
-			: current.books
-	);
+	const foundBooks = $derived.by(() => {
+		if (query === '' && formats.length === 0) return current.books;
+		const books =
+			query === ''
+				? matchingBooks
+				: matchingBooks.filter((book) => !insideFolders(book.rel, foundSeries));
+		if (!query) return books;
+		return books
+			.map((book) => ({ book, score: matchScore(`${book.title} ${book.format}`, query) }))
+			.sort((a, b) => b.score - a.score)
+			.map((entry) => entry.book);
+	});
 
 	/**
 	 * Ce que l'on affiche : les deux groupes — parcours comme recherche —,

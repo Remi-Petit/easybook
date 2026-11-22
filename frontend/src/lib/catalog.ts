@@ -47,16 +47,138 @@ export function subtreeFolders(folders: FolderInfo[], folder: string): FolderInf
 }
 
 /**
- * Chaque mot tapé doit apparaître dans le texte, dans n'importe quel ordre et
+ * Texte replié : minuscules et accents retirés (« Pokémon » → « pokemon »).
+ * Une seule règle de normalisation pour toute la recherche.
+ */
+export function fold(text: string): string {
+	return text
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLowerCase();
+}
+
+/** Mots d'un texte replié (« l'Électronique » → l, electronique). */
+function words(text: string): string[] {
+	return fold(text)
+		.split(/[^a-z0-9]+/)
+		.filter(Boolean);
+}
+
+/** Distance de Damerau-Levenshtein bornée ; `-1` au-delà de `max`. */
+function distance(a: string, b: string, max: number): number {
+	if (Math.abs(a.length - b.length) > max) return -1;
+	let prevPrev = new Array<number>(b.length + 1).fill(0);
+	let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+	for (let i = 1; i <= a.length; i++) {
+		const current = new Array<number>(b.length + 1).fill(0);
+		current[0] = i;
+		for (let j = 1; j <= b.length; j++) {
+			const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+			current[j] = Math.min(prev[j] + 1, current[j - 1] + 1, prev[j - 1] + cost);
+			if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+				current[j] = Math.min(current[j], prevPrev[j - 2] + 1);
+			}
+		}
+		prevPrev = prev;
+		prev = current;
+	}
+	const found = prev[b.length];
+	return found <= max ? found : -1;
+}
+
+/** Les lettres de `needle` apparaissent-elles dans l'ordre dans `haystack` ? */
+function subsequence(needle: string, haystack: string): boolean {
+	let index = 0;
+	for (const char of haystack) {
+		if (char === needle[index]) index++;
+		if (index === needle.length) return true;
+	}
+	return false;
+}
+
+/** Trigrammes d'un texte : « sawc » → `saw`, `awc`. */
+function trigrams(text: string): string[] {
+	const found: string[] = [];
+	for (let i = 0; i + 3 <= text.length; i++) found.push(text.slice(i, i + 3));
+	return found;
+}
+
+/**
+ * Score d'un mot de requête contre un titre (0 = aucun rapport) :
+ * mot exact → préfixe → contenu → faute de frappe → squelette → fragment.
+ *
+ * La tolérance aux fautes ne descend pas sous 4 lettres : un numéro de tome
+ * (`t09`) doit rester strict, sinon il rapprocherait `t03` et `t19`.
+ */
+function tokenScore(token: string, titleWords: string[], foldedTitle: string): number {
+	let best = 0;
+	for (const word of titleWords) {
+		if (word === token) return 1;
+		if (token.length >= 2 && word.startsWith(token)) best = Math.max(best, 0.9);
+		else if (token.length >= 2 && word.includes(token)) best = Math.max(best, 0.8);
+	}
+	if (best > 0) return best;
+
+	const max = token.length >= 8 ? 2 : token.length >= 4 ? 1 : 0;
+	if (max > 0) {
+		for (const word of titleWords) {
+			const found = distance(token, word, max);
+			if (found >= 0) best = Math.max(best, 0.75 - 0.05 * found);
+		}
+		if (best > 0) return best;
+	}
+
+	// « mn » reste un squelette lisible de « man » ; un token qui contient un
+	// chiffre (`t9`) ne s'élargit pas.
+	if (token.length >= 3 || (token.length >= 2 && !/\d/.test(token))) {
+		for (const word of titleWords) {
+			if (subsequence(token, word)) best = Math.max(best, 0.6);
+		}
+		if (best > 0) return best;
+	}
+
+	// Dernier filet : un fragment mélangé (« sawc » → « chainsaw ») partage des
+	// trigrammes avec le titre. Chiffres exclus, comme au-dessus.
+	if (token.length >= 4 && !/\d/.test(token)) {
+		const grams = trigrams(token);
+		let found = 0;
+		for (const gram of grams) if (foldedTitle.includes(gram)) found++;
+		const ratio = found / grams.length;
+		if (ratio >= 0.5) return 0.45 + 0.2 * ratio;
+	}
+	return 0;
+}
+
+/**
+ * Combien le texte ressemble à la requête (0 = pas de résultat). Chaque mot
+ * tapé doit trouver une correspondance, dans n'importe quel ordre et sans
+ * tenir compte de la casse, des accents ni des fautes légères.
+ */
+export function matchScore(text: string, query: string): number {
+	const tokens = words(query);
+	if (tokens.length === 0) return 0;
+	const foldedTitle = fold(text);
+	const titleWords = words(text);
+	let total = 0;
+	for (const token of tokens) {
+		const score = tokenScore(token, titleWords, foldedTitle);
+		if (score === 0) return 0;
+		total += score;
+	}
+	let score = total / tokens.length;
+	// Un titre qui contient la requête telle quelle passe devant ses voisins.
+	const foldedQuery = fold(query.trim());
+	if (foldedQuery.length > 2 && foldedTitle.includes(foldedQuery)) score += 0.15;
+	return score;
+}
+
+/**
+ * Chaque mot tapé doit apparaître dans le texte, dans n'importe quel ordre,
  * sans tenir compte de la casse : « chainsaw t03 » trouve « Chainsaw Man T03 ».
+ * Les fautes légères passent aussi (« chainswa », « bleu lock »).
  */
 export function matchesWords(text: string, query: string): boolean {
-	const haystack = text.toLowerCase();
-	return query
-		.toLowerCase()
-		.split(/\s+/)
-		.filter(Boolean)
-		.every((word) => haystack.includes(word));
+	return matchScore(text, query) > 0;
 }
 
 /**
@@ -65,7 +187,7 @@ export function matchesWords(text: string, query: string): boolean {
  * (« mangas ») ramènerait tous les livres qu'elle range.
  */
 export function matchesQuery(book: BookInfo, query: string): boolean {
-	return matchesWords(`${book.title} ${book.format}`, query);
+	return matchScore(`${book.title} ${book.format}`, query) > 0;
 }
 
 /**

@@ -9,6 +9,7 @@ import {
 	level,
 	matchesQuery,
 	matchesWords,
+	matchScore,
 	noveltyRails,
 	parentOf,
 	previewBook,
@@ -280,6 +281,42 @@ describe('matchesWords', () => {
 		expect(matchesWords('Chainsaw Man', 'CHAINSaw')).toBe(true);
 		expect(matchesWords('Chainsaw Man', 'man chainsaw')).toBe(true);
 		expect(matchesWords('Chainsaw Man', 'chainsaw t03')).toBe(false);
+	});
+});
+
+describe('matchScore', () => {
+	it('ignore la casse et les accents', () => {
+		expect(matchScore('Pokémon - La Grande Aventure', 'pokemon')).toBeGreaterThan(0);
+		expect(matchScore("L'Électronique pour les Nuls", 'electronique')).toBeGreaterThan(0);
+		expect(matchScore('Nausicaä Tome 1', 'NAUSICAA')).toBeGreaterThan(0);
+	});
+
+	it('pardonne une faute de frappe ou des lettres inversées', () => {
+		expect(matchScore('Chainsaw Man T03', 'chainswa')).toBeGreaterThan(0);
+		expect(matchScore('FullMetal Alchemist - Tome 01', 'fullmetl alchemist')).toBeGreaterThan(0);
+		expect(matchScore('Blue Lock Tome 26', 'bleu lock')).toBeGreaterThan(0);
+		expect(matchScore('Le Seigneur des Anneaux', 'seigneur des annaux')).toBeGreaterThan(0);
+	});
+
+	it('retrouve un fragment mélangé', () => {
+		expect(matchScore('Chainsaw Man T01', 'sawc')).toBeGreaterThan(0);
+	});
+
+	it('classe une correspondance littérale devant une correspondance floue', () => {
+		expect(matchScore('Chainsaw Man T03', 'chainsaw man')).toBeGreaterThan(
+			matchScore('Chainsaw Man T03', 'chainswa man')
+		);
+	});
+
+	it('garde les numéros de tomes stricts', () => {
+		expect(matchScore('Chainsaw Man T03', 't09')).toBe(0);
+		expect(matchScore('Chainsaw Man T09', 't09')).toBeGreaterThan(0);
+		expect(matchScore('Jujutsu Kaisen Tome 25', 'jujutsu 99')).toBe(0);
+	});
+
+	it('ne trouve rien pour un mot sans rapport', () => {
+		expect(matchScore('Chainsaw Man T03', 'xyzzy')).toBe(0);
+		expect(matchScore('Chainsaw Man T03', 'mangas')).toBe(0);
 	});
 });
 
