@@ -10,6 +10,9 @@ bench/k6/results/
 # Secrets locaux
 .env
 
+# Dépannage local : Docker Desktop ne monte pas un lecteur réseau (Windows).
+/scripts/windows-share.ps1
+
 # Les livres ne sont pas versionnés : `books/` est un point de montage.
 # Le dossier lui-même est conservé (`.gitkeep`).
 /books/*

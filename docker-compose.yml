@@ -43,7 +43,11 @@ services:
       # backend (empreinte du dossier, toutes les secondes) qui détecte alors
       # les livres ajoutés ou supprimés **depuis l'hôte**. Les ajouts faits dans
       # l'interface, eux, sont diffusés directement.
-      - ./books:/books
+      #
+      # `EASYBOOK_BOOKS` (fichier `.env`) pointe ailleurs : un autre dossier, ou
+      # un lecteur réseau (`Y:/Livres`). Docker Desktop ne sait pas monter un
+      # chemin UNC ni un lecteur réseau — voir `scripts/windows-share.ps1`.
+      - ${EASYBOOK_BOOKS:-./books}:/books
       # Les comptes (SQLite) : à garder entre deux conteneurs, sinon les
       # utilisateurs et les liaisons OIDC disparaissent avec lui.
       - easybook-data:/data
