@@ -17,6 +17,7 @@
 	} from '@tanstack/svelte-table';
 	import { formatDateTime } from '$lib/api';
 	import { agentLabel } from '$lib/agent';
+	import Avatar from '$lib/components/Avatar.svelte';
 	import PasswordField from '$lib/components/PasswordField.svelte';
 	import InfoTip from '$lib/components/InfoTip.svelte';
 	import SessionList from '$lib/components/SessionList.svelte';
@@ -171,14 +172,6 @@
 		setFilter('status', '');
 		setFilter('type', '');
 	}
-
-	const initials = (user: User) =>
-		displayName(user)
-			.split(/[\s._@-]+/)
-			.filter(Boolean)
-			.slice(0, 2)
-			.map((part) => part[0]!.toUpperCase())
-			.join('');
 
 	// Popup « Ajouter un utilisateur ».
 	let addDialog = $state<HTMLDialogElement>();
@@ -446,7 +439,7 @@
 />
 
 {#snippet avatar(user: User)}
-	<span class="avatar" data-disabled={user.disabled} aria-hidden="true">{initials(user)}</span>
+	<Avatar seed={user.id} size={34} />
 {/snippet}
 
 {#snippet rolePill(role: Role)}
