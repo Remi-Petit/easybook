@@ -29,6 +29,7 @@
 	"anomalies.format.unopenable": "Ficheiro ilegível",
 	"anomalies.format.unopenable.hint": "O formato é reconhecido, mas o ficheiro não pôde ser aberto (arquivo danificado, PDF truncado…).",
 	"anomalies.format.ok": "Todos os ficheiros têm um formato suportado e abrem corretamente.",
+	"anomalies.emptyFamily": "Nenhum duplicado deste tipo.",
 	"anomalies.files": {
 		"one": "{count} livro",
 		"other": "{count} livros"

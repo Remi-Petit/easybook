@@ -2126,7 +2126,8 @@ code {
 	margin-bottom: 14px;
 }
 
-.tabs.sub button {
+.tabs.sub button,
+.tabs.sub a {
 	padding: 5px 12px;
 	font-size: 12.5px;
 	letter-spacing: 0.02em;
@@ -3902,7 +3903,7 @@ a.link-more {
 
 /* Page « Anomalies » : un cadre par groupe de doublons. */
 .anomaly-hint {
-	margin: -8px 0 14px;
+	margin: 0 0 14px;
 	color: var(--muted);
 	font-size: 12.5px;
 }

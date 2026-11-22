@@ -10,7 +10,7 @@
 
 	const BASE = '/admin/library/anomalies';
 	const path = $derived(decodeURIComponent(page.url.pathname));
-	const tab = $derived(path === BASE ? 'doublons' : 'format');
+	const tab = $derived(path.startsWith(`${BASE}/format`) ? 'format' : 'doublons');
 
 	/** Ce que chaque onglet compte : groupes de doublons, fichiers incompatibles. */
 	const counts = $derived({
