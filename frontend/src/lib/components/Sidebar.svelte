@@ -6,6 +6,7 @@
 	import { call, displayName, type Session } from '$lib/auth';
 	import { library } from '$lib/library.svelte';
 	import { LOCALES, chooseLocale, locale, t } from '$lib/i18n/state.svelte';
+	import { rememberAdminOpen } from '$lib/nav-prefs';
 
 	const REPOSITORY = 'https://github.com/Remi-Petit/easybook';
 
@@ -27,8 +28,16 @@
 	/** Menu ouvert (écrans étroits : la barre latérale devient un bandeau + un menu). */
 	let open = $state(false);
 
-	/** Les pages d'administration se plient : elles ne servent pas à tous les visiteurs. */
-	let adminOpen = $state(true);
+	/**
+	 * Les pages d'administration se plient : elles ne servent pas à tous les
+	 * visiteurs. Le choix vient du cookie (rendu serveur) et y repart au clic.
+	 */
+	let adminOpen = $state(page.data.adminOpen);
+
+	function toggleAdmin() {
+		adminOpen = !adminOpen;
+		rememberAdminOpen(adminOpen);
+	}
 
 	afterNavigate(() => (open = false));
 
@@ -100,7 +109,7 @@
 					class="nav-section nav-toggle"
 					aria-expanded={adminOpen}
 					aria-controls="sidebar-admin"
-					onclick={() => (adminOpen = !adminOpen)}
+					onclick={toggleAdmin}
 				>
 					<span>{t('nav.admin')}</span>
 					<svg

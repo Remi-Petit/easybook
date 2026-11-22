@@ -12,6 +12,8 @@ declare global {
 			locale: Locale;
 			/** Session de la requête (voir `hooks.server.ts`). */
 			session: Session;
+			/** Les pages d'administration sont-elles dépliées ? (voir `hooks.server.ts`). */
+			adminOpen: boolean;
 		}
 	}
 }

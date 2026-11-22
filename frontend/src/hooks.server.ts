@@ -1,6 +1,7 @@
 import { redirect, type Handle } from '@sveltejs/kit';
 import { guardRedirect, loadSession } from '$lib/auth';
 import { LOCALE_COOKIE, negotiate } from '$lib/i18n/messages';
+import { ADMIN_OPEN_COOKIE } from '$lib/nav-prefs';
 
 /**
  * Langue de la page, décidée **une fois par requête** : le cookie du choix
@@ -16,6 +17,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.request.headers.get('accept-language')
 	);
 	event.locals.locale = locale;
+
+	// Le pliage de l'administration est un choix d'affichage : relu ici, il est
+	// déjà appliqué au rendu serveur (pas de section qui se replie après coup).
+	event.locals.adminOpen = event.cookies.get(ADMIN_OPEN_COOKIE) !== '0';
 
 	// Sans session, aucune page ne s'affiche (sauf la connexion) : l'API refuse de
 	// toute façon, mais l'interface ne doit pas peindre une coquille vide.
