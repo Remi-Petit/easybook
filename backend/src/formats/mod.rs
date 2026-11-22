@@ -20,6 +20,7 @@ mod pdf;
 
 use serde::Serialize;
 use std::cmp::Ordering;
+use std::io::Read;
 use std::path::Path;
 
 /// Formats reconnus, dans l'ordre où ils sont annoncés au démarrage.
@@ -58,6 +59,11 @@ impl Format {
     /// Identifiant public (`epub`, `cbz`, `cbr`, `pdf`), celui du JSON.
     pub fn id(self) -> &'static str {
         module(self).id()
+    }
+
+    /// Format d'après son identifiant public — l'inverse de [`Format::id`].
+    pub fn from_id(id: &str) -> Option<Self> {
+        ALL.into_iter().find(|format| format.id() == id)
     }
 
     /// `true` si ce serveur sait afficher le contenu du livre.
@@ -147,6 +153,34 @@ pub fn module(format: Format) -> &'static dyn BookFormat {
 /// Module d'un chemin, si son extension est reconnue.
 pub fn from_path(path: &str) -> Option<&'static dyn BookFormat> {
     Format::from_path(path).map(module)
+}
+
+/// Format d'un fichier **existant** : l'extension le déclare, les premiers
+/// octets peuvent le corriger.
+///
+/// Un PDF porte une signature sans ambiguïté (`%PDF`) : quand un fichier
+/// annoncé sous une autre extension commence par elle, c'est un PDF, et c'est
+/// le module PDF qui doit l'ouvrir. Le cas est réel — des `.cbr` téléchargés en
+/// ligne sont parfois des PDF. Les autres écarts de nom restent des anomalies
+/// signalées avec leur raison (voir [`comic`]) : on ne devine pas.
+///
+/// À utiliser pour tout fichier du disque ; `Format::from_path` reste la règle
+/// pure, celle du nom (dépôt, validation).
+pub fn resolve(path: &Path, rel: &str) -> Option<Format> {
+    let declared = Format::from_path(rel)?;
+    if declared != Format::Pdf && starts_with(path, b"%PDF") {
+        return Some(Format::Pdf);
+    }
+    Some(declared)
+}
+
+/// `true` si le fichier commence par `magic` (faux s'il est absent ou illisible).
+fn starts_with(path: &Path, magic: &[u8]) -> bool {
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut head = vec![0u8; magic.len()];
+    file.read_exact(&mut head).is_ok() && head == magic
 }
 
 /// Un chapitre du sommaire, dans l'ordre de lecture.
@@ -290,6 +324,38 @@ mod tests {
         assert_eq!(Format::from_path("note.txt"), None);
         // Un nom sans extension n'est pas un livre.
         assert_eq!(Format::from_path("dossier/.hidden"), None);
+    }
+
+    #[test]
+    fn formats_round_trip_through_their_ids() {
+        for format in ALL {
+            assert_eq!(Format::from_id(format.id()), Some(format));
+        }
+        assert_eq!(Format::from_id("txt"), None);
+    }
+
+    #[test]
+    fn a_pdf_under_another_extension_is_opened_as_a_pdf() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Cas réel : un `.cbr` téléchargé qui est en fait un PDF.
+        let path = dir.path().join("Wakfu Heroes.cbr");
+        std::fs::write(&path, b"%PDF-1.7\nreste").unwrap();
+        assert_eq!(resolve(&path, "Wakfu Heroes.cbr"), Some(Format::Pdf));
+
+        // Une vraie bande dessinée garde son format.
+        let cbz = dir.path().join("T1.cbz");
+        std::fs::write(&cbz, b"PK\x03\x04reste").unwrap();
+        assert_eq!(resolve(&cbz, "T1.cbz"), Some(Format::Cbz));
+
+        // Un fichier absent n'est pas deviné : l'extension décide.
+        let missing = dir.path().join("absent.cbr");
+        assert_eq!(resolve(&missing, "absent.cbr"), Some(Format::Cbr));
+
+        // Une extension inconnue reste inconnue, même avec une signature PDF.
+        let odd = dir.path().join("doc.txt");
+        std::fs::write(&odd, b"%PDF-1.7\n").unwrap();
+        assert_eq!(resolve(&odd, "doc.txt"), None);
     }
 
     #[test]

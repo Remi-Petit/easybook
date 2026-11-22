@@ -5,8 +5,11 @@
 //! cache évite de le refaire à chaque scan : un scan a lieu à chaque changement
 //! du dossier, pas seulement au démarrage.
 //!
-//! Une entrée vaut pour un chemin, une taille et une date de fichier : un livre
-//! remplacé est un autre livre, et son comptage est refait.
+//! Une entrée vaut pour un chemin, un format, une taille et une date de
+//! fichier : un livre remplacé est un autre livre, et son comptage est refait.
+//! Le format en fait partie parce qu'un même chemin peut être tenté deux fois
+//! (un PDF nommé `.cbr` l'est d'abord comme bande dessinée, voir
+//! [`formats::resolve`]).
 //!
 //! Les comptages sont aussi écrits dans [`FILE`] (voir [`persist_in`]) : sans
 //! cela, chaque démarrage rouvrirait tous les livres, et lopdf lit un PDF en
@@ -66,7 +69,7 @@ pub fn open_stat(path: &Path, format: Format, size: u64, stamp: u64) -> Count {
     if let Some(cached) = cache()
         .lock()
         .ok()
-        .and_then(|cache| cache.get(&key, size, stamp).cloned())
+        .and_then(|cache| cache.get(&key, format, size, stamp).cloned())
     {
         return cached;
     }
@@ -86,6 +89,7 @@ pub fn open_stat(path: &Path, format: Format, size: u64, stamp: u64) -> Count {
         cache.put(
             key,
             Entry {
+                format,
                 size,
                 stamp,
                 count: count.clone(),
@@ -123,6 +127,9 @@ pub fn save() {
 
 #[derive(Clone)]
 struct Entry {
+    /// Module qui a produit ce comptage : le même chemin peut en essayer deux
+    /// (un PDF nommé `.cbr`).
+    format: Format,
     size: u64,
     stamp: u64,
     /// Un livre illisible (`pages` à `None`) est gardé en mémoire seulement,
@@ -134,6 +141,10 @@ struct Entry {
 #[derive(Serialize, Deserialize)]
 struct Stored {
     path: String,
+    /// Identifiant du format ; absent des fichiers écrits avant son ajout, on
+    /// le déduit alors de l'extension.
+    #[serde(default)]
+    format: String,
     size: u64,
     stamp: u64,
     pages: usize,
@@ -147,9 +158,10 @@ struct Cache {
 }
 
 impl Cache {
-    fn get(&self, path: &str, size: u64, stamp: u64) -> Option<&Count> {
+    fn get(&self, path: &str, format: Format, size: u64, stamp: u64) -> Option<&Count> {
         let entry = self.entries.get(path)?;
-        (entry.size == size && entry.stamp == stamp).then_some(&entry.count)
+        (entry.format == format && entry.size == size && entry.stamp == stamp)
+            .then_some(&entry.count)
     }
 
     fn put(&mut self, path: String, entry: Entry) {
@@ -171,16 +183,23 @@ impl Cache {
             .unwrap_or_default();
         for line in stored.into_iter().take(capacity()) {
             // Les livres disparus ne sont pas gardés : le fichier ne grossit pas.
-            if Path::new(&line.path).is_file() {
-                self.entries.entry(line.path).or_insert(Entry {
-                    size: line.size,
-                    stamp: line.stamp,
-                    count: Count {
-                        pages: Some(line.pages),
-                        problem: None,
-                    },
-                });
+            if !Path::new(&line.path).is_file() {
+                continue;
             }
+            let Some(format) =
+                Format::from_id(&line.format).or_else(|| Format::from_path(&line.path))
+            else {
+                continue;
+            };
+            self.entries.entry(line.path).or_insert(Entry {
+                format,
+                size: line.size,
+                stamp: line.stamp,
+                count: Count {
+                    pages: Some(line.pages),
+                    problem: None,
+                },
+            });
         }
         self.file = Some(file);
     }
@@ -198,6 +217,7 @@ impl Cache {
             .filter_map(|(path, entry)| {
                 Some(Stored {
                     path: path.clone(),
+                    format: entry.format.id().to_string(),
                     size: entry.size,
                     stamp: entry.stamp,
                     pages: entry.count.pages?,
@@ -295,6 +315,7 @@ mod tests {
 
     fn entry(pages: Option<usize>) -> Entry {
         Entry {
+            format: Format::Pdf,
             size: 10,
             stamp: 20,
             count: Count {
@@ -320,11 +341,22 @@ mod tests {
         let mut second = Cache::default();
         second.load(file);
         assert_eq!(
-            second.get(&book, 10, 20).map(|count| count.pages),
+            second
+                .get(&book, Format::Pdf, 10, 20)
+                .map(|count| count.pages),
             Some(Some(42))
         );
-        assert_eq!(second.get(&book, 11, 20), None, "taille changée");
-        assert_eq!(second.get(&book, 10, 21), None, "date changée");
+        assert_eq!(
+            second.get(&book, Format::Cbr, 10, 20),
+            None,
+            "format changé"
+        );
+        assert_eq!(
+            second.get(&book, Format::Pdf, 11, 20),
+            None,
+            "taille changée"
+        );
+        assert_eq!(second.get(&book, Format::Pdf, 10, 21), None, "date changée");
     }
 
     #[test]
@@ -349,11 +381,13 @@ mod tests {
         let mut second = Cache::default();
         second.load(file);
         assert_eq!(
-            second.get(&kept, 10, 20).map(|count| count.pages),
+            second
+                .get(&kept, Format::Pdf, 10, 20)
+                .map(|count| count.pages),
             Some(Some(1))
         );
-        assert_eq!(second.get(&gone, 10, 20), None);
-        assert_eq!(second.get(&broken, 10, 20), None);
+        assert_eq!(second.get(&gone, Format::Pdf, 10, 20), None);
+        assert_eq!(second.get(&broken, Format::Pdf, 10, 20), None);
     }
 
     #[test]

@@ -345,6 +345,37 @@ async fn book_details_follow_the_format() {
     assert_eq!(pdf["pages"], 1, "le PDF de test n'a qu'une page");
 }
 
+/// Un PDF rangé sous `.cbr` : le **contenu** décide, pas le nom. C'est le cas
+/// des `.cbr` téléchargés en ligne, dont certains sont des PDF.
+#[tokio::test]
+async fn a_pdf_named_cbr_is_read_as_a_pdf() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    common::pdf(root, "Wakfu Heroes.cbr");
+    let (tx, _) = tokio::sync::broadcast::channel(4);
+    let app = api::routes(AppState::new(root, tx));
+
+    let (status, body) = json(&app, "/api/books").await;
+    assert_eq!(status, StatusCode::OK);
+    let book = &body["books"][0];
+    assert_eq!(book["rel"], "Wakfu Heroes.cbr");
+    assert_eq!(book["format"], "pdf", "le contenu corrige l'extension");
+    assert_eq!(book["readable"], true);
+    assert_eq!(book["pages"], 1);
+    assert!(book["note"].is_null(), "ce n'est plus une anomalie");
+
+    // La fiche et le fichier brut suivent le format réel.
+    let (status, detail) = json(&app, "/api/book?path=Wakfu%20Heroes.cbr").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(detail["format"], "pdf");
+    assert_eq!(detail["supported"], true);
+
+    let (status, headers, body) = call(&app, "/api/raw?path=Wakfu%20Heroes.cbr").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(header_is(&headers, header::CONTENT_TYPE, "application/pdf"));
+    assert_eq!(&body[..5], b"%PDF-");
+}
+
 #[tokio::test]
 async fn covers_are_jpegs_for_every_format() {
     let (_dir, app) = library();

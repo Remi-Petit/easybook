@@ -627,7 +627,7 @@ async fn get_book(
 }
 
 fn detail(path: &Path, rel: &str) -> Result<BookDetail, String> {
-    let format = Format::from_path(rel).ok_or_else(|| "format non reconnu".to_string())?;
+    let format = formats::resolve(path, rel).ok_or_else(|| "format non reconnu".to_string())?;
     // Tout ce qui dépend du format passe par son module : l'API ne connaît que
     // le trait (voir `formats::BookFormat`).
     let module = formats::module(format);
@@ -921,7 +921,7 @@ async fn get_page(
             .into_response();
     }
 
-    let format = Format::from_path(&query.path);
+    let format = formats::resolve(&path, &query.path);
     let book = path.clone();
 
     match state
@@ -994,7 +994,7 @@ async fn get_raw(
         .unwrap_or(0);
     readings::touch(&path, &query.path, served);
 
-    let content_type = Format::from_path(&query.path)
+    let content_type = formats::resolve(&path, &query.path)
         .map(Format::content_type)
         .unwrap_or("application/octet-stream");
     let name = query
@@ -1430,10 +1430,12 @@ async fn save_progress(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_default();
+    let format = formats::resolve(&path, &body.path)
+        .map_or_else(String::new, |format| format.id().to_string());
     let entry = progress::Entry {
         book: body.path,
         title: library::title_of(name),
-        format: Format::from_path(name).map_or_else(String::new, |format| format.id().to_string()),
+        format,
         page: body.page,
         pages: body.pages,
     };

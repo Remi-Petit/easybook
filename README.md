@@ -128,6 +128,11 @@ Le **conteneur** d'une bande dessinée est détecté par les octets du fichier, 
 par son extension : beaucoup de `.cbr` distribués en ligne sont des ZIP
 renommés, et ils se lisent aussi (et inversement).
 
+Un fichier qui commence par `%PDF` est ouvert comme un **PDF**, quelle que soit
+son extension : des `.cbr` téléchargés sont parfois des PDF. L'extension reste
+la règle quand elle est tenable — un fichier au contenu inconnu est signalé
+comme anomalie, avec la raison.
+
 Chaque carte annonce **le nombre de pages** (`N pages`) sous le livre. Pour un
 EPUB, c'est le nombre de **chapitres** : son texte se recompose à l'écran, il
 n'a pas de pages fixes. Un livre qui n'a pas pu être ouvert n'annonce rien.

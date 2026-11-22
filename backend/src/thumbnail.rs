@@ -15,7 +15,7 @@
 //! - **CBZ** et **CBR** : la première page, par convention du format ;
 //! - **PDF** : la première page, rendue en image (voir [`crate::formats::pdf`]).
 
-use crate::formats::{self, Format};
+use crate::formats;
 use image::DynamicImage;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -119,7 +119,7 @@ pub fn cover(path: &Path, rel: &str, version: &str, disk: Option<&Path>) -> Opti
 /// Extrait la couverture du livre, la réduit et, si possible, l'écrit sur disque.
 fn build(path: &Path, rel: &str, entry: Option<&DiskEntry>) -> Option<Vec<u8>> {
     let _permit = acquire();
-    let original = match Format::from_path(rel) {
+    let original = match formats::resolve(path, rel) {
         Some(format) => formats::module(format).cover(path),
         None => None,
     };

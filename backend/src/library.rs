@@ -141,7 +141,7 @@ fn walk(root: &Path, dir: &Path, books: &mut Vec<BookInfo>, folders: &mut Vec<Fo
         if !kind.is_file() {
             continue;
         }
-        let Some(format) = Format::from_path(&rel) else {
+        let Some(declared) = Format::from_path(&rel) else {
             continue;
         };
         let Ok(meta) = entry.metadata() else {
@@ -160,7 +160,19 @@ fn walk(root: &Path, dir: &Path, books: &mut Vec<BookInfo>, folders: &mut Vec<Fo
             None => String::new(),
         };
 
-        let counted = pages::open_stat(&path, format, meta.len(), stamp.unwrap_or(0));
+        let secs = stamp.unwrap_or(0);
+        let mut format = declared;
+        let mut counted = pages::open_stat(&path, format, meta.len(), secs);
+        // Le nom peut mentir : un PDF rangé sous `.cbr` est un PDF (cas réel des
+        // fichiers téléchargés). La lecture des premiers octets n'a lieu qu'après
+        // un échec, donc jamais pour un livre qui s'ouvre.
+        if counted.pages.is_none()
+            && let Some(real) = formats::resolve(&path, &rel)
+            && real != format
+        {
+            format = real;
+            counted = pages::open_stat(&path, format, meta.len(), secs);
+        }
         books.push(BookInfo {
             folder,
             title: title_of(&name),
