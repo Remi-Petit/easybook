@@ -5,6 +5,7 @@ import {
 	completedSeries,
 	completedSeriesList,
 	inProgress,
+	isComplete,
 	isFinished,
 	percentRead,
 	readingBuckets,
@@ -116,6 +117,66 @@ describe('seriesProgress', () => {
 		const books = [book('t1.cbz')];
 		const items = [entry('autre/t9.cbz', 99, 100)];
 		expect(seriesProgress(books, items)).toEqual({ done: 0, total: 1 });
+	});
+});
+
+describe('isComplete', () => {
+	const book = (rel: string): BookInfo => ({
+		rel,
+		name: rel,
+		folder: '',
+		format: 'cbz',
+		readable: true,
+		size: 1,
+		modified: 1,
+		pages: 100,
+		title: rel
+	});
+
+	const entry = (book: string, page: number, pages: number): BookProgress => ({
+		book,
+		title: book,
+		format: 'cbz',
+		page,
+		pages,
+		startedAt: 1,
+		updatedAt: 2
+	});
+
+	it('reconnaît un livre terminé', () => {
+		const books = [book('mangas/t1.cbz')];
+		const items = [entry('mangas/t1.cbz', 99, 100)];
+		expect(isComplete('mangas/t1.cbz', books, items)).toBe(true);
+	});
+
+	it('laisse à voir un livre commencé, jamais ouvert ou sans total connu', () => {
+		const books = [book('mangas/t1.cbz'), book('mangas/t2.cbz'), book('mangas/t3.cbz')];
+		const items = [entry('mangas/t1.cbz', 40, 100), entry('mangas/t2.cbz', 12, 0)];
+		expect(isComplete('mangas/t1.cbz', books, items)).toBe(false);
+		expect(isComplete('mangas/t2.cbz', books, items)).toBe(false);
+		expect(isComplete('mangas/t3.cbz', books, items)).toBe(false);
+	});
+
+	it('reconnaît une série entièrement lue, sous-dossiers compris', () => {
+		const books = [book('mangas/t1.cbz'), book('mangas/annexes/bonus.cbz')];
+		const items = [entry('mangas/t1.cbz', 99, 100), entry('mangas/annexes/bonus.cbz', 9, 10)];
+		expect(isComplete('mangas', books, items)).toBe(true);
+	});
+
+	it('garde à voir une série dont un seul tome reste', () => {
+		const books = [book('mangas/t1.cbz'), book('mangas/t2.cbz'), book('mangas/t3.cbz')];
+		const items = [entry('mangas/t1.cbz', 99, 100), entry('mangas/t2.cbz', 99, 100)];
+		expect(isComplete('mangas', books, items)).toBe(false);
+	});
+
+	it('ne prend pas les livres d’une série voisine pour ceux de la série', () => {
+		const books = [book('mangas/t1.cbz'), book('mangas2/t1.cbz')];
+		const items = [entry('mangas/t1.cbz', 99, 100)];
+		expect(isComplete('mangas', books, items)).toBe(true);
+	});
+
+	it('ne conclut rien pour un dossier vide', () => {
+		expect(isComplete('mangas', [], [])).toBe(false);
 	});
 });
 

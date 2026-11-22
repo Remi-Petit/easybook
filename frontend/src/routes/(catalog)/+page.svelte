@@ -7,8 +7,8 @@
 	import type { BookInfo, FolderInfo } from '$lib/api';
 	import { folderUrl, noveltyRails, previewBook } from '$lib/catalog';
 	import { library, reload } from '$lib/library.svelte';
-	import { pins } from '$lib/pins.svelte';
-	import { inProgress } from '$lib/progress';
+	import { pins, unpinCompleted } from '$lib/pins.svelte';
+	import { inProgress, isComplete } from '$lib/progress';
 	import { reading } from '$lib/reading.svelte';
 	import { t } from '$lib/i18n/state.svelte';
 
@@ -37,15 +37,25 @@
 	/**
 	 * Les épingles, dans l'ordre où elles ont été posées, réduites à ce qui est
 	 * encore au catalogue — une série épinglée, un livre épinglé, ou rien.
+	 *
+	 * Un livre ou une série déjà lu en entier n'a plus rien à regarder : il
+	 * disparaît de la rangée et son épingle est détachée (voir l'effet plus bas).
 	 */
 	const watchLater = $derived<WatchLater[]>(
 		pins.items.flatMap((pin): WatchLater[] => {
+			if (isComplete(pin.item, library.books, reading.items)) return [];
 			const folder = library.folders.find((candidate) => candidate.rel === pin.item);
 			if (folder) return [{ rel: pin.item, folder }];
 			const book = library.books.find((candidate) => candidate.rel === pin.item);
 			return book ? [{ rel: pin.item, book }] : [];
 		})
 	);
+
+	// Un livre ou une série lu en entier n'a plus rien à rappeler : l'épingle
+	// est détachée pour de bon dès que l'historique le dit.
+	$effect(() => {
+		void unpinCompleted(library.books, reading.items);
+	});
 </script>
 
 <svelte:head>

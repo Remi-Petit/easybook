@@ -12,7 +12,7 @@
 
 import type { BookInfo } from './api';
 import { call, type BookProgress } from './auth';
-import { parentOf } from './catalog';
+import { parentOf, subtreeBooks } from './catalog';
 import { notePosition } from './reading.svelte';
 
 /** Fenêtre de regroupement, en millisecondes. */
@@ -99,6 +99,23 @@ export function seriesProgress(
 		if (entry && isFinished(entry.page, entry.pages)) done += 1;
 	}
 	return { done, total: books.length };
+}
+
+/**
+ * Le livre — ou la série — est-il entièrement lu ?
+ *
+ * Un livre : sa position enregistrée est la dernière page. Une série (un
+ * dossier) : **tous** les livres de son sous-arbre sont terminés, sous-dossiers
+ * compris — un seul tome restant suffit à laisser la série inachevée. Un
+ * dossier sans livre ne peut pas être « lu » : il reste à voir.
+ */
+export function isComplete(rel: string, books: BookInfo[], items: BookProgress[]): boolean {
+	const finished = new Set(
+		items.filter((item) => isFinished(item.page, item.pages)).map((item) => item.book)
+	);
+	const subtree = subtreeBooks(books, rel);
+	if (subtree.length > 0) return subtree.every((book) => finished.has(book.rel));
+	return finished.has(rel);
 }
 
 /** Une série, c'est au moins deux tomes : un dossier qui n'en range qu'un n'en est pas une. */

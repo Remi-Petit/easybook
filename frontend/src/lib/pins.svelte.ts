@@ -7,7 +7,9 @@
 // Comme l'historique de lecture, la liste est lue au démarrage puis relue au
 // retour sur l'onglet : une épingle posée sur un autre appareil arrive vite.
 
-import { call, errorKey } from './auth';
+import type { BookInfo } from './api';
+import { call, errorKey, type BookProgress } from './auth';
+import { isComplete } from './progress';
 import { t } from './i18n/state.svelte';
 
 export type Pin = {
@@ -68,4 +70,24 @@ export async function togglePin(item: string, title: string): Promise<PinResult>
 		? pins.items.filter((pin) => pin.item !== item)
 		: [{ item, title, pinnedAt: Date.now() }, ...pins.items];
 	return { pinned: !pinned };
+}
+
+/**
+ * Détache les épingles dont le livre — ou la série — est désormais entièrement
+ * lu : il n'y a plus rien à rappeler, la marque s'efface d'elle-même.
+ *
+ * La liste suit tout de suite ; la suppression part ensuite. Si elle échoue
+ * (réseau, session), le serveur fait foi : la liste est relue.
+ */
+export async function unpinCompleted(books: BookInfo[], items: BookProgress[]): Promise<void> {
+	const done = pins.items
+		.filter((pin) => isComplete(pin.item, books, items))
+		.map((pin) => pin.item);
+	if (done.length === 0) return;
+
+	pins.items = pins.items.filter((pin) => !done.includes(pin.item));
+	const results = await Promise.all(
+		done.map((item) => call('DELETE', `/api/read/pins?path=${encodeURIComponent(item)}`))
+	);
+	if (results.some((result) => !result.ok)) void loadPins();
 }
