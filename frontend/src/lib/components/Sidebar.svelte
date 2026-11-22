@@ -2,9 +2,9 @@
 	import { page } from '$app/state';
 	import { afterNavigate } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
-	import { childFolders, folderUrl } from '$lib/catalog';
+	import { childFolders, folderUrl, matchesWords } from '$lib/catalog';
 	import { call, displayName, type Session } from '$lib/auth';
 	import { library } from '$lib/library.svelte';
 	import { LOCALES, chooseLocale, locale, t } from '$lib/i18n/state.svelte';
@@ -14,6 +14,25 @@
 
 	// Un dossier de premier niveau de `books/` est une **catégorie**.
 	const categories = $derived(childFolders(library.folders, ''));
+
+	/** Filtre de la liste des bibliothèques, ouvert par la loupe du titre. */
+	let librarySearch = $state(false);
+	let libraryFilter = $state('');
+	let libraryInput = $state<HTMLInputElement>();
+	const filtering = $derived(libraryFilter.trim());
+	const listedCategories = $derived(
+		filtering ? categories.filter((category) => matchesWords(category.name, filtering)) : categories
+	);
+
+	async function toggleLibrarySearch() {
+		librarySearch = !librarySearch;
+		if (librarySearch) {
+			await tick();
+			libraryInput?.focus();
+		} else {
+			libraryFilter = '';
+		}
+	}
 
 	const path = $derived(decodeURIComponent(page.url.pathname));
 
@@ -128,13 +147,50 @@
 					<path d="M15.5 6.2l3.5 1-3.2 11.8-3.5-1z" />
 				</svg>
 				<span class="nav-label">{t('nav.library')}</span>
+				<button
+					type="button"
+					class="nav-search"
+					aria-expanded={librarySearch}
+					aria-controls="sidebar-library-search"
+					aria-label={t('nav.search')}
+					title={t('nav.search')}
+					onclick={toggleLibrarySearch}
+				>
+					<svg
+						width="14"
+						height="14"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						aria-hidden="true"
+					>
+						<circle cx="11" cy="11" r="6.5" />
+						<path d="M16 16l4.5 4.5" />
+					</svg>
+				</button>
 			</p>
+
+			{#if librarySearch}
+				<label class="nav-search-field" id="sidebar-library-search">
+					<input
+						bind:this={libraryInput}
+						bind:value={libraryFilter}
+						type="search"
+						autocomplete="off"
+						placeholder={t('nav.searchPlaceholder')}
+						aria-label={t('nav.search')}
+						onkeydown={(event) => event.key === 'Escape' && toggleLibrarySearch()}
+					/>
+				</label>
+			{/if}
 
 			<!-- Seule cette liste défile : l'administration et le pied de la barre
 			     restent visibles, même avec beaucoup de bibliothèques. -->
 			<div class="nav-scroll">
-				{#if categories.length > 0}
-					{#each categories as category (category.rel)}
+				{#if listedCategories.length > 0}
+					{#each listedCategories as category (category.rel)}
 						<a
 							class="nav-item"
 							href={folderUrl(category.rel)}
@@ -145,6 +201,8 @@
 							<span class="nav-count">{category.count}</span>
 						</a>
 					{/each}
+				{:else if filtering}
+					<p class="nav-empty">{t('nav.noMatch', { query: filtering })}</p>
 				{:else if library.status !== 'connecting'}
 					<p class="nav-empty">{t('nav.empty')}</p>
 				{/if}

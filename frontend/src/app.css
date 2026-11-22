@@ -155,6 +155,58 @@ code {
 	gap: 10px;
 }
 
+/* Loupe du titre « Bibliothèque » : ouvre un filtre sur la liste. */
+.nav-search {
+	display: grid;
+	flex: none;
+	place-items: center;
+	width: 20px;
+	height: 20px;
+	margin-left: auto;
+	padding: 0;
+	background: none;
+	border: 0;
+	border-radius: 6px;
+	color: var(--muted);
+	cursor: pointer;
+	transition:
+		color 120ms ease,
+		background-color 120ms ease;
+}
+
+.nav-search:hover,
+.nav-search[aria-expanded='true'] {
+	background: var(--panel);
+	color: var(--text);
+}
+
+.nav-search:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+/* Champ de filtre, juste sous le titre de section. */
+.nav-search-field {
+	display: block;
+	padding: 0 10px 2px;
+}
+
+.nav-search-field input {
+	width: 100%;
+	padding: 5px 9px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--panel);
+	color: var(--text);
+	font-family: inherit;
+	font-size: 12px;
+}
+
+.nav-search-field input:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
 /* Les libellés de section partent exactement comme celui d'Accueil. */
 .nav-label {
 	white-space: nowrap;
@@ -1921,7 +1973,8 @@ code {
 	/* 16 px : en dessous, iOS zoome la page au focus d'un champ. */
 	.search,
 	.dialog-body input,
-	.sidebar-lang select {
+	.sidebar-lang select,
+	.nav-search-field input {
 		font-size: 16px;
 	}
 
