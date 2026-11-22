@@ -63,6 +63,7 @@ base64 = "0.22"
 # OIDC : découverte, échange du code (PKCE) et validation de l'ID token (JWKS).
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 jsonwebtoken = "9"
+webauthn-rs = { version = "0.6.2", default-features = false, features = ["conditional-ui"] }
 
 # Rendre à l'OS la mémoire libérée après le décodage d'une image (`malloc_trim`).
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]

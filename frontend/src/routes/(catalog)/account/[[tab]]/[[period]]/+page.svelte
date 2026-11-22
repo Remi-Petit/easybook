@@ -19,6 +19,7 @@
 	import Rail from '$lib/components/Rail.svelte';
 	import { formatNumber, formatReadingDuration, intlLocale, t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
+	import { registerPasskey, passkeySupported } from '$lib/passkeys';
 	import { pins, startPins, unpinCompleted } from '$lib/pins.svelte';
 	import {
 		completedSeries,
@@ -38,21 +39,30 @@
 	let current = $state('');
 	let fresh = $state('');
 	let busy = $state(false);
+	let passkeyName = $state('');
+	let passkeyPassword = $state('');
+	let passkeyBusy = $state(false);
+	/** WebAuthn dépend du navigateur : `null` tant que l'hydratation n'a pas décidé. */
+	let canPasskey = $state<boolean | null>(null);
 
 	// Onglets du compte : chacun a son adresse (`/account/collection`, `/reading`,
-	// `/password`, `/sso`). SSO n'existe que si un fournisseur est configuré.
+	// `/password`, `/passkeys`, `/sso`). Un onglet n'existe que si le serveur le
+	// propose : SSO avec un fournisseur, passkey avec WebAuthn.
 	const labels = {
 		collection: 'account.tab.collection',
 		reading: 'account.tab.reading',
 		password: 'account.password.tab',
+		passkeys: 'account.passkeys.tab',
 		sso: 'users.type.sso'
 	} as const;
 	type Tab = keyof typeof labels;
-	const tabs = $derived<Tab[]>(
-		oidc
-			? ['collection', 'reading', 'password', 'sso']
-			: ['collection', 'reading', 'password']
-	);
+	const tabs = $derived<Tab[]>([
+		'collection',
+		'reading',
+		'password',
+		...(data.session.passkey ? (['passkeys'] as const) : []),
+		...(oidc ? (['sso'] as const) : [])
+	]);
 	/** Onglet de l'URL ; `/account` sans suffixe ouvre la collection. */
 	const tab = $derived<Tab>(
 		tabs.includes(page.params.tab as Tab) ? (page.params.tab as Tab) : 'collection'
@@ -134,6 +144,7 @@
 	}
 
 	onMount(async () => {
+		canPasskey = passkeySupported();
 		// Retour d'une liaison OIDC : `?linked=1` ou `?error=<code>`.
 		const params = page.url.searchParams;
 		if (params.get('linked')) notify(t('account.linked'), { tone: 'ok' });
@@ -229,6 +240,33 @@
 			return;
 		}
 		notify(t('account.unlinked'), { tone: 'ok' });
+		await invalidateAll();
+	}
+
+	/** Crée une passkey : le navigateur demande le code ou la biométrie. */
+	async function addPasskey(event: SubmitEvent) {
+		event.preventDefault();
+		if (passkeyBusy) return;
+		passkeyBusy = true;
+		const result = await registerPasskey(passkeyName.trim(), passkeyPassword);
+		passkeyBusy = false;
+		if (!result.ok) {
+			notify(t(errorKey(result.code)), { tone: 'error' });
+			return;
+		}
+		passkeyName = '';
+		passkeyPassword = '';
+		notify(t('account.passkeys.added'), { tone: 'ok' });
+		await invalidateAll();
+	}
+
+	async function removePasskey(id: string) {
+		const result = await call('DELETE', `/api/auth/passkey/${id}`);
+		if (!result.ok) {
+			notify(t(errorKey(result.code)), { tone: 'error' });
+			return;
+		}
+		notify(t('account.passkeys.removed'), { tone: 'ok' });
 		await invalidateAll();
 	}
 </script>
@@ -434,6 +472,79 @@
 								</button>
 							</div>
 						</form>
+						{#if data.session.passkey && canPasskey === true && user.passkeys.length === 0}
+							<p class="panel-hint">
+								{t('account.passkeys.recommended')}
+								<a href="/account/passkeys">{t('account.passkeys.recommendedLink')}</a>
+							</p>
+						{/if}
+					</section>
+				{:else if tab === 'passkeys'}
+					<section class="panel-card">
+						<h2>{t('account.passkeys.title')}</h2>
+						<p class="panel-hint">{t('account.passkeys.intro')}</p>
+						{#if canPasskey === null}
+							<p class="panel-hint">{t('status.connecting')}</p>
+						{:else if !canPasskey}
+							<p class="panel-hint">{t('account.passkeys.unsupported')}</p>
+						{:else}
+							{#if user.passkeys.length > 0}
+								<ul class="identity-list">
+									{#each user.passkeys as passkey (passkey.id)}
+										<li>
+											<div>
+												<strong>{passkey.name}</strong>
+												<span class="muted">
+													{t('account.passkeys.created', {
+														date: formatDate(passkey.created_at)
+													})}
+													{#if passkey.last_used_at}
+														· {t('account.passkeys.lastUsed', {
+															date: formatDate(passkey.last_used_at)
+														})}
+													{/if}
+												</span>
+											</div>
+											<button
+												type="button"
+												class="btn-plain"
+												onclick={() => removePasskey(passkey.id)}
+											>
+												{t('account.passkeys.remove')}
+											</button>
+										</li>
+									{/each}
+								</ul>
+							{:else}
+								<p class="panel-hint">{t('account.passkeys.none')}</p>
+							{/if}
+							<form class="stack-form" method="post" onsubmit={addPasskey}>
+								<label class="field">
+									<span>{t('account.passkeys.name')}</span>
+									<input
+										bind:value={passkeyName}
+										maxlength="64"
+										autocomplete="off"
+										placeholder={t('account.passkeys.namePlaceholder')}
+									/>
+								</label>
+								{#if user.has_password}
+									<PasswordField
+										label={t('account.passkeys.current')}
+										bind:value={passkeyPassword}
+										autocomplete="current-password"
+										generable={false}
+										temporaryControls={false}
+									/>
+								{/if}
+								<div>
+									<button type="submit" class="btn-main" disabled={passkeyBusy}>
+										{passkeyBusy ? t('account.passkeys.adding') : t('account.passkeys.add')}
+									</button>
+								</div>
+							</form>
+							<p class="panel-hint">{t('account.passkeys.hint')}</p>
+						{/if}
 					</section>
 				{:else if tab === 'sso' && oidc}
 					<section class="panel-card">

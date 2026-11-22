@@ -550,6 +550,47 @@ est **refusé** : c'est l'administrateur qui décide. Il a trois façons de lier
 Un compte lié se connecte des deux façons ; on ne peut pas délier la seule
 façon de se connecter d'un compte.
 
+### Passkeys (WebAuthn)
+
+Facultatives, et **recommandées** : une passkey remplace le mot de passe par une
+clé privée gardée par l'appareil (ou son trousseau synchronisé) et déverrouillée
+par le code ou la biométrie. Chacun en ajoute une depuis *Mon compte →
+Passkeys* ; la page de connexion propose alors « Se connecter avec une
+passkey » (l'adresse e-mail reste saisie, pour ne proposer que les passkeys du
+compte). Le mot de passe et le SSO restent disponibles : une passkey n'est jamais
+obligatoire. Ajouter une passkey demande le **mot de passe actuel** quand le
+compte en a un : une simple session volée ne suffit pas à s'y poser une porte
+d'entrée durable.
+
+La vérification est faite par [`webauthn-rs`](https://github.com/kanidm/webauthn-rs) :
+`userVerification` **exigée** à chaque connexion, attestation `none` (une passkey
+synchronisée n'a pas de certificat d'appareil), défi à usage unique lié au
+navigateur par un cookie `HttpOnly` `SameSite=Strict`, compteur anti-rejeu
+conservé dans `accounts.db`. Une passkey est liée au **domaine** : elle ne peut
+pas être hameçonnée.
+
+Deux règles à connaître :
+
+- **`rp_id` doit être le domaine définitif** du site. Le changer invalide toutes
+  les passkeys déjà créées. Vide, il est déduit de l'adresse de la requête —
+  pratique en développement, mais un déploiement derrière un mandataire doit le
+  fixer explicitement.
+- WebAuthn **refuse les adresses IP** : en local, utiliser `http://localhost:<port>`
+  (pas `http://127.0.0.1:<port>`) ; ailleurs, HTTPS est exigé. L'onglet
+  *Passkeys* explique l'incident quand l'adresse ne s'y prête pas.
+
+```yaml
+auth:
+  webauthn:
+    enabled: true
+    rp_id: ""            # ex. easybook.example.org (jamais une IP)
+    rp_name: easybook    # nom montré par le navigateur
+    origin: ""           # ex. https://easybook.example.org (vide : déduit)
+```
+
+Variables équivalentes : `EASYBOOK_WEBAUTHN_ENABLED`, `…_RP_ID`, `…_RP_NAME`,
+`…_ORIGIN`.
+
 ### Production par défaut, développement avec `.env.dev`
 
 Le `docker-compose.yml` est en **production** tant qu'on ne lui dit pas

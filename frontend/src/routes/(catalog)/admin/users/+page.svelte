@@ -242,7 +242,13 @@
 						? t('users.tab.reading')
 						: t('users.tab.sessions');
 	const methodLabel = (method: string | null) =>
-		method === 'sso' ? t('users.type.sso') : method === 'password' ? t('auth.password') : null;
+		method === 'sso'
+			? t('users.type.sso')
+			: method === 'password'
+				? t('auth.password')
+				: method === 'passkey'
+					? t('account.passkeys.tab')
+					: null;
 
 	// Sessions ouvertes et connexions du compte choisi, relues à chaque ouverture du tiroir.
 	let activity = $state<Activity | null>(null);

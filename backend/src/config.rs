@@ -41,6 +41,8 @@ pub struct Auth {
     pub session_days: u32,
     /// Connexion par un fournisseur OpenID Connect.
     pub oidc: Oidc,
+    /// Connexion par passkey (WebAuthn).
+    pub webauthn: WebAuthn,
 }
 
 impl Default for Auth {
@@ -49,7 +51,72 @@ impl Default for Auth {
             enabled: true,
             session_days: 30,
             oidc: Oidc::default(),
+            webauthn: WebAuthn::default(),
         }
+    }
+}
+
+/// Connexion par passkey (WebAuthn).
+///
+/// Une passkey remplace le mot de passe par une clé privée gardée par
+/// l'appareil (ou son trousseau) et déverrouillée par la biométrie ou le code
+/// de l'appareil. Facultative : chaque personne l'ajoute à son compte si elle
+/// le souhaite ; le mot de passe et le SSO restent disponibles.
+///
+/// Les deux valeurs qui comptent sont `rp_id` et `origin`. Elles sont
+/// déduites de l'adresse de la requête quand elles sont vides — pratique en
+/// développement (`http://localhost:5200`), mais un déploiement derrière un
+/// mandataire doit les fixer explicitement : une passkey est liée à ce domaine
+/// **pour toujours**, et un domaine qui change invalide toutes les passkeys.
+///
+/// Chaque clé se pose aussi par variable d'environnement
+/// (`EASYBOOK_WEBAUTHN_ENABLED`, `…_RP_ID`, `…_RP_NAME`, `…_ORIGIN`) : elle gagne
+/// sur le fichier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebAuthn {
+    /// `false` : aucun bouton passkey, ni à la connexion ni dans le compte.
+    pub enabled: bool,
+    /// Domaine auquel les passkeys sont liées (ex. `easybook.exemple.fr`).
+    /// Vide : le nom d'hôte de la requête. **Jamais** une adresse IP : WebAuthn
+    /// l'interdit, et `localhost` est le seul nom local accepté.
+    pub rp_id: String,
+    /// Nom montré par le navigateur au moment de créer la passkey.
+    pub rp_name: String,
+    /// Origine complète attendue (ex. `https://easybook.exemple.fr`). Vide :
+    /// schéma et hôte de la requête. Doit être en HTTPS, sauf pour `localhost`.
+    pub origin: String,
+}
+
+impl Default for WebAuthn {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            rp_id: String::new(),
+            rp_name: "easybook".into(),
+            origin: String::new(),
+        }
+    }
+}
+
+impl WebAuthn {
+    /// Reprend les variables d'environnement ; `get` les lit (paramètre : testable).
+    #[must_use]
+    pub fn with_env(mut self, get: impl Fn(&str) -> Option<String>) -> Self {
+        let text = |name: &str| get(name).filter(|value| !value.trim().is_empty());
+        if let Some(value) = text("EASYBOOK_WEBAUTHN_RP_ID") {
+            self.rp_id = value;
+        }
+        if let Some(value) = text("EASYBOOK_WEBAUTHN_RP_NAME") {
+            self.rp_name = value;
+        }
+        if let Some(value) = text("EASYBOOK_WEBAUTHN_ORIGIN") {
+            self.origin = value;
+        }
+        if let Some(value) = text("EASYBOOK_WEBAUTHN_ENABLED") {
+            self.enabled = matches!(value.trim(), "1" | "true" | "yes" | "on");
+        }
+        self
     }
 }
 
@@ -315,6 +382,7 @@ pub fn auth() -> Auth {
         .get()
         .map_or_else(Auth::default, |config| config.auth.clone());
     auth.oidc = auth.oidc.with_env(|name| std::env::var(name).ok());
+    auth.webauthn = auth.webauthn.with_env(|name| std::env::var(name).ok());
     auth.session_days = auth.session_days.max(1);
     auth
 }

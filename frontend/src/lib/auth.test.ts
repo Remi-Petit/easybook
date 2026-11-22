@@ -25,7 +25,8 @@ const user = (role: User['role'] = 'user'): User => ({
 	created_at: 0,
 	last_login_at: null,
 	must_change_password: false,
-	identities: []
+	identities: [],
+	passkeys: []
 });
 
 const session = (over: Partial<Session> = {}): Session => ({
@@ -33,6 +34,7 @@ const session = (over: Partial<Session> = {}): Session => ({
 	user: null,
 	oidc: null,
 	dev_logins: [],
+	passkey: false,
 	...over
 });
 

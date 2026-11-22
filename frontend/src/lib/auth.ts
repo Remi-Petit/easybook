@@ -17,6 +17,14 @@ export type Identity = {
 	created_at: number;
 };
 
+/** Une passkey (WebAuthn) enregistrée sur un compte. */
+export type PasskeyInfo = {
+	id: string;
+	name: string;
+	created_at: number;
+	last_used_at: number | null;
+};
+
 export type User = {
 	id: string;
 	username: string;
@@ -31,6 +39,8 @@ export type User = {
 	/** Mot de passe temporaire : la personne est invitée à le changer (elle peut le garder). */
 	must_change_password: boolean;
 	identities: Identity[];
+	/** Passkeys du compte (WebAuthn) ; vide si la personne n'en a pas. */
+	passkeys: PasskeyInfo[];
 };
 
 /** Une session encore valide d'un compte (`GET /api/admin/users/{id}/activity`). */
@@ -103,10 +113,18 @@ export type Session = {
 	oidc: { label: string; self_link: boolean; direct: boolean } | null;
 	/** E-mails des boutons de connexion rapide (développement) ; vide en production. */
 	dev_logins: string[];
+	/** `true` : ce serveur accepte les passkeys (et cette adresse s'y prête). */
+	passkey: boolean;
 };
 
 /** Session « personne » : API injoignable ou réponse illisible. */
-export const NO_SESSION: Session = { enabled: true, user: null, oidc: null, dev_logins: [] };
+export const NO_SESSION: Session = {
+	enabled: true,
+	user: null,
+	oidc: null,
+	dev_logins: [],
+	passkey: false
+};
 
 /** Ce que l'interface affiche pour désigner un compte. */
 export const displayName = (user: Pick<User, 'username' | 'display_name'>): string =>
@@ -212,11 +230,23 @@ export async function call<T = undefined>(
 /**
  * Session de la requête en cours, lue côté serveur avec le cookie du navigateur.
  * Une API injoignable donne « personne » : la page de connexion s'affiche.
+ *
+ * `origin` recopie l'adresse vue par le navigateur : l'API consultée sur la
+ * boucle locale (`127.0.0.1:8091`) croirait sinon que le site tourne sur une
+ * adresse IP — où WebAuthn refuse les passkeys. Seul l'hôte compte ici.
  */
-export async function loadSession(cookie: string | null): Promise<Session> {
+export async function loadSession(
+	cookie: string | null,
+	origin?: { host?: string | null; proto?: string }
+): Promise<Session> {
+	const headers: Record<string, string> = {};
+	if (cookie) headers.cookie = cookie;
+	if (origin?.host) headers['x-forwarded-host'] = origin.host;
+	const proto = origin?.proto?.replace(/:$/, '');
+	if (proto === 'http' || proto === 'https') headers['x-forwarded-proto'] = proto;
 	try {
 		const response = await fetch(sessionUrl(), {
-			headers: cookie ? { cookie } : undefined
+			headers: Object.keys(headers).length > 0 ? headers : undefined
 		});
 		if (!response.ok) return NO_SESSION;
 		return (await response.json()) as Session;
@@ -258,6 +288,13 @@ export const ERROR_CODES = [
 	'cross_origin',
 	'not_found',
 	'oidc_disabled',
+	'passkey_unavailable',
+	'passkey_expired',
+	'passkey_failed',
+	'passkey_taken',
+	'passkey_cancelled',
+	'passkey_exists',
+	'passkey_email_required',
 	'unreachable'
 ] as const;
 

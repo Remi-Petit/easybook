@@ -37,6 +37,7 @@ export default defineConfig({
 				'src/lib/catalog.ts',
 				'src/lib/api.ts',
 				'src/lib/auth.ts',
+				'src/lib/passkeys.ts',
 				'src/lib/i18n/messages.ts',
 				'src/lib/i18n/state.svelte.ts',
 				'src/lib/reader/prefs.ts',

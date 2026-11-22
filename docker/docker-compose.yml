@@ -39,6 +39,12 @@ services:
       # son compte à une identité du fournisseur (page Mon compte). Sinon, seuls
       # les administrateurs peuvent le faire (page Comptes).
       EASYBOOK_OIDC_SELF_LINK: ${EASYBOOK_OIDC_SELF_LINK:-false}
+      # Passkeys (WebAuthn) : facultatives, chacun les ajoute depuis « Mon compte ».
+      # `RP_ID` doit être le domaine définitif ; vide : déduit de l'adresse.
+      EASYBOOK_WEBAUTHN_ENABLED: ${EASYBOOK_WEBAUTHN_ENABLED:-true}
+      EASYBOOK_WEBAUTHN_RP_ID: ${EASYBOOK_WEBAUTHN_RP_ID:-}
+      EASYBOOK_WEBAUTHN_RP_NAME: ${EASYBOOK_WEBAUTHN_RP_NAME:-easybook}
+      EASYBOOK_WEBAUTHN_ORIGIN: ${EASYBOOK_WEBAUTHN_ORIGIN:-}
     volumes:
       # Le conteneur tourne sous l'utilisateur `node` (uid 1000) : sous Linux, ce
       # dossier doit lui appartenir (`chown -R 1000:1000 books`) pour que le

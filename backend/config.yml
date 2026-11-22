@@ -46,3 +46,15 @@ auth:
   oidc:
     issuer: ""
     client_id: ""
+  # Connexion par passkey (WebAuthn). Facultative : chaque personne ajoute une
+  # passkey à son compte depuis « Mon compte » ; le mot de passe et le SSO
+  # restent disponibles. `rp_id` doit être le domaine **définitif** du site (une
+  # passkey y est liée pour toujours) ; vide, il est déduit de l'adresse de la
+  # requête. `origin` est l'adresse complète attendue (HTTPS, ou localhost).
+  # Chaque clé se pose aussi par variable (`EASYBOOK_WEBAUTHN_ENABLED`,
+  # `_RP_ID`, `_RP_NAME`, `_ORIGIN`).
+  webauthn:
+    enabled: true
+    rp_id: ""
+    rp_name: easybook
+    origin: ""
