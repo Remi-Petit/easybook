@@ -22,7 +22,6 @@
 	"rail.next": "Nach rechts blättern",
 	"search.placeholder": "Nach Titel, Serie, Format filtern…",
 	"search.label": "Bibliothek filtern",
-	"search.seriesPlaceholder": "Nach Reihe filtern…",
 	"home.emptyBefore": "Noch keine Bücher: lege eine EPUB-, CBZ- oder PDF-Datei in",
 	"home.emptyAfter": "— sie erscheint hier ohne Neuladen der Seite.",
 	"search.noMatch": "Kein Buch entspricht „{query}“.",

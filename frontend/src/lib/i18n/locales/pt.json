@@ -22,7 +22,6 @@
 	"rail.next": "Deslocar para a direita",
 	"search.placeholder": "Filtrar por título, série, formato…",
 	"search.label": "Filtrar a biblioteca",
-	"search.seriesPlaceholder": "Filtrar por série…",
 	"home.emptyBefore": "Ainda não há livros: coloque um EPUB, um CBZ ou um PDF em",
 	"home.emptyAfter": "— aparece aqui sem recarregar a página.",
 	"search.noMatch": "Nenhum livro corresponde a «{query}».",

@@ -48,8 +48,7 @@ export function subtreeFolders(folders: FolderInfo[], folder: string): FolderInf
 
 /**
  * Chaque mot tapé doit apparaître dans le texte, dans n'importe quel ordre et
- * sans tenir compte de la casse : « chainsaw t03 » trouve
- * `mangas/Chainsaw Man/Chainsaw Man T03.cbz`.
+ * sans tenir compte de la casse : « chainsaw t03 » trouve « Chainsaw Man T03 ».
  */
 export function matchesWords(text: string, query: string): boolean {
 	const haystack = text.toLowerCase();
@@ -61,11 +60,12 @@ export function matchesWords(text: string, query: string): boolean {
 }
 
 /**
- * Un livre répond-il à la recherche ? Le titre, le chemin complet et le format
- * sont interrogés.
+ * Un livre répond-il à la recherche ? Seuls ce qui **s'affiche** compte — le
+ * titre et le format —, pas le chemin : sinon, chercher le nom d'une catégorie
+ * (« mangas ») ramènerait tous les livres qu'elle range.
  */
 export function matchesQuery(book: BookInfo, query: string): boolean {
-	return matchesWords(`${book.title} ${book.rel} ${book.format}`, query);
+	return matchesWords(`${book.title} ${book.format}`, query);
 }
 
 /**

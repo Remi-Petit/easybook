@@ -54,10 +54,11 @@
 		</p>
 	{:else}
 		<!-- La racine du catalogue : ses catégories d'abord, puis ses livres.
-		     La recherche y trouve des **séries** ; les livres se cherchent dans
-		     une série, une fois qu'on y est. Les lectures en cours passent
-		     **sous** la barre de recherche, et seulement s'il y en a. -->
-		<LibraryBrowser scope="" categories search="folders">
+		     Une recherche y trouve des **séries** et des **livres** (jamais des
+		     « catégories » : le titre du groupe devient alors « Séries »). Les
+		     lectures en cours passent **sous** la barre de recherche, et
+		     seulement s'il y en a. -->
+		<LibraryBrowser scope="" categories>
 			{#snippet lead()}
 				{#if continuing.length > 0}
 					<!-- Une seule ligne : le plus récent à gauche, le reste au défilement. -->

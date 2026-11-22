@@ -24,15 +24,6 @@
 	const loaded = $derived(library.books.length > 0 || library.folders.length > 0);
 	const missing = $derived(loaded && !folder);
 
-	/**
-	 * Ce que la barre cherche. Une **catégorie** (premier niveau) qui contient
-	 * des séries se cherche par série ; une fois dans une série — ou dans une
-	 * catégorie qui ne contient que des livres — on cherche un livre.
-	 */
-	const searchKind = $derived<'folders' | 'books'>(
-		rel.split('/').length === 1 && current.folders.length > 0 ? 'folders' : 'books'
-	);
-
 	// `/folder` sans chemin n'est pas une page : la racine du catalogue est `/`.
 	$effect(() => {
 		if (!rel) void goto('/', { replaceState: true });
@@ -79,6 +70,6 @@
 	{:else if current.folders.length === 0 && current.books.length === 0}
 		<p class="notice">{t('folder.empty')}</p>
 	{:else}
-		<LibraryBrowser scope={rel} search={searchKind} />
+		<LibraryBrowser scope={rel} />
 	{/if}
 </div>

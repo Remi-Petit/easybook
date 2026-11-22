@@ -257,16 +257,17 @@ describe('subtreeBooks', () => {
 });
 
 describe('matchesQuery', () => {
-	it('cherche dans le titre, le chemin et le format, sans casse', () => {
-		const entry = book('mangas/Chainsaw Man/T03.cbz');
+	const entry: BookInfo = { ...book('mangas/Chainsaw Man/T03.cbz'), title: 'Chainsaw Man T03' };
+
+	it('cherche dans le titre et le format, sans casse — jamais dans le chemin', () => {
 		expect(matchesQuery(entry, 'chainsaw')).toBe(true);
 		expect(matchesQuery(entry, 'CBR')).toBe(false);
 		expect(matchesQuery(entry, 'cbz')).toBe(true);
-		expect(matchesQuery(entry, 'mangas/')).toBe(true);
+		// Le chemin ne compte pas : « mangas » est une catégorie, pas un titre.
+		expect(matchesQuery(entry, 'mangas')).toBe(false);
 	});
 
 	it('exige chaque mot, dans n’importe quel ordre', () => {
-		const entry = book('mangas/Chainsaw Man/T03.cbz');
 		expect(matchesQuery(entry, 'chainsaw t03')).toBe(true);
 		expect(matchesQuery(entry, 't03 chainsaw')).toBe(true);
 		expect(matchesQuery(entry, 'chainsaw t09')).toBe(false);
@@ -275,9 +276,9 @@ describe('matchesQuery', () => {
 
 describe('matchesWords', () => {
 	it('ignore la casse et l’ordre des mots', () => {
-		expect(matchesWords('mangas/Chainsaw Man', 'CHAINSaw')).toBe(true);
-		expect(matchesWords('mangas/Chainsaw Man', 'man chainsaw')).toBe(true);
-		expect(matchesWords('mangas/Chainsaw Man', 'chainsaw t03')).toBe(false);
+		expect(matchesWords('Chainsaw Man', 'CHAINSaw')).toBe(true);
+		expect(matchesWords('Chainsaw Man', 'man chainsaw')).toBe(true);
+		expect(matchesWords('Chainsaw Man', 'chainsaw t03')).toBe(false);
 	});
 });
 

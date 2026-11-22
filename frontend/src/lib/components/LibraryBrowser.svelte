@@ -10,6 +10,7 @@
 		level,
 		matchesQuery,
 		matchesWords,
+		parentOf,
 		previewBook,
 		subtreeBooks,
 		subtreeFolders
@@ -27,19 +28,14 @@
 		/** Les sous-dossiers sont les catégories de la bibliothèque (racine). */
 		categories = false,
 		/**
-		 * Ce que la barre cherche : les **séries** sur l'accueil (on ne cherche pas
-		 * un livre avant d'être dans une série), les **livres** dans un dossier.
-		 */
-		search = 'books',
-		/**
-		 * Ce qui s'intercale entre la barre et les résultats — la rangée « poursuivre
-		 * la lecture » de l'accueil, qui doit passer **sous** la recherche.
+		 * Ce qui s'intercale entre la barre et les résultats — les rangées de
+		 * l'accueil (poursuite de lecture, nouveautés) — et qui s'efface dès qu'une
+		 * recherche ou un filtre est actif : il ne reste que ses résultats.
 		 */
 		lead
 	}: {
 		scope: string;
 		categories?: boolean;
-		search?: 'books' | 'folders';
 		lead?: Snippet;
 	} = $props();
 
@@ -77,14 +73,6 @@
 	/** Le dossier et tout ce qu'il contient : la portée de la recherche. */
 	const scopeBooks = $derived(subtreeBooks(library.books, scope));
 
-	/** Quels groupes afficher : le parcours montre tout, la recherche ce qu'elle vise. */
-	const wantsSeries = $derived(
-		types.length > 0 ? types.includes('series') : !query || search === 'folders'
-	);
-	const wantsBooks = $derived(
-		types.length > 0 ? types.includes('books') : !query || search === 'books'
-	);
-
 	/** Livres qui répondent au texte, avant le filtre de format. */
 	const textMatches = $derived(
 		query ? scopeBooks.filter((book) => matchesQuery(book, query)) : scopeBooks
@@ -107,13 +95,14 @@
 	);
 
 	/**
-	 * Séries trouvées : une recherche couvre tout le sous-arbre, une simple
-	 * navigation ne montre que les dossiers du niveau.
+	 * Séries trouvées : leur **nom** seul fait foi (pas le chemin, sinon une
+	 * catégorie ramènerait tout son contenu), et une catégorie — un dossier de
+	 * premier niveau — n'est jamais une série : elle ne se cherche pas.
 	 */
 	const foundSeries = $derived(
 		query
-			? subtreeFolders(library.folders, scope).filter((folder) =>
-					matchesWords(`${folder.name} ${folder.rel}`, query)
+			? subtreeFolders(library.folders, scope).filter(
+					(folder) => parentOf(folder.rel) !== '' && matchesWords(folder.name, query)
 				)
 			: current.folders
 	);
@@ -121,9 +110,12 @@
 	/** Livres trouvés : texte ou format, la recherche couvre tout le sous-arbre. */
 	const foundBooks = $derived(query !== '' || formats.length > 0 ? matchingBooks : current.books);
 
-	/** Ce que l'on affiche, une fois le filtre de type appliqué. */
-	const series = $derived(wantsSeries ? foundSeries : []);
-	const books = $derived(wantsBooks ? foundBooks : []);
+	/**
+	 * Ce que l'on affiche : les deux groupes — parcours comme recherche —,
+	 * sauf choix explicite du filtre « Type ».
+	 */
+	const series = $derived(types.length === 0 || types.includes('series') ? foundSeries : []);
+	const books = $derived(types.length === 0 || types.includes('books') ? foundBooks : []);
 
 	/** Filtre-t-on (texte, format, type) ? Sinon, on parcourt le niveau. */
 	const narrowing = $derived(query !== '' || formats.length > 0 || types.length > 0);
@@ -194,12 +186,12 @@
 				type="search"
 				autocomplete="off"
 				bind:value={filter}
-				placeholder={search === 'folders' ? t('search.seriesPlaceholder') : t('search.placeholder')}
+				placeholder={t('search.placeholder')}
 				aria-label={t('search.label')}
 			/>
 		</label>
 
-		{#if wantsBooks && formatChoices.length > 0}
+		{#if (types.length === 0 || types.includes('books')) && formatChoices.length > 0}
 			<details class="menu" name="browse-filter">
 				<summary class="tool-btn">
 					{t('stats.col.format')}
@@ -253,7 +245,11 @@
 		{/if}
 	</div>
 
-	{@render lead?.()}
+	<!-- En parcours seulement : une recherche (ou un filtre) ne laisse que ses
+	     deux groupes, catégories et livres. -->
+	{#if !narrowing}
+		{@render lead?.()}
+	{/if}
 
 	{#if empty}
 		<p class="notice">
