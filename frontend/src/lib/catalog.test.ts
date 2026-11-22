@@ -4,11 +4,13 @@ import {
 	childBooks,
 	childFolders,
 	folderUrl,
+	foldersWithFormats,
 	formatLabel,
 	insideFolders,
 	level,
 	matchesQuery,
 	matchesWords,
+	matchScore,
 	noveltyRails,
 	parentOf,
 	previewBook,
@@ -283,6 +285,60 @@ describe('matchesWords', () => {
 	});
 });
 
+describe('matchScore', () => {
+	it('ignore la casse et les accents', () => {
+		expect(matchScore('Pokémon - La Grande Aventure', 'pokemon')).toBeGreaterThan(0);
+		expect(matchScore("L'Électronique pour les Nuls", 'electronique')).toBeGreaterThan(0);
+		expect(matchScore('Nausicaä Tome 1', 'NAUSICAA')).toBeGreaterThan(0);
+	});
+
+	it('pardonne une faute de frappe ou des lettres inversées', () => {
+		expect(matchScore('Chainsaw Man T03', 'chainswa')).toBeGreaterThan(0);
+		expect(matchScore('FullMetal Alchemist - Tome 01', 'fullmetl alchemist')).toBeGreaterThan(0);
+		expect(matchScore('Blue Lock Tome 26', 'bleu lock')).toBeGreaterThan(0);
+		expect(matchScore('Le Seigneur des Anneaux', 'seigneur des annaux')).toBeGreaterThan(0);
+	});
+
+	it('retrouve un fragment mélangé', () => {
+		expect(matchScore('Chainsaw Man T01', 'sawc')).toBeGreaterThan(0);
+	});
+
+	it('trouve dès une lettre, au début d’un mot', () => {
+		expect(matchScore('Chainsaw Man T03', 'c')).toBeGreaterThan(0);
+		expect(matchScore('Chainsaw Man T03', 'm')).toBeGreaterThan(0);
+		expect(matchScore('Dune', 'du')).toBeGreaterThan(0);
+		// Au milieu d’un mot, une seule lettre ne suffit pas.
+		expect(matchScore('Dune', 'c')).toBe(0);
+		expect(matchScore('Dune', 'e')).toBe(0);
+	});
+
+	it('compare un numéro en valeur, zéros de tête compris', () => {
+		expect(matchScore('Chainsaw Man T02', '2')).toBeGreaterThan(0);
+		expect(matchScore('Chainsaw Man T02', '02')).toBeGreaterThan(0);
+		expect(matchScore('Chainsaw Man T23', '23')).toBeGreaterThan(0);
+		// T12 ne « contient » pas le numéro 2, T03 ne contient pas 23.
+		expect(matchScore('Chainsaw Man T12', '2')).toBe(0);
+		expect(matchScore('Chainsaw Man T03', '23')).toBe(0);
+	});
+
+	it('classe une correspondance littérale devant une correspondance floue', () => {
+		expect(matchScore('Chainsaw Man T03', 'chainsaw man')).toBeGreaterThan(
+			matchScore('Chainsaw Man T03', 'chainswa man')
+		);
+	});
+
+	it('garde les numéros de tomes stricts', () => {
+		expect(matchScore('Chainsaw Man T03', 't09')).toBe(0);
+		expect(matchScore('Chainsaw Man T09', 't09')).toBeGreaterThan(0);
+		expect(matchScore('Jujutsu Kaisen Tome 25', 'jujutsu 99')).toBe(0);
+	});
+
+	it('ne trouve rien pour un mot sans rapport', () => {
+		expect(matchScore('Chainsaw Man T03', 'xyzzy')).toBe(0);
+		expect(matchScore('Chainsaw Man T03', 'mangas')).toBe(0);
+	});
+});
+
 describe('insideFolders', () => {
 	const found = [{ rel: 'mangas/Chainsaw Man' }];
 
@@ -294,6 +350,40 @@ describe('insideFolders', () => {
 	it('ne prend ni un livre voisin, ni un dossier au nom proche', () => {
 		expect(insideFolders('mangas/T01.cbz', found)).toBe(false);
 		expect(insideFolders('mangas/Chainsaw Man 2/T01.cbz', found)).toBe(false);
+	});
+});
+
+describe('foldersWithFormats', () => {
+	const books = [
+		book('mangas/Chainsaw Man/T01.cbz'),
+		book('mangas/Chainsaw Man/Bonus/One Shot.pdf', 'pdf'),
+		book('mangas/Frieren/T01.epub', 'epub'),
+		book('livres/Dune.pdf', 'pdf'),
+		book('mangas2/T01.cbz')
+	];
+
+	it('marque un dossier et tous ses ancêtres', () => {
+		const folders = foldersWithFormats(books, ['cbz']);
+		expect(folders.has('mangas/Chainsaw Man')).toBe(true);
+		expect(folders.has('mangas')).toBe(true);
+	});
+
+	it('ne garde que les dossiers contenant un livre du format demandé', () => {
+		const folders = foldersWithFormats(books, ['epub']);
+		expect(folders.has('mangas/Frieren')).toBe(true);
+		expect(folders.has('mangas/Chainsaw Man')).toBe(false);
+		expect(folders.has('livres')).toBe(false);
+	});
+
+	it('ne confond pas un dossier avec son homonyme préfixé', () => {
+		const folders = foldersWithFormats(books, ['pdf']);
+		expect(folders.has('mangas/Chainsaw Man')).toBe(true);
+		expect(folders.has('livres')).toBe(true);
+		expect(folders.has('mangas2')).toBe(false);
+	});
+
+	it('sans format coché, ne marque rien', () => {
+		expect(foldersWithFormats(books, []).size).toBe(0);
 	});
 });
 
