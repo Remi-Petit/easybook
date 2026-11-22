@@ -121,6 +121,18 @@ function tokenScore(token: string, titleWords: string[], foldedTitle: string): n
 	}
 	if (best > 0) return best;
 
+	// Un numéro se compare **en valeur** avec les suites de chiffres du titre :
+	// « 2 » trouve `T02` (et non `T12`, ni `T20`), « 02 » aussi.
+	if (/^\d+$/.test(token)) {
+		const wanted = Number(token);
+		for (const word of titleWords) {
+			for (const run of word.match(/\d+/g) ?? []) {
+				if (Number(run) === wanted) return 0.95;
+			}
+		}
+		return 0;
+	}
+
 	const max = token.length >= 8 ? 2 : token.length >= 4 ? 1 : 0;
 	if (max > 0) {
 		for (const word of titleWords) {

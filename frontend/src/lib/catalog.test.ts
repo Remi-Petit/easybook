@@ -312,6 +312,15 @@ describe('matchScore', () => {
 		expect(matchScore('Dune', 'e')).toBe(0);
 	});
 
+	it('compare un numéro en valeur, zéros de tête compris', () => {
+		expect(matchScore('Chainsaw Man T02', '2')).toBeGreaterThan(0);
+		expect(matchScore('Chainsaw Man T02', '02')).toBeGreaterThan(0);
+		expect(matchScore('Chainsaw Man T23', '23')).toBeGreaterThan(0);
+		// T12 ne « contient » pas le numéro 2, T03 ne contient pas 23.
+		expect(matchScore('Chainsaw Man T12', '2')).toBe(0);
+		expect(matchScore('Chainsaw Man T03', '23')).toBe(0);
+	});
+
 	it('classe une correspondance littérale devant une correspondance floue', () => {
 		expect(matchScore('Chainsaw Man T03', 'chainsaw man')).toBeGreaterThan(
 			matchScore('Chainsaw Man T03', 'chainswa man')
