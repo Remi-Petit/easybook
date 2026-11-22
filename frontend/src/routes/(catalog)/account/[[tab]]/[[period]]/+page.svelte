@@ -16,6 +16,7 @@
 	import BookCard from '$lib/components/BookCard.svelte';
 	import FolderCard from '$lib/components/FolderCard.svelte';
 	import PasswordField from '$lib/components/PasswordField.svelte';
+	import Rail from '$lib/components/Rail.svelte';
 	import { formatNumber, intlLocale, t } from '$lib/i18n/state.svelte';
 	import { library } from '$lib/library.svelte';
 	import { pins, startPins, unpinCompleted } from '$lib/pins.svelte';
@@ -156,16 +157,6 @@
 	const since = $derived(periodStart(period));
 	const summary = $derived(summaries[period] ?? null);
 
-	/** Les livres terminés de la période, quand ils sont encore au catalogue. */
-	const finishedBooks = $derived(
-		finished
-			.filter((entry) => entry.updatedAt >= since)
-			.flatMap((entry) => {
-				const book = library.books.find((candidate) => candidate.rel === entry.book);
-				return book ? [book] : [];
-			})
-	);
-
 	/** Séries terminées : les dossiers dont tous les livres sont finis, et dont le
 	 *  dernier tome a été terminé dans la période. */
 	const series = $derived(completedSeries(library.books, finished, since));
@@ -243,11 +234,6 @@
 		}
 		notify(t('account.unlinked'), { tone: 'ok' });
 		await invalidateAll();
-	}
-
-	async function signOut() {
-		await call('POST', '/api/auth/logout');
-		location.assign('/login');
 	}
 </script>
 
@@ -348,47 +334,42 @@
 							</section>
 						</div>
 
-						<section class="panel-card">
-							<h2>
-								{t('account.reading.title')}
-								<span class="perf-count">{finishedBooks.length}</span>
-							</h2>
-							{#if !loaded.all}
-								<p class="panel-hint">{t('status.connecting')}</p>
-							{:else if groups.length === 0}
-								<p class="panel-hint">{t('account.reading.empty')}</p>
-							{:else}
-								{#each groups as group (group.key)}
-									<div class="reading-group">
-										{#if group.label}
-											<h3>
-												{group.label}
-												<span class="perf-count">{group.books.length}</span>
-												{#if group.series.length > 0}
-													<span class="group-series">
-														{t('account.reading.group.series', { count: group.series.length })}
-													</span>
-												{/if}
-											</h3>
+						{#if !loaded.all}
+							<p class="panel-hint">{t('status.connecting')}</p>
+						{:else if groups.length === 0}
+							<p class="panel-hint">{t('account.reading.empty')}</p>
+						{:else}
+							<!-- Chaque tranche se présente comme une rangée de l'accueil : son
+							     titre, son compte, puis ses couvertures au défilement. -->
+							{#each groups as group (group.key)}
+								{@const label = group.label ?? t('account.reading.title')}
+								<section class="group">
+									<h2>
+										{label}
+										<span class="count">{group.books.length}</span>
+										{#if group.series.length > 0}
+											<span class="group-series">
+												{t('account.reading.group.series', { count: group.series.length })}
+											</span>
 										{/if}
-										<div class="grid">
-											{#each group.series as rel (rel)}
-												{@const folder = folderOf(rel)}
-												{#if folder}
-													<FolderCard
-														{folder}
-														preview={previewBook(library.folders, library.books, rel)}
-													/>
-												{/if}
-											{/each}
-											{#each group.books as book (book.rel)}
-												<BookCard {book} />
-											{/each}
-										</div>
-									</div>
-								{/each}
-							{/if}
-						</section>
+									</h2>
+									<Rail {label}>
+										{#each group.series as rel (rel)}
+											{@const folder = folderOf(rel)}
+											{#if folder}
+												<FolderCard
+													{folder}
+													preview={previewBook(library.folders, library.books, rel)}
+												/>
+											{/if}
+										{/each}
+										{#each group.books as book (book.rel)}
+											<BookCard {book} />
+										{/each}
+									</Rail>
+								</section>
+							{/each}
+						{/if}
 					</div>
 				{:else if tab === 'password'}
 					<section class="panel-card">
@@ -459,11 +440,6 @@
 					</section>
 				{/if}
 
-				{#if data.session.enabled}
-					<p>
-						<button type="button" class="btn-plain" onclick={signOut}>{t('nav.logout')}</button>
-					</p>
-				{/if}
 			</div>
 		</div>
 	{/if}

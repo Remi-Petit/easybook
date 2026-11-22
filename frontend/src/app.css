@@ -2084,24 +2084,10 @@ code {
 	font-size: 26px;
 }
 
-/* Une tranche de l'historique de lecture (un mois, une année) : son titre,
-   puis ses couvertures. */
-.panel-card .reading-group + .reading-group {
-	margin-top: 24px;
-}
-
-.panel-card .reading-group h3 {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	margin: 0 0 12px;
-	font-size: 13px;
-	font-weight: 600;
-	letter-spacing: 0.04em;
-	text-transform: capitalize;
-}
-
-.panel-card .reading-group .group-series {
+/* Le rappel des séries terminées d'une tranche, à droite du compteur d'une
+   rangée (même barre de titre que l'accueil, sans les majuscules). */
+.group h2 .group-series {
+	order: 2;
 	color: var(--muted);
 	font-size: 12px;
 	font-weight: 500;
