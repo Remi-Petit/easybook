@@ -9,6 +9,10 @@
 	"nav.searchPlaceholder": "Filtrar bibliotecas…",
 	"nav.noMatch": "Nenhuma biblioteca corresponde a «{query}».",
 	"nav.anomalies": "Anomalias",
+	"nav.anomalies.count": {
+		"one": "{count} anomalia",
+		"other": "{count} anomalias"
+	},
 	"anomalies.title": "Anomalias",
 	"anomalies.intro": "Livros que se parecem demasiado: mesmo nome de ficheiro, mesmo título ou o mesmo ficheiro copiado.",
 	"anomalies.empty": "Nenhuma anomalia detetada: a biblioteca está limpa.",

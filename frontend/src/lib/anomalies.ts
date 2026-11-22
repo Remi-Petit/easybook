@@ -81,3 +81,15 @@ export function duplicateContents(books: BookInfo[]): AnomalyGroup[] {
 export function anomalies(books: BookInfo[]): AnomalyGroup[] {
 	return [...duplicateNames(books), ...duplicateTitles(books), ...duplicateContents(books)];
 }
+
+/**
+ * Total des anomalies, tous onglets confondus : les groupes de doublons plus
+ * les fichiers dont le format ne s'ouvre pas. C'est le chiffre de la pastille
+ * de la barre latérale.
+ */
+export function anomalyCount(books: BookInfo[]): number {
+	return (
+		anomalies(books).length +
+		books.filter((book) => !book.readable || book.pages === null).length
+	);
+}

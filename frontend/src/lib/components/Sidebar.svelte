@@ -7,13 +7,17 @@
 	import { childFolders, folderUrl, matchesWords } from '$lib/catalog';
 	import { call, displayName, type Session } from '$lib/auth';
 	import { library } from '$lib/library.svelte';
-	import { LOCALES, chooseLocale, locale, t } from '$lib/i18n/state.svelte';
+	import { LOCALES, chooseLocale, formatNumber, locale, t } from '$lib/i18n/state.svelte';
 	import { rememberAdminOpen } from '$lib/nav-prefs';
+	import { anomalyCount } from '$lib/anomalies';
 
 	const REPOSITORY = 'https://github.com/Remi-Petit/easybook';
 
 	// Un dossier de premier niveau de `books/` est une **catégorie**.
 	const categories = $derived(childFolders(library.folders, ''));
+
+	/** Nombre d'anomalies du catalogue : la pastille du lien « Anomalies ». */
+	const anomalyTotal = $derived(anomalyCount(library.books));
 
 	/** Filtre de la liste des bibliothèques, ouvert par la loupe du titre. */
 	let librarySearch = $state(false);
@@ -279,6 +283,30 @@
 						aria-current={active('/admin/library/anomalies') ? 'page' : undefined}
 					>
 						<span class="name">{t('nav.anomalies')}</span>
+					{#if anomalyTotal > 0}
+						<span
+							class="nav-badge"
+							title={t('nav.anomalies.count', { count: anomalyTotal })}
+							aria-label={t('nav.anomalies.count', { count: anomalyTotal })}
+						>
+							<svg
+								width="11"
+								height="11"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"
+							>
+								<path d="M12 4 2.5 20h19z" />
+								<path d="M12 10v3.5" />
+								<path d="M12 17h.01" />
+							</svg>
+							{formatNumber(anomalyTotal)}
+						</span>
+					{/if}
 					</a>
 				</div>
 			{/if}

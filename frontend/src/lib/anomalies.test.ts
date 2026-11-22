@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BookInfo } from './api';
-import { anomalies, duplicateContents, duplicateNames, duplicateTitles } from './anomalies';
+import { anomalies, anomalyCount, duplicateContents, duplicateNames, duplicateTitles } from './anomalies';
 
 function book(rel: string, options: Partial<BookInfo> = {}): BookInfo {
 	const name = rel.split('/').pop() ?? rel;
@@ -105,5 +105,22 @@ describe('anomalies', () => {
 		]);
 		expect(groups.length).toBeGreaterThanOrEqual(2);
 		expect(groups[0].books).toHaveLength(3);
+	});
+});
+
+describe('anomalyCount', () => {
+	it('compte les groupes de doublons et les fichiers au format incompatible', () => {
+		const books = [
+			book('a/17-21.cbz', { title: '17-21' }),
+			book('b/17-21.cbz', { title: '17-21' }),
+			book('c/illisible.cbz', { title: 'Illisible', size: 77, pages: null }),
+			book('d/seul.cbz', { title: 'Seul', size: 42, pages: 3 })
+		];
+		// Un groupe de doublons (nom + titre + contenu = 3 groupes) + 1 fichier illisible.
+		expect(anomalyCount(books)).toBe(4);
+	});
+
+	it('rend 0 pour une bibliothèque propre', () => {
+		expect(anomalyCount([book('a/x.cbz', { title: 'X', size: 10, pages: 2 })])).toBe(0);
 	});
 });
