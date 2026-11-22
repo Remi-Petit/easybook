@@ -44,20 +44,43 @@ pub fn count(path: &Path, format: Format) -> Option<usize> {
     count_stat(path, format, meta.len(), stamp)
 }
 
+/// Ce qu'un comptage a donné : le nombre de pages s'il est connu, et sinon la
+/// **raison** de l'échec telle que le format l'a dite (sans le chemin, que
+/// l'appelant connaît déjà).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Count {
+    pub pages: Option<usize>,
+    pub problem: Option<String>,
+}
+
 /// Comme [`count`], pour un appelant qui a déjà lu la taille et la date du
 /// fichier (le scan : un `stat` de moins par livre).
 pub fn count_stat(path: &Path, format: Format, size: u64, stamp: u64) -> Option<usize> {
+    open_stat(path, format, size, stamp).pages
+}
+
+/// Comptage **et** raison de l'échec, quand le livre ne peut pas être ouvert.
+pub fn open_stat(path: &Path, format: Format, size: u64, stamp: u64) -> Count {
     let key = path.display().to_string();
 
     if let Some(cached) = cache()
         .lock()
         .ok()
-        .and_then(|cache| cache.get(&key, size, stamp))
+        .and_then(|cache| cache.get(&key, size, stamp).cloned())
     {
         return cached;
     }
 
-    let value = formats::module(format).pages(path).ok().flatten();
+    let count = match formats::module(format).pages(path) {
+        Ok(pages) => Count {
+            pages,
+            problem: None,
+        },
+        Err(error) => Count {
+            pages: None,
+            problem: Some(explain(&error, path)),
+        },
+    };
     crate::readings::release_if_idle(path);
     if let Ok(mut cache) = cache().lock() {
         cache.put(
@@ -65,11 +88,17 @@ pub fn count_stat(path: &Path, format: Format, size: u64, stamp: u64) -> Option<
             Entry {
                 size,
                 stamp,
-                pages: value,
+                count: count.clone(),
             },
         );
     }
-    value
+    count
+}
+
+/// Le message du format, sans le chemin que l'appelant affiche déjà.
+fn explain(error: &str, path: &Path) -> String {
+    let prefix = format!("{} : ", path.display());
+    error.strip_prefix(&prefix).unwrap_or(error).to_string()
 }
 
 /// Nombre de comptages en cache.
@@ -92,13 +121,13 @@ pub fn save() {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Entry {
     size: u64,
     stamp: u64,
-    /// `None` : livre illisible. Gardé en mémoire seulement, pour ne pas le
-    /// rouvrir à chaque scan ; un redémarrage retente.
-    pages: Option<usize>,
+    /// Un livre illisible (`pages` à `None`) est gardé en mémoire seulement,
+    /// pour ne pas le rouvrir à chaque scan ; un redémarrage retente.
+    count: Count,
 }
 
 /// Une ligne de [`FILE`].
@@ -118,9 +147,9 @@ struct Cache {
 }
 
 impl Cache {
-    fn get(&self, path: &str, size: u64, stamp: u64) -> Option<Option<usize>> {
+    fn get(&self, path: &str, size: u64, stamp: u64) -> Option<&Count> {
         let entry = self.entries.get(path)?;
-        (entry.size == size && entry.stamp == stamp).then_some(entry.pages)
+        (entry.size == size && entry.stamp == stamp).then_some(&entry.count)
     }
 
     fn put(&mut self, path: String, entry: Entry) {
@@ -130,7 +159,7 @@ impl Cache {
         {
             self.entries.remove(&victim);
         }
-        self.dirty |= entry.pages.is_some();
+        self.dirty |= entry.count.pages.is_some();
         self.entries.insert(path, entry);
     }
 
@@ -146,7 +175,10 @@ impl Cache {
                 self.entries.entry(line.path).or_insert(Entry {
                     size: line.size,
                     stamp: line.stamp,
-                    pages: Some(line.pages),
+                    count: Count {
+                        pages: Some(line.pages),
+                        problem: None,
+                    },
                 });
             }
         }
@@ -168,7 +200,7 @@ impl Cache {
                     path: path.clone(),
                     size: entry.size,
                     stamp: entry.stamp,
-                    pages: entry.pages?,
+                    pages: entry.count.pages?,
                 })
             })
             .collect();
@@ -241,11 +273,31 @@ mod tests {
         assert_eq!(count(&path, Format::Cbz), None);
     }
 
+    #[test]
+    fn an_unreadable_book_carries_the_reason() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sept.cbz");
+        std::fs::write(&path, b"7z\xbc\xaf\x27\x1creste").unwrap();
+        let size = std::fs::metadata(&path).unwrap().len();
+
+        let counted = open_stat(&path, Format::Cbz, size, 1);
+        assert_eq!(counted.pages, None);
+        let problem = counted.problem.expect("une raison");
+        assert_eq!(problem, "archive illisible");
+        assert!(
+            !problem.contains(&path.display().to_string()),
+            "le chemin est déjà connu de l'appelant : {problem}"
+        );
+    }
+
     fn entry(pages: Option<usize>) -> Entry {
         Entry {
             size: 10,
             stamp: 20,
-            pages,
+            count: Count {
+                pages,
+                problem: None,
+            },
         }
     }
 
@@ -264,7 +316,10 @@ mod tests {
 
         let mut second = Cache::default();
         second.load(file);
-        assert_eq!(second.get(&book, 10, 20), Some(Some(42)));
+        assert_eq!(
+            second.get(&book, 10, 20).map(|count| count.pages),
+            Some(Some(42))
+        );
         assert_eq!(second.get(&book, 11, 20), None, "taille changée");
         assert_eq!(second.get(&book, 10, 21), None, "date changée");
     }
@@ -290,7 +345,10 @@ mod tests {
 
         let mut second = Cache::default();
         second.load(file);
-        assert_eq!(second.get(&kept, 10, 20), Some(Some(1)));
+        assert_eq!(
+            second.get(&kept, 10, 20).map(|count| count.pages),
+            Some(Some(1))
+        );
         assert_eq!(second.get(&gone, 10, 20), None);
         assert_eq!(second.get(&broken, 10, 20), None);
     }

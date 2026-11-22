@@ -14,6 +14,9 @@ export type BookInfo = {
 	/// Nombre de pages — le nombre de chapitres pour un EPUB. `null` quand le
 	/// livre n'a pas pu être ouvert.
 	pages: number | null;
+	/// Pourquoi le livre ne s'ouvre pas (ou précision sur son format) : le
+	/// message du serveur, sans le chemin. Absent quand tout va bien.
+	note?: string;
 	title: string;
 };
 

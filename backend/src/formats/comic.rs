@@ -71,7 +71,7 @@ fn container(path: &Path) -> Result<Container, String> {
     } else if head.starts_with(b"PK\x03\x04") {
         Ok(Container::Zip)
     } else {
-        Err(format!("{} : archive ni ZIP ni RAR", path.display()))
+        Err(format!("{} : archive illisible", path.display()))
     }
 }
 
@@ -222,6 +222,16 @@ mod tests {
         let path = dir.path().join("texte.cbz");
         std::fs::write(&path, b"bonjour").unwrap();
         assert!(pages(&path).is_err());
+    }
+
+    #[test]
+    fn a_file_that_is_not_an_archive_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tome.cbz");
+        // Cas réel : des `.cbz` qui sont en fait des archives 7z.
+        std::fs::write(&path, b"7z\xbc\xaf\x27\x1c\x00\x04reste").unwrap();
+        let error = pages(&path).unwrap_err();
+        assert!(error.contains("archive illisible"), "{error}");
     }
 
     #[test]

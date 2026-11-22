@@ -3993,6 +3993,17 @@ a.link-more {
 	white-space: nowrap;
 }
 
+/* Raison de l'anomalie : le message du serveur (« archive illisible »…),
+   sous le chemin. C'est un diagnostic : il reste en monospace, un peu plus
+   lisible que le chemin mais moins que le titre. */
+.anomaly-reason {
+	color: var(--text);
+	opacity: 0.72;
+	font-size: 11.5px;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+
 .anomaly-row .nav-count {
 	flex: none;
 	margin-left: auto;

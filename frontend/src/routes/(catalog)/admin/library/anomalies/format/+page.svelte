@@ -47,6 +47,9 @@
 								<span class="anomaly-main">
 									<a href={readUrl(entry.rel)}>{entry.title}</a>
 									<code class="anomaly-path">{parentOf(entry.rel) || t('stats.root')}</code>
+									{#if entry.note}
+										<code class="anomaly-reason">{entry.note}</code>
+									{/if}
 								</span>
 								<span class="nav-count">
 									{formatLabel(entry.format)} · {formatBytes(entry.size)}

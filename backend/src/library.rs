@@ -32,6 +32,11 @@ pub struct BookInfo {
     /// Nombre de pages (nombre de chapitres pour un EPUB), `None` si le livre
     /// n'a pas pu être ouvert.
     pub pages: Option<usize>,
+    /// Pourquoi le livre ne s'ouvre pas, ou précision sur son format : le
+    /// message du format, **sans** le chemin (le catalogue l'affiche à côté).
+    /// Absent quand le livre s'ouvre normalement.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     /// Titre affiché : le nom sans extension.
     pub title: String,
 }
@@ -155,10 +160,14 @@ fn walk(root: &Path, dir: &Path, books: &mut Vec<BookInfo>, folders: &mut Vec<Fo
             None => String::new(),
         };
 
+        let counted = pages::open_stat(&path, format, meta.len(), stamp.unwrap_or(0));
         books.push(BookInfo {
             folder,
             title: title_of(&name),
-            pages: pages::count_stat(&path, format, meta.len(), stamp.unwrap_or(0)),
+            pages: counted.pages,
+            note: counted
+                .problem
+                .or_else(|| formats::module(format).note().map(str::to_string)),
             name,
             format: format.id(),
             readable: format.readable(),
