@@ -153,7 +153,7 @@
 
 <div class="page">
 	<section class="intro">
-		<a class="back-link" href="/admin/performance?tab=storage">‹ {t('perf.title')}</a>
+		<a class="back-link" href="/admin/performance/storage">‹ {t('perf.title')}</a>
 		<h1>{t('stats.title')}</h1>
 		<p>{t('stats.subtitle')}</p>
 	</section>

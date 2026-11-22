@@ -18,18 +18,23 @@
 		watchPerformance
 	} from '$lib/perf.svelte';
 
-	type Tab = 'ram' | 'cpu' | 'storage';
-	/** Onglet ouvert à l'arrivée : `?tab=storage` ramène à la bonne vue. */
-	const wanted = page.url.searchParams.get('tab');
-	let tab = $state<Tab>(
-		wanted === 'storage' || wanted === 'cpu' || wanted === 'ram' ? wanted : 'ram'
-	);
-
+	/**
+	 * Les onglets ont chacun leur adresse — `/admin/performance/ram`, `/cpu`,
+	 * `/storage` — pour qu'un lien se partage et que le retour arrière ramène au
+	 * bon onglet.
+	 */
 	const tabs = [
 		{ id: 'ram', label: 'perf.tab.ram' },
 		{ id: 'cpu', label: 'perf.tab.cpu' },
 		{ id: 'storage', label: 'perf.tab.storage' }
 	] as const;
+
+	type Tab = (typeof tabs)[number]['id'];
+
+	/** Onglet de l'URL ; `/admin/performance` sans suffixe ouvre la mémoire. */
+	const tab = $derived<Tab>(
+		tabs.some((entry) => entry.id === page.params.tab) ? (page.params.tab as Tab) : 'ram'
+	);
 
 	onMount(() => watchPerformance());
 
@@ -297,16 +302,15 @@
 	{:else}
 		<div class="tabs" role="tablist" aria-label={t('perf.tabs')}>
 			{#each tabs as entry (entry.id)}
-				<button
-					type="button"
+				<a
 					role="tab"
 					id="tab-{entry.id}"
+					href="/admin/performance/{entry.id}"
 					aria-selected={tab === entry.id}
 					aria-controls="panel-{entry.id}"
-					onclick={() => (tab = entry.id)}
 				>
 					{t(entry.label)}
-				</button>
+				</a>
 			{/each}
 		</div>
 

@@ -1903,7 +1903,8 @@ code {
 	border-bottom: 1px solid var(--line);
 }
 
-.tabs button {
+.tabs button,
+.tabs a {
 	margin-bottom: -1px;
 	padding: 9px 16px;
 	border-bottom: 2px solid transparent;
@@ -1913,16 +1914,19 @@ code {
 	letter-spacing: 0.04em;
 }
 
-.tabs button:hover {
+.tabs button:hover,
+.tabs a:hover {
 	color: var(--text);
 }
 
-.tabs button[aria-selected='true'] {
+.tabs button[aria-selected='true'],
+.tabs a[aria-selected='true'] {
 	border-bottom-color: var(--accent);
 	color: var(--accent);
 }
 
-.tabs button:focus-visible {
+.tabs button:focus-visible,
+.tabs a:focus-visible {
 	outline: 2px solid var(--accent);
 	outline-offset: -2px;
 	border-radius: 6px;
@@ -3290,7 +3294,8 @@ html:has(.drawer[open]) {
 	border-bottom: 1px solid var(--line);
 }
 
-.tabs button {
+.tabs button,
+.tabs a {
 	margin-bottom: -1px;
 	padding: 8px 12px;
 	border-bottom: 2px solid transparent;
@@ -3298,11 +3303,13 @@ html:has(.drawer[open]) {
 	font-size: 13.5px;
 }
 
-.tabs button:hover {
+.tabs button:hover,
+.tabs a:hover {
 	color: var(--text);
 }
 
-.tabs button[aria-selected='true'] {
+.tabs button[aria-selected='true'],
+.tabs a[aria-selected='true'] {
 	border-bottom-color: var(--accent);
 	color: var(--accent);
 }
