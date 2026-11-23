@@ -2001,12 +2001,25 @@ code {
 	height: auto;
 }
 
+/* Avant chargement, une planche n'a aucune hauteur : le flux serait vide,
+   le navigateur n'aurait rien à précharger et la suite du livre ne se
+   chargerait jamais (défilement « infini » bloqué à la première planche).
+   Le rapport d'aspect de la première planche chargée réserve la place des
+   autres ; chaque image reprend ensuite le sien. */
 .stream[data-mode='webtoon'] .page-view img {
 	position: static;
 	display: block;
 	width: 100%;
 	height: auto;
+	aspect-ratio: var(--page-aspect, 2 / 3);
+	object-fit: contain;
+	background: #0b0b0f;
+}
+
+.stream[data-mode='webtoon'] .page-view img.is-loaded {
+	aspect-ratio: auto;
 	object-fit: fill;
+	background: none;
 }
 
 /* PDF : une page dessinée sur un canvas, à la taille de l'écran ; zoomée, elle défile. */
@@ -2264,6 +2277,15 @@ code {
 		flex: none;
 		overflow: visible;
 		padding-right: 0;
+	}
+
+	/* La navigation prend sa hauteur réelle dans le panneau qui défile :
+	   sinon elle se comprime à la place restante et son contenu (qui ne défile
+	   plus) déborde sur le pied — les catégories passaient sous « en direct »,
+	   la version et la langue. */
+	.sidebar nav {
+		flex: 0 0 auto;
+		min-height: auto;
 	}
 
 	.sidebar-foot {
