@@ -17,6 +17,21 @@ export const install = $state({
 	installed: false
 });
 
+/** Mémoire de l'installation : l'onglet d'un navigateur ne peut pas savoir
+ *  qu'une application a été installée (pas de `getInstalledRelatedApps` sans
+ *  `related_applications`), mais l'événement `appinstalled` le dit une fois pour
+ *  toutes. On s'en souvient pour ne plus proposer « Installer » dans l'onglet. */
+const INSTALLED_KEY = 'easybook:installed';
+
+function remembered(): boolean {
+	try {
+		return localStorage.getItem(INSTALLED_KEY) === '1';
+	} catch {
+		// Stockage refusé : on ne se souvient de rien.
+		return false;
+	}
+}
+
 let promptEvent: InstallPrompt | null = null;
 let started = false;
 
@@ -28,7 +43,8 @@ export function startInstall(): void {
 	// quand elle tourne en plein écran depuis l'écran d'accueil.
 	install.installed =
 		window.matchMedia('(display-mode: standalone)').matches ||
-		(navigator as Navigator & { standalone?: boolean }).standalone === true;
+		(navigator as Navigator & { standalone?: boolean }).standalone === true ||
+		remembered();
 
 	window.addEventListener('beforeinstallprompt', (event) => {
 		event.preventDefault();
@@ -39,6 +55,11 @@ export function startInstall(): void {
 		promptEvent = null;
 		install.available = false;
 		install.installed = true;
+		try {
+			localStorage.setItem(INSTALLED_KEY, '1');
+		} catch {
+			// Sans stockage, la mémoire ne survit pas au rechargement.
+		}
 	});
 }
 
