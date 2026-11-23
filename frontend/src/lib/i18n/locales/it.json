@@ -534,8 +534,6 @@
 	"account.passkeys.created": "Creata il {date}",
 	"account.passkeys.lastUsed": "usata il {date}",
 	"account.passkeys.hint": "Suggerimento: aggiungere una passkey per dispositivo. La password resta come riserva.",
-	"account.passkeys.recommended": "Consigliato: aggiungere una passkey per accedere senza password.",
-	"account.passkeys.recommendedLink": "Aggiungi una passkey",
 	"account.identities.title": "Account {provider} collegati",
 	"account.identities.none": "Nessun account collegato.",
 	"account.identities.unlink": "Scollega",

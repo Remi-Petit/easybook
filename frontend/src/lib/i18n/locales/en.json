@@ -534,8 +534,6 @@
 	"account.passkeys.created": "Created {date}",
 	"account.passkeys.lastUsed": "used {date}",
 	"account.passkeys.hint": "Tip: add one passkey per device. Your password stays as a fallback.",
-	"account.passkeys.recommended": "Recommended: add a passkey to sign in without a password.",
-	"account.passkeys.recommendedLink": "Add a passkey",
 	"account.identities.title": "Linked {provider} accounts",
 	"account.identities.none": "No linked account.",
 	"account.identities.unlink": "Unlink",

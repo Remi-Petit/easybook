@@ -46,13 +46,13 @@
 	let canPasskey = $state<boolean | null>(null);
 
 	// Onglets du compte : chacun a son adresse (`/account/collection`, `/reading`,
-	// `/password`, `/passkeys`, `/sso`). Un onglet n'existe que si le serveur le
-	// propose : SSO avec un fournisseur, passkey avec WebAuthn.
+	// `/password`, `/sso`). Un onglet n'existe que si le serveur le propose : SSO
+	// avec un fournisseur. Les passkeys vivent dans l'onglet « Mot de passe » : ce
+	// sont deux façons de se connecter, pas deux sujets.
 	const labels = {
 		collection: 'account.tab.collection',
 		reading: 'account.tab.reading',
 		password: 'account.password.tab',
-		passkeys: 'account.passkeys.tab',
 		sso: 'users.type.sso'
 	} as const;
 	type Tab = keyof typeof labels;
@@ -60,13 +60,13 @@
 		'collection',
 		'reading',
 		'password',
-		...(data.session.passkey ? (['passkeys'] as const) : []),
 		...(oidc ? (['sso'] as const) : [])
 	]);
-	/** Onglet de l'URL ; `/account` sans suffixe ouvre la collection. */
-	const tab = $derived<Tab>(
-		tabs.includes(page.params.tab as Tab) ? (page.params.tab as Tab) : 'collection'
-	);
+	/** Onglet demandé par l'URL. L'ancienne adresse `/account/passkeys`, dont des
+	 *  liens peuvent encore exister, ouvre « Mot de passe » ; `/account` sans
+	 *  suffixe ouvre la collection. */
+	const asked = $derived(page.params.tab === 'passkeys' ? 'password' : page.params.tab);
+	const tab = $derived<Tab>(tabs.includes(asked as Tab) ? (asked as Tab) : 'collection');
 	const tabLabel = (id: Tab) => t(labels[id]);
 
 	async function tabKeys(event: KeyboardEvent) {
@@ -472,80 +472,77 @@
 								</button>
 							</div>
 						</form>
-						{#if data.session.passkey && canPasskey === true && user.passkeys.length === 0}
-							<p class="panel-hint">
-								{t('account.passkeys.recommended')}
-								<a href="/account/passkeys">{t('account.passkeys.recommendedLink')}</a>
-							</p>
-						{/if}
 					</section>
-				{:else if tab === 'passkeys'}
-					<section class="panel-card">
-						<h2>{t('account.passkeys.title')}</h2>
-						<p class="panel-hint">{t('account.passkeys.intro')}</p>
-						{#if canPasskey === null}
-							<p class="panel-hint">{t('status.connecting')}</p>
-						{:else if !canPasskey}
-							<p class="panel-hint">{t('account.passkeys.unsupported')}</p>
-						{:else}
-							{#if user.passkeys.length > 0}
-								<ul class="identity-list">
-									{#each user.passkeys as passkey (passkey.id)}
-										<li>
-											<div>
-												<strong>{passkey.name}</strong>
-												<span class="muted">
-													{t('account.passkeys.created', {
-														date: formatDate(passkey.created_at)
-													})}
-													{#if passkey.last_used_at}
-														· {t('account.passkeys.lastUsed', {
-															date: formatDate(passkey.last_used_at)
-														})}
-													{/if}
-												</span>
-											</div>
-											<button
-												type="button"
-												class="btn-plain"
-												onclick={() => removePasskey(passkey.id)}
-											>
-												{t('account.passkeys.remove')}
-											</button>
-										</li>
-									{/each}
-								</ul>
+					{#if data.session.passkey}
+						<!-- Les passkeys sont une autre façon de se connecter : elles vivent
+						     sous le mot de passe, dans le même onglet, pas à part. -->
+						<section class="panel-card">
+							<h2>{t('account.passkeys.title')}</h2>
+							<p class="panel-hint">{t('account.passkeys.intro')}</p>
+							{#if canPasskey === null}
+								<p class="panel-hint">{t('status.connecting')}</p>
+							{:else if !canPasskey}
+								<p class="panel-hint">{t('account.passkeys.unsupported')}</p>
 							{:else}
-								<p class="panel-hint">{t('account.passkeys.none')}</p>
-							{/if}
-							<form class="stack-form" method="post" onsubmit={addPasskey}>
-								<label class="field">
-									<span>{t('account.passkeys.name')}</span>
-									<input
-										bind:value={passkeyName}
-										maxlength="64"
-										autocomplete="off"
-										placeholder={t('account.passkeys.namePlaceholder')}
-									/>
-								</label>
-								{#if user.has_password}
-									<PasswordField
-										label={t('account.passkeys.current')}
-										bind:value={passkeyPassword}
-										autocomplete="current-password"
-										generable={false}
-										temporaryControls={false}
-									/>
+								{#if user.passkeys.length > 0}
+									<ul class="identity-list">
+										{#each user.passkeys as passkey (passkey.id)}
+											<li>
+												<div>
+													<strong>{passkey.name}</strong>
+													<span class="muted">
+														{t('account.passkeys.created', {
+															date: formatDate(passkey.created_at)
+														})}
+														{#if passkey.last_used_at}
+															· {t('account.passkeys.lastUsed', {
+																date: formatDate(passkey.last_used_at)
+															})}
+														{/if}
+													</span>
+												</div>
+												<button
+													type="button"
+													class="btn-plain"
+													onclick={() => removePasskey(passkey.id)}
+												>
+													{t('account.passkeys.remove')}
+												</button>
+											</li>
+										{/each}
+									</ul>
+								{:else}
+									<p class="panel-hint">{t('account.passkeys.none')}</p>
 								{/if}
-								<div>
-									<button type="submit" class="btn-main" disabled={passkeyBusy}>
-										{passkeyBusy ? t('account.passkeys.adding') : t('account.passkeys.add')}
-									</button>
-								</div>
-							</form>
-							<p class="panel-hint">{t('account.passkeys.hint')}</p>
-						{/if}
-					</section>
+								<form class="stack-form" method="post" onsubmit={addPasskey}>
+									<label class="field">
+										<span>{t('account.passkeys.name')}</span>
+										<input
+											bind:value={passkeyName}
+											maxlength="64"
+											autocomplete="off"
+											placeholder={t('account.passkeys.namePlaceholder')}
+										/>
+									</label>
+									{#if user.has_password}
+										<PasswordField
+											label={t('account.passkeys.current')}
+											bind:value={passkeyPassword}
+											autocomplete="current-password"
+											generable={false}
+											temporaryControls={false}
+										/>
+									{/if}
+									<div>
+										<button type="submit" class="btn-main" disabled={passkeyBusy}>
+											{passkeyBusy ? t('account.passkeys.adding') : t('account.passkeys.add')}
+										</button>
+									</div>
+								</form>
+								<p class="panel-hint">{t('account.passkeys.hint')}</p>
+							{/if}
+						</section>
+					{/if}
 				{:else if tab === 'sso' && oidc}
 					<section class="panel-card">
 						<h2>{t('account.identities.title', { provider: oidc.label })}</h2>

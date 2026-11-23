@@ -534,8 +534,6 @@
 	"account.passkeys.created": "Criada a {date}",
 	"account.passkeys.lastUsed": "utilizada a {date}",
 	"account.passkeys.hint": "Sugestão: adicione uma passkey por dispositivo. A palavra-passe continua a ser o recurso.",
-	"account.passkeys.recommended": "Recomendado: adicione uma passkey para iniciar sessão sem palavra-passe.",
-	"account.passkeys.recommendedLink": "Adicionar uma passkey",
 	"account.identities.title": "Contas {provider} associadas",
 	"account.identities.none": "Nenhuma conta associada.",
 	"account.identities.unlink": "Dissociar",

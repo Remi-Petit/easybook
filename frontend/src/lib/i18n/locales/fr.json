@@ -534,8 +534,6 @@
 	"account.passkeys.created": "Créée le {date}",
 	"account.passkeys.lastUsed": "utilisée le {date}",
 	"account.passkeys.hint": "Astuce : ajoutez une passkey par appareil. Votre mot de passe reste un recours.",
-	"account.passkeys.recommended": "Recommandé : ajoutez une passkey pour vous connecter sans mot de passe.",
-	"account.passkeys.recommendedLink": "Ajouter une passkey",
 	"account.identities.title": "Comptes {provider} liés",
 	"account.identities.none": "Aucun compte lié.",
 	"account.identities.unlink": "Délier",
