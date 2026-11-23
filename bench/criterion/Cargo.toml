@@ -1,0 +1,46 @@
+[package]
+name = "easybook-criterion"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Micro-benchmarks in-process du CPU d'easybook. Le crate vit hors de
+# `backend/` pour que criterion et les fixtures n'entrent jamais dans l'image :
+# `backend` n'est ici qu'une dépendance de chemin, en lecture seule.
+
+[dependencies]
+easybook = { path = "../../backend" }
+
+[dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = [
+    "cargo_bench_support",
+    "html_reports",
+    "plotters",
+] }
+# Fixtures : elles sont générées à la volée, aucun binaire n'est versionné.
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+tempfile = "3"
+# Mêmes archives que le serveur lit : c'est `zip` 9 des deux côtés.
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+
+# Un fichier par famille de mesures : chacun se lance seul
+# (`cargo bench --bench resize`) et se lit seul dans le rapport.
+[[bench]]
+name = "rewrite"
+path = "benches/rewrite.rs"
+harness = false
+
+[[bench]]
+name = "resize"
+path = "benches/resize.rs"
+harness = false
+
+[[bench]]
+name = "archive"
+path = "benches/archive.rs"
+harness = false
+
+[[bench]]
+name = "library"
+path = "benches/library.rs"
+harness = false
