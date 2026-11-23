@@ -20,6 +20,11 @@ criterion = { version = "0.8", default-features = false, features = [
 # Fixtures : elles sont générées à la volée, aucun binaire n'est versionné.
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 tempfile = "3"
+# Étapes du pipeline d'images (`benches/stages.rs`) : mêmes crates et mêmes
+# versions que `backend/`, sinon la décomposition ne parle plus du même code.
+fast_image_resize = "6"
+jpeg-encoder = { version = "0.7", features = ["simd"] }
+zune-jpeg = "0.5"
 # Mêmes archives que le serveur lit : c'est `zip` 9 des deux côtés.
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
@@ -38,6 +43,11 @@ harness = false
 [[bench]]
 name = "archive"
 path = "benches/archive.rs"
+harness = false
+
+[[bench]]
+name = "stages"
+path = "benches/stages.rs"
 harness = false
 
 [[bench]]
