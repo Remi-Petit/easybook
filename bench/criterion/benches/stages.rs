@@ -86,7 +86,9 @@ fn stages(c: &mut Criterion) {
     // 2. Réduction : le filtre décide du coût. Catmull-Rom est celui du code ;
     //    `Hamming` est annoncé par `fast_image_resize` au prix de `Bilinear`
     //    pour une qualité proche du bicubique — le candidat à mesurer.
-    let rgb = image::load_from_memory(&page).expect("décodage").into_rgb8();
+    let rgb = image::load_from_memory(&page)
+        .expect("décodage")
+        .into_rgb8();
     for (name, alg) in [
         ("Lanczos3", ResizeAlg::Convolution(FilterType::Lanczos3)),
         ("CatmullRom", ResizeAlg::Convolution(FilterType::CatmullRom)),
@@ -95,14 +97,7 @@ fn stages(c: &mut Criterion) {
         ("Nearest", ResizeAlg::Nearest),
     ] {
         group.bench_with_input(BenchmarkId::new("scale", name), &alg, |b, alg| {
-            b.iter(|| {
-                black_box(scale(
-                    black_box(&rgb),
-                    target_width,
-                    target_height,
-                    *alg,
-                ))
-            });
+            b.iter(|| black_box(scale(black_box(&rgb), target_width, target_height, *alg)));
         });
     }
 
@@ -120,20 +115,24 @@ fn stages(c: &mut Criterion) {
         small.as_raw().len() / 1_048_576
     );
     for quality in [70u8, 80, 90] {
-        group.bench_with_input(BenchmarkId::new("encode", quality), &quality, |b, quality| {
-            b.iter(|| {
-                let mut out = Vec::new();
-                jpeg_encoder::Encoder::new(&mut out, *quality)
-                    .encode(
-                        small.as_raw(),
-                        u16::try_from(target_width).expect("largeur"),
-                        u16::try_from(target_height).expect("hauteur"),
-                        jpeg_encoder::ColorType::Rgb,
-                    )
-                    .expect("encodage");
-                black_box(out)
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("encode", quality),
+            &quality,
+            |b, quality| {
+                b.iter(|| {
+                    let mut out = Vec::new();
+                    jpeg_encoder::Encoder::new(&mut out, *quality)
+                        .encode(
+                            small.as_raw(),
+                            u16::try_from(target_width).expect("largeur"),
+                            u16::try_from(target_height).expect("hauteur"),
+                            jpeg_encoder::ColorType::Rgb,
+                        )
+                        .expect("encodage");
+                    black_box(out)
+                });
+            },
+        );
     }
 
     group.finish();

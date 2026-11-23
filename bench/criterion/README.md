@@ -84,14 +84,41 @@ Pour des chiffres utilisables, la machine doit être au repos : pas de
 | Fichier | Mesure | À surveiller |
 | --- | --- | --- |
 | `benches/rewrite.rs` | `rewrite::html` / `rewrite::css` sur un chapitre et une feuille de style | croissance linéaire avec la taille du document |
-| `benches/resize.rs` | `resize::shrink_page` : décodage JPEG, SIMD, ré-encodage | le chemin `1900 -> 800` (décodage direct à l'échelle 1/4) doit battre le `1200 -> 800` à pixels égaux |
+| `benches/resize.rs` | `resize::shrink_page` : décodage JPEG, SIMD, ré-encodage | le décodage porte ~60 % du coût ; une planche plus grande coûte toujours plus cher, le décodage à l'échelle ne fait que réduire la facture d'un décodage complet |
 | `benches/archive.rs` | `archive::open` (réservoir chaud), `read`, `read_named` | le coût fixe par requête de page |
 | `benches/library.rs` | `library::scan` sur 100 et 1 000 livres | croissance linéaire avec le nombre de livres |
+| `benches/stages.rs` | chaque étape de la planche séparément (décodage, réduction, encodage) | sert à choisir **quoi** optimiser — pas une référence |
 
 Les fixtures sont **générées** à la volée (`benches/common/mod.rs`) : aucune
 planche binaire au dépôt, mêmes entrées à chaque run. Les images sont des
-dégradés bruités de taille réaliste (≈ 650 Ko pour 1200 x 1884), pas des aplats
+dégradés bruités de taille réaliste (≈ 700 Ko pour 1200 x 1884), pas des aplats
 qui se décodent trop vite.
+
+## Décomposer le coût d'une planche
+
+`benches/stages.rs` mesure chaque étape séparément, avec les mêmes crates et les
+mêmes versions que `backend/` (à remettre en phase si la chaîne de `resize.rs`
+change) :
+
+| étape (1200 x 1884 → 800 x 1256) | mesuré |
+| --- | --- |
+| en-tête (`image_size`) | 26 µs |
+| décodage — `image`, et `zune-jpeg` : **identique** | 18,4 ms |
+| réduction — `fast_image_resize`, CatmullRom | 6 - 13 ms |
+| encodage JPEG — q80, déjà en 4:2:0 sous la qualité 90 | 8 - 17 ms |
+
+Deux lectures utiles : le **décodage domine**, et deux décodeurs indépendants
+donnanent le même temps — l'étape est donc limitée par la bande passante
+mémoire (écrire 6,8 Mo de pixels), pas par l'algorithme. Changer de décodeur
+n'apporterait rien.
+
+**Ces chiffres ont été relevés avec 13 conteneurs Docker actifs** : décodage et
+encodage tiennent d'un run à l'autre, la réduction varie du simple au double.
+Pour comparer des filtres, arrêter les conteneurs et épingler les cœurs :
+
+```bash
+taskset -c 8-13 cargo bench --bench stages -- stages/scale
+```
 
 ## Ajouter un banc
 
