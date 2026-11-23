@@ -2430,13 +2430,6 @@ code {
 	}
 }
 
-@media (pointer: coarse) {
-	.icon-btn {
-		width: 40px;
-		height: 40px;
-	}
-}
-
 /* ── Administration : performances ───────────────────────────────────────── */
 
 .tabs {
@@ -4265,6 +4258,9 @@ a.link-more {
 
 .anomaly-list {
 	display: grid;
+	/* `minmax(0, 1fr)` : sans lui, une grille prend la largeur *minimale* de son
+	   contenu (un nom de fichier long) et déborde de l'écran sur téléphone. */
+	grid-template-columns: minmax(0, 1fr);
 	gap: 14px;
 }
 
@@ -4326,6 +4322,7 @@ a.link-more {
 }
 
 .anomaly-card .history-list {
+	grid-template-columns: minmax(0, 1fr);
 	margin: 0;
 	padding: 0 16px 4px;
 }
@@ -4336,8 +4333,16 @@ a.link-more {
 
 .anomaly-main {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: 2px;
 	min-width: 0;
+}
+
+/* Titre d'un livre en doublon : il passe à la ligne plutôt que d'élargir la
+   page (noms de fichiers sans espace, ex. `Tome01_Digital-2100_HD.pdf`). */
+.anomaly-main a {
+	min-width: 0;
+	overflow-wrap: anywhere;
 }
 
 .anomaly-path {
@@ -4628,5 +4633,71 @@ a.link-more {
 
 	.offline-job .storage-bar {
 		grid-column: 1 / -1;
+	}
+}
+/* ── Tactile : des cibles qui se touchent ─────────────────────────────────── */
+
+/* Sur un doigt, « 26 px » se rate. Ces règles sont volontairement en fin de
+   feuille : elles doivent l'emporter sur les tailles de base définies plus haut
+   (l'icône ne change pas, seule la zone touchable grandit). */
+@media (pointer: coarse) {
+	.icon-btn {
+		width: 40px;
+		height: 40px;
+	}
+
+	/* Pastilles d'une carte : le menu et l'épingle. Le menu de carte remonte
+	   d'autant pour rester au-dessus des boutons. */
+	.card-dots,
+	.card-pin {
+		width: 36px;
+		height: 36px;
+	}
+
+	.card-pop {
+		bottom: 54px;
+	}
+
+	/* Boutons pleins, discrets et danger : hauteur minimale confortable. */
+	.btn-main,
+	.btn-plain,
+	.btn-danger {
+		min-height: 40px;
+		padding: 9px 16px;
+	}
+
+	/* Retour, fil d'Ariane, liens discrets : une rangée plus haute, sans changer
+	   la typographie. */
+	.back,
+	.back-link,
+	.crumbs a {
+		padding-block: 8px;
+	}
+
+	/* Logo de l'application. */
+	.mark {
+		padding-block: 5px;
+	}
+
+	/* Onglets : la barre garde sa ligne, la cible grandit. */
+	.tabs button,
+	.tabs a {
+		min-height: 40px;
+	}
+
+	/* Œil du mot de passe : 36 px, et le champ lui laisse la place. */
+	.eye {
+		width: 36px;
+		height: 36px;
+	}
+
+	.input-eye input {
+		padding-right: 46px;
+	}
+
+	/* Titre d'un livre dans une ligne d'historique ou d'anomalie. */
+	.anomaly-main a,
+	.history-list a {
+		padding-block: 2px;
 	}
 }
