@@ -12,6 +12,7 @@
 	import { readingZone } from './zones';
 	import { prefs, cycleScale, setReadingDirection } from './prefs.svelte';
 	import { arrowStep, isEditable, isPlainKey, shortcutAction } from './shortcuts';
+	import { watchSwipes } from './swipe';
 	import { PDF_WORKER_URL, installPromiseWithResolvers } from './pdf-compat';
 
 	let {
@@ -202,7 +203,21 @@
 			else if (zone === 'toggle') onToggleChrome();
 		};
 		host.addEventListener('click', handler);
-		return () => host.removeEventListener('click', handler);
+		// Balayage : il tourne la page (le tome voisin est proposé au-delà des bords),
+		// sauf si la page est zoomée — le doigt fait alors défiler la page.
+		const stop = watchSwipes(
+			host,
+			(step) => {
+				if (zoomStep > 0) return;
+				if (step === 'next') go(index + 1);
+				else go(index - 1);
+			},
+			() => rtl
+		);
+		return () => {
+			host.removeEventListener('click', handler);
+			stop();
+		};
 	});
 
 	// Dessin de la page courante. Un nouveau dessin annule le précédent.

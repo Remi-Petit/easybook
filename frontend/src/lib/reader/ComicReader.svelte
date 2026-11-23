@@ -8,6 +8,7 @@
 	import { spreadAt } from './prefs';
 	import { prefs, cycleLayout, cycleScale, setMode, setReadingDirection } from './prefs.svelte';
 	import { arrowStep, isEditable, isPlainKey, shortcutAction } from './shortcuts';
+	import { watchSwipes } from './swipe';
 	import PageThumbs from './PageThumbs.svelte';
 
 	let {
@@ -179,6 +180,21 @@
 	});
 
 	/**
+	 * Une planche chargée donne son rapport d'aspect aux suivantes : sans place
+	 * réservée, une image encore « lente » n'aurait aucune hauteur, le flux ne
+	 * défilerait pas et le navigateur ne chargerait jamais la suite.
+	 */
+	function pageLoaded(event: Event) {
+		const image = event.currentTarget as HTMLImageElement;
+		image.classList.add('is-loaded');
+		const host = stream;
+		if (!host || host.style.getPropertyValue('--page-aspect')) return;
+		if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+			host.style.setProperty('--page-aspect', `${image.naturalWidth} / ${image.naturalHeight}`);
+		}
+	}
+
+	/**
 	 * Clic dans la zone de lecture : le tiers gauche recule, le droit avance, le
 	 * milieu montre ou cache l'en-tête et le pied de page. En lecture de droite
 	 * à gauche, les tiers s'inversent (la suite est à gauche).
@@ -198,7 +214,24 @@
 		if (!host) return;
 		const handler = (event: MouseEvent) => onClick(event);
 		host.addEventListener('click', handler);
-		return () => host.removeEventListener('click', handler);
+		// Balayage : en page à page il tourne la planche (et propose le tome voisin
+		// au-delà des bords) ; dans les modes continus l'axe vertical est pris par
+		// le défilement, le balayage horizontal change donc de livre.
+		const stop = watchSwipes(
+			host,
+			(step) => {
+				if (mode === 'paged') {
+					if (step === 'next') next();
+					else previous();
+				} else if (step === 'next') onNextBook?.();
+				else onPreviousBook?.();
+			},
+			() => rtl
+		);
+		return () => {
+			host.removeEventListener('click', handler);
+			stop();
+		};
 	});
 
 	// Préchargement de la planche suivante : le passage à la page suivante est
@@ -280,6 +313,7 @@
 								alt={t('reader.pageAlt', { index: page + 1, total: pages })}
 								loading="lazy"
 								decoding="async"
+								onload={pageLoaded}
 							/>
 						</div>
 					{/each}

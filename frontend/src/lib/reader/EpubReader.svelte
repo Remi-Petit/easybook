@@ -5,6 +5,7 @@
 	import { errorText } from '$lib/problems';
 	import { flushPositions, reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
+	import { watchSwipes } from './swipe';
 	import { arrowStep, isEditable, isPlainKey, shortcutAction } from './shortcuts';
 
 	let {
@@ -85,7 +86,19 @@
 		if (!host) return;
 		const handler = (event: MouseEvent) => onClick(event);
 		host.addEventListener('click', handler);
-		return () => host.removeEventListener('click', handler);
+		// Balayage : le chapitre suivant ou précédent, et le tome voisin au-delà.
+	 	const stop = watchSwipes(host, (step) => {
+			if (tocOpen) {
+				tocOpen = false;
+				return;
+			}
+			if (step === 'next') go(index + 1);
+			else go(index - 1);
+		});
+		return () => {
+			host.removeEventListener('click', handler);
+			stop();
+		};
 	});
 
 	onMount(() => {
