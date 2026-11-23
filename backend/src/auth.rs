@@ -1010,11 +1010,6 @@ fn passkey_error(e: PasskeyError, login: bool) -> Response {
 }
 
 #[derive(Deserialize)]
-struct PasskeyLoginBody {
-    email: String,
-}
-
-#[derive(Deserialize)]
 struct PasskeyNameBody {
     #[serde(default)]
     name: String,
@@ -1023,11 +1018,13 @@ struct PasskeyNameBody {
     current: String,
 }
 
-/// `POST /api/auth/passkey/login/begin` — défi de connexion pour ce compte.
+/// `POST /api/auth/passkey/login/begin` — défi de connexion.
+///
+/// Aucun corps : la passkey est **découvrable**, l'authentificateur sait à quel
+/// compte elle appartient et le serveur l'apprend à la fin de la cérémonie.
 async fn passkey_login_begin(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(body): Json<PasskeyLoginBody>,
 ) -> Result<Response, Response> {
     let auth = auth_of(&state)?;
     let key = format!("pk|{}", client_key(&headers));
@@ -1039,31 +1036,9 @@ async fn passkey_login_begin(
         return Err(response);
     }
 
-    let email = body.email.trim().to_lowercase();
-    let user = db(&auth, move |accounts| accounts.user_by_email(&email))
-        .await?
-        .map_err(account_error)?;
-    let Some(user) = user.filter(|user| !user.disabled) else {
-        auth.throttle.failure(&key);
-        return Err(error(StatusCode::UNAUTHORIZED, "invalid_credentials"));
-    };
-    let user_id = user.id.clone();
-    let rows = db(&auth, move |accounts| accounts.passkeys_of(&user_id))
-        .await?
-        .map_err(account_error)?;
-    if rows.is_empty() {
-        auth.throttle.failure(&key);
-        return Err(error(StatusCode::UNAUTHORIZED, "invalid_credentials"));
-    }
-    let creds: Vec<Passkey> = rows
-        .iter()
-        .map(|row| serde_json::from_str(&row.passkey))
-        .collect::<Result<_, _>>()
-        .map_err(internal)?;
-
     let (options, token) = auth
         .passkeys
-        .begin_authentication(&headers, &user.id, &creds)
+        .begin_discoverable_authentication(&headers)
         .map_err(|e| passkey_error(e, true))?;
     Ok((
         [(header::SET_COOKIE, passkey_cookie(&headers, &token))],
@@ -1091,17 +1066,14 @@ async fn passkey_login_finish(
     let token = cookie_value(&headers, PASSKEY_COOKIE);
     let pending = auth
         .passkeys
-        .take_authentication(token.as_deref())
+        .take_discoverable(token.as_deref())
         .map_err(|e| passkey_error(e, true))?;
 
-    // La passkey doit appartenir à ce compte et être celle que le navigateur a
-    // annoncée : on la charge avant de vérifier la signature.
+    // Aucun compte n'a été annoncé : c'est la passkey présentée par le
+    // navigateur qui le désigne. On la charge avant de vérifier la signature.
     let credential_id = credential.raw_id.clone();
-    let user_id = pending.user_id.clone();
-    let stored = db(&auth, {
-        let user_id = user_id.clone();
-        let credential_id = credential_id.clone();
-        move |accounts| accounts.passkey_of(&user_id, credential_id.as_ref())
+    let stored = db(&auth, move |accounts| {
+        accounts.passkey_by_credential(credential_id.as_ref())
     })
     .await?
     .map_err(account_error)?;
@@ -1111,11 +1083,12 @@ async fn passkey_login_finish(
         return Err(error(StatusCode::UNAUTHORIZED, "invalid_credentials"));
     };
 
-    let result = match pending.finish(&credential) {
+    let mut passkey: Passkey = serde_json::from_str(&stored.passkey).map_err(internal)?;
+    let result = match pending.finish(&credential, &passkey) {
         Ok(result) => result,
         Err(e) => {
             auth.throttle.failure(&key);
-            let (failed, meta) = (user_id.clone(), session_meta(&headers, "passkey"));
+            let (failed, meta) = (stored.user_id.clone(), session_meta(&headers, "passkey"));
             if let Ok(Ok(Some(id))) = db(&auth, move |accounts| match accounts.user(&failed)? {
                 Some(user) => {
                     accounts.log_failed_login(user.email.as_deref().unwrap_or_default(), &meta)
@@ -1138,8 +1111,6 @@ async fn passkey_login_finish(
     // d'appareil (trousseau synchronisé), on garde son nouvel état.
     let ttl = auth.session_ttl;
     let (user, session) = db(&auth, move |accounts| {
-        let mut passkey: Passkey = serde_json::from_str(&stored.passkey)
-            .map_err(|e| AccountError::Internal(e.to_string()))?;
         if passkey.update_credential(&result).is_none() {
             return Err(AccountError::Internal(
                 "passkey : identifiant de credential incohérent".into(),

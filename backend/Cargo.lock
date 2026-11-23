@@ -884,6 +884,7 @@ dependencies = [
  "unrar",
  "uuid",
  "webauthn-rs",
+ "webauthn-rs-proto",
  "weezl 0.2.1",
  "zip",
 ]

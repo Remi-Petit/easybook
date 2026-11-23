@@ -487,7 +487,6 @@
 	"auth.error.passkey_taken": "Dieser Passkey ist bereits einem Konto zugeordnet.",
 	"auth.error.passkey_cancelled": "Vorgang abgebrochen.",
 	"auth.error.passkey_exists": "Dieser Passkey ist auf diesem Gerät bereits registriert.",
-	"auth.error.passkey_email_required": "Geben Sie zuerst Ihre E-Mail-Adresse ein und verwenden Sie dann Ihren Passkey.",
 	"account.title": "Mein Konto",
 	"account.role.admin": "Administrator",
 	"account.role.user": "Leser",

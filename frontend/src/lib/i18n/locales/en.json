@@ -485,7 +485,6 @@
 	"auth.error.passkey_taken": "This passkey is already registered to an account.",
 	"auth.error.passkey_cancelled": "Operation cancelled.",
 	"auth.error.passkey_exists": "This passkey is already registered on this device.",
-	"auth.error.passkey_email_required": "Enter your email address first, then use your passkey.",
 	"account.title": "My account",
 	"account.role.admin": "Administrator",
 	"account.role.user": "Reader",

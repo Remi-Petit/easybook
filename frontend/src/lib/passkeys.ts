@@ -170,13 +170,14 @@ export async function registerPasskey(
 }
 
 /**
- * Se connecte avec la passkey de ce compte. L'adresse est nécessaire pour que
- * le navigateur ne propose que les passkeys de ce compte.
+ * Se connecte avec une passkey de l'appareil. Aucune adresse à saisir : les
+ * passkeys sont découvrables, l'authentificateur sait à quel compte elles
+ * appartiennent et le serveur le lit dans la réponse.
  */
-export async function loginWithPasskey(email: string): Promise<ApiResult<User>> {
+export async function loginWithPasskey(): Promise<ApiResult<User>> {
 	let credential: Credential | null;
 	try {
-		const begin = await call<RequestJson>('POST', '/api/auth/passkey/login/begin', { email });
+		const begin = await call<RequestJson>('POST', '/api/auth/passkey/login/begin');
 		if (!begin.ok) return begin;
 		credential = await navigator.credentials.get({
 			publicKey: decodeRequestOptions(begin.data)

@@ -1289,6 +1289,22 @@ impl Accounts {
             .optional()?)
     }
 
+    /// La passkey portant cet identifiant, **quel que soit son compte**.
+    ///
+    /// C'est la seule chose que le navigateur annonce quand la connexion est
+    /// découvrable : aucun compte n'a été désigné avant la cérémonie.
+    /// L'identifiant est unique (contrainte `UNIQUE` de la table).
+    pub fn passkey_by_credential(&self, credential_id: &[u8]) -> Result<Option<StoredPasskey>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {PASSKEY_COLUMNS} FROM passkeys WHERE credential_id = ?1"),
+                params![credential_id],
+                passkey_from,
+            )
+            .optional()?)
+    }
+
     /// Enregistre l'état mis à jour d'une passkey (compteur anti-rejeu, état de
     /// sauvegarde) après une connexion réussie.
     pub fn touch_passkey(&self, user_id: &str, id: &str, passkey: &str) -> Result<()> {
@@ -1818,6 +1834,13 @@ mod tests {
         let list = store.passkeys_of(&alice.id).unwrap();
         assert_eq!(list.len(), 2);
         assert!(list.iter().any(|row| row.credential_id == b"cred-1"));
+
+        // La connexion découvrable ne connaît pas le compte : on retrouve la
+        // passkey par son seul identifiant, et rien d'autre.
+        let found = store.passkey_by_credential(b"cred-1").unwrap().unwrap();
+        assert_eq!(found.user_id, alice.id);
+        assert_eq!(found.name, "Portable");
+        assert!(store.passkey_by_credential(b"inconnu").unwrap().is_none());
 
         store
             .touch_passkey(&alice.id, &first.id, "{\"état\":1}")

@@ -294,7 +294,6 @@ export const ERROR_CODES = [
 	'passkey_taken',
 	'passkey_cancelled',
 	'passkey_exists',
-	'passkey_email_required',
 	'unreachable'
 ] as const;
 

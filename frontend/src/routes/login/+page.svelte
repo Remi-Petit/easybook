@@ -59,18 +59,14 @@
 	}
 
 	/**
-	 * Connexion par passkey : l'adresse sert à ne proposer que les passkeys de
-	 * ce compte, puis le navigateur demande le code ou la biométrie.
+	 * Connexion par passkey : aucune adresse à saisir, l'authentificateur choisit
+	 * la clé et demande le code ou la biométrie.
 	 */
 	async function withPasskey() {
 		if (busy) return;
-		if (!email.trim()) {
-			failure = 'passkey_email_required';
-			return;
-		}
 		busy = true;
 		failure = null;
-		const result = await loginWithPasskey(email.trim());
+		const result = await loginWithPasskey();
 		if (result.ok) {
 			location.assign(next);
 			return;
