@@ -26,7 +26,7 @@ pub const MIN_PASSWORD: usize = 8;
 pub const MAX_PASSWORD: usize = 256;
 
 /// Version du schéma (`PRAGMA user_version`).
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 
 const SCHEMA: &str = "
 CREATE TABLE users (
@@ -82,6 +82,20 @@ CREATE TABLE link_tokens (
     user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL
 );
+
+-- Passkeys (WebAuthn) : la clé publique et son état, tels que la bibliothèque
+-- WebAuthn les sérialise. `credential_id` n'est qu'un index de recherche ;
+-- `passkey` fait foi (il porte aussi le compteur anti-rejeu).
+CREATE TABLE passkeys (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    credential_id BLOB NOT NULL UNIQUE,
+    passkey       TEXT NOT NULL,
+    created_at    INTEGER NOT NULL,
+    last_used_at  INTEGER
+);
+CREATE INDEX passkeys_user ON passkeys (user_id);
 ";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +146,28 @@ pub struct Identity {
     pub subject: String,
     pub email: Option<String>,
     pub created_at: i64,
+}
+
+/// Passkey d'un compte, telle que l'interface l'affiche (sans la clé publique).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PasskeyInfo {
+    pub id: String,
+    pub name: String,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
+}
+
+/// Passkey telle que la base la garde : l'état WebAuthn sérialisé reste opaque
+/// pour ce module (`passkeys.rs` le relit).
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredPasskey {
+    pub id: String,
+    pub user_id: String,
+    pub name: String,
+    pub credential_id: Vec<u8>,
+    pub passkey: String,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
 }
 
 /// D'où vient une connexion : adresse, navigateur, et par quel moyen.
@@ -237,6 +273,8 @@ pub enum AccountError {
     LastAdmin,
     /// Retirer la dernière façon de se connecter verrouillerait le compte.
     LastCredential,
+    /// Cette passkey est déjà enregistrée (sur ce compte ou un autre).
+    PasskeyTaken,
     Internal(String),
 }
 
@@ -253,6 +291,7 @@ impl AccountError {
             Self::NotFound => "not_found",
             Self::LastAdmin => "last_admin",
             Self::LastCredential => "last_credential",
+            Self::PasskeyTaken => "passkey_taken",
             Self::Internal(_) => "internal",
         }
     }
@@ -428,6 +467,20 @@ fn identity_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<Identity> {
     })
 }
 
+const PASSKEY_COLUMNS: &str = "id, user_id, name, credential_id, passkey, created_at, last_used_at";
+
+fn passkey_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredPasskey> {
+    Ok(StoredPasskey {
+        id: row.get(0)?,
+        user_id: row.get(1)?,
+        name: row.get(2)?,
+        credential_id: row.get(3)?,
+        passkey: row.get(4)?,
+        created_at: row.get(5)?,
+        last_used_at: row.get(6)?,
+    })
+}
+
 fn is_unique_violation(e: &rusqlite::Error) -> bool {
     matches!(
         e,
@@ -546,6 +599,23 @@ impl Accounts {
             )?;
             conn.pragma_update(None, "user_version", 5)?;
             version = 5;
+        }
+        if version == 5 {
+            // v6 : passkeys (WebAuthn).
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS passkeys (
+                     id            TEXT PRIMARY KEY,
+                     user_id       TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+                     name          TEXT NOT NULL,
+                     credential_id BLOB NOT NULL UNIQUE,
+                     passkey       TEXT NOT NULL,
+                     created_at    INTEGER NOT NULL,
+                     last_used_at  INTEGER
+                 );
+                 CREATE INDEX IF NOT EXISTS passkeys_user ON passkeys (user_id);",
+            )?;
+            conn.pragma_update(None, "user_version", 6)?;
+            version = 6;
         }
         if version != SCHEMA_VERSION {
             return Err(AccountError::Internal(format!(
@@ -1139,10 +1209,141 @@ impl Accounts {
             [user_id],
             |row| row.get(0),
         )?;
-        if !user.has_password && count <= 1 {
+        let passkeys: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM passkeys WHERE user_id = ?1",
+            [user_id],
+            |row| row.get(0),
+        )?;
+        if !user.has_password && count + passkeys <= 1 {
             return Err(AccountError::LastCredential);
         }
         conn.execute("DELETE FROM identities WHERE id = ?1", [identity_id])?;
+        Ok(())
+    }
+
+    // ── Passkeys (WebAuthn) ──────────────────────────────────────────────
+
+    /// Enregistre une passkey vérifiée. Refusé si son identifiant de
+    /// credential existe déjà (il ne peut appartenir qu'à un seul compte).
+    pub fn add_passkey(
+        &self,
+        user_id: &str,
+        name: &str,
+        credential_id: &[u8],
+        passkey: &str,
+    ) -> Result<PasskeyInfo> {
+        let cleaned: String = name.chars().filter(|c| !c.is_control()).collect();
+        let cleaned = cleaned.trim();
+        let name: String = if cleaned.is_empty() {
+            "Passkey".to_string()
+        } else {
+            cleaned.chars().take(64).collect()
+        };
+        let conn = self.conn();
+        if fetch_user(&conn, user_id)?.is_none() {
+            return Err(AccountError::NotFound);
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let created_at = now();
+        let inserted = conn.execute(
+            "INSERT INTO passkeys (id, user_id, name, credential_id, passkey, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, user_id, name, credential_id, passkey, created_at],
+        );
+        match inserted {
+            Ok(_) => Ok(PasskeyInfo {
+                id,
+                name,
+                created_at,
+                last_used_at: None,
+            }),
+            Err(e) if is_unique_violation(&e) => Err(AccountError::PasskeyTaken),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Les passkeys d'un compte, la plus récente d'abord.
+    pub fn passkeys_of(&self, user_id: &str) -> Result<Vec<StoredPasskey>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(&format!(
+            "SELECT {PASSKEY_COLUMNS} FROM passkeys WHERE user_id = ?1
+             ORDER BY created_at DESC, id DESC"
+        ))?;
+        Ok(statement
+            .query_map([user_id], passkey_from)?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// La passkey de ce compte portant cet identifiant de credential.
+    pub fn passkey_of(&self, user_id: &str, credential_id: &[u8]) -> Result<Option<StoredPasskey>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!(
+                    "SELECT {PASSKEY_COLUMNS} FROM passkeys
+                     WHERE user_id = ?1 AND credential_id = ?2"
+                ),
+                params![user_id, credential_id],
+                passkey_from,
+            )
+            .optional()?)
+    }
+
+    /// La passkey portant cet identifiant, **quel que soit son compte**.
+    ///
+    /// C'est la seule chose que le navigateur annonce quand la connexion est
+    /// découvrable : aucun compte n'a été désigné avant la cérémonie.
+    /// L'identifiant est unique (contrainte `UNIQUE` de la table).
+    pub fn passkey_by_credential(&self, credential_id: &[u8]) -> Result<Option<StoredPasskey>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {PASSKEY_COLUMNS} FROM passkeys WHERE credential_id = ?1"),
+                params![credential_id],
+                passkey_from,
+            )
+            .optional()?)
+    }
+
+    /// Enregistre l'état mis à jour d'une passkey (compteur anti-rejeu, état de
+    /// sauvegarde) après une connexion réussie.
+    pub fn touch_passkey(&self, user_id: &str, id: &str, passkey: &str) -> Result<()> {
+        let changed = self.conn().execute(
+            "UPDATE passkeys SET passkey = ?3, last_used_at = ?4 WHERE id = ?1 AND user_id = ?2",
+            params![id, user_id, passkey, now()],
+        )?;
+        if changed == 0 {
+            return Err(AccountError::NotFound);
+        }
+        Ok(())
+    }
+
+    /// Retire une passkey. Refusé si c'était la dernière façon de se connecter.
+    pub fn delete_passkey(&self, user_id: &str, id: &str) -> Result<()> {
+        let conn = self.conn();
+        let user = fetch_user(&conn, user_id)?.ok_or(AccountError::NotFound)?;
+        let owned: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM passkeys WHERE id = ?1 AND user_id = ?2)",
+            [id, user_id],
+            |row| row.get(0),
+        )?;
+        if !owned {
+            return Err(AccountError::NotFound);
+        }
+        let identities: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM identities WHERE user_id = ?1",
+            [user_id],
+            |row| row.get(0),
+        )?;
+        let passkeys: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM passkeys WHERE user_id = ?1",
+            [user_id],
+            |row| row.get(0),
+        )?;
+        if !user.has_password && identities == 0 && passkeys <= 1 {
+            return Err(AccountError::LastCredential);
+        }
+        conn.execute("DELETE FROM passkeys WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -1613,6 +1814,79 @@ mod tests {
             store.unlink_identity(&alice.id, &only.id).unwrap_err(),
             AccountError::NotFound
         );
+    }
+
+    #[test]
+    fn passkeys_are_stored_listed_and_removed() {
+        let store = store();
+        let alice = user(&store, "alice", Role::User);
+        let first = store
+            .add_passkey(&alice.id, "Portable", b"cred-1", "{}")
+            .unwrap();
+        assert_eq!(first.name, "Portable");
+        assert_eq!(first.last_used_at, None);
+        // Le nom vide prend un libellé par défaut, et les caractères de contrôle partent.
+        let second = store
+            .add_passkey(&alice.id, "  \u{7}", b"cred-2", "{}")
+            .unwrap();
+        assert_eq!(second.name, "Passkey");
+
+        let list = store.passkeys_of(&alice.id).unwrap();
+        assert_eq!(list.len(), 2);
+        assert!(list.iter().any(|row| row.credential_id == b"cred-1"));
+
+        // La connexion découvrable ne connaît pas le compte : on retrouve la
+        // passkey par son seul identifiant, et rien d'autre.
+        let found = store.passkey_by_credential(b"cred-1").unwrap().unwrap();
+        assert_eq!(found.user_id, alice.id);
+        assert_eq!(found.name, "Portable");
+        assert!(store.passkey_by_credential(b"inconnu").unwrap().is_none());
+
+        store
+            .touch_passkey(&alice.id, &first.id, "{\"état\":1}")
+            .unwrap();
+        let touched = store.passkey_of(&alice.id, b"cred-1").unwrap().unwrap();
+        assert_eq!(touched.passkey, "{\"état\":1}");
+        assert!(touched.last_used_at.is_some());
+
+        store.delete_passkey(&alice.id, &first.id).unwrap();
+        assert_eq!(store.passkeys_of(&alice.id).unwrap().len(), 1);
+        // Une passkey d'un autre compte est introuvable.
+        assert_eq!(
+            store.delete_passkey(&alice.id, &first.id).unwrap_err(),
+            AccountError::NotFound
+        );
+    }
+
+    #[test]
+    fn a_credential_cannot_belong_to_two_accounts() {
+        let store = store();
+        let alice = user(&store, "alice", Role::User);
+        let bob = user(&store, "bob", Role::User);
+        store.add_passkey(&alice.id, "A", b"same", "{}").unwrap();
+        assert_eq!(
+            store.add_passkey(&bob.id, "B", b"same", "{}").unwrap_err(),
+            AccountError::PasskeyTaken
+        );
+    }
+
+    #[test]
+    fn removing_every_way_to_sign_in_is_refused() {
+        let store = store();
+        // Un compte sans mot de passe, avec une seule passkey : impossible de la retirer.
+        let alice = store
+            .create_user(with_email("alice", "alice@local.test"))
+            .unwrap();
+        let only = store
+            .add_passkey(&alice.id, "Portable", b"cred", "{}")
+            .unwrap();
+        assert_eq!(
+            store.delete_passkey(&alice.id, &only.id).unwrap_err(),
+            AccountError::LastCredential
+        );
+        // Avec un mot de passe, la retirer ne verrouille rien.
+        store.set_password(&alice.id, "motdepasse2").unwrap();
+        store.delete_passkey(&alice.id, &only.id).unwrap();
     }
 
     #[test]

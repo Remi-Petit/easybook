@@ -26,7 +26,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	// Sans session, aucune page ne s'affiche (sauf la connexion) : l'API refuse de
 	// toute façon, mais l'interface ne doit pas peindre une coquille vide.
-	const session = await loadSession(event.request.headers.get('cookie'));
+	const session = await loadSession(event.request.headers.get('cookie'), {
+		host: event.request.headers.get('host'),
+		proto: event.url.protocol
+	});
 	event.locals.session = session;
 	const target = guardRedirect(event.url, session);
 	if (target) redirect(303, target);

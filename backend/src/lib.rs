@@ -4,6 +4,7 @@
 //! - [`accounts`] : comptes, identités OIDC et sessions (SQLite).
 //! - [`auth`] : connexion, garde des routes, administration des comptes.
 //! - [`oidc`] : client OpenID Connect (code + PKCE).
+//! - [`passkeys`] : connexion par passkey (WebAuthn).
 //! - [`library`] : scan récursif du dossier `books/`.
 //! - [`formats`] : formats reconnus — **un module par format**.
 //! - [`archive`] : ouverture des archives ZIP (helpers partagés EPUB/CBZ).
@@ -28,6 +29,7 @@ pub mod formats;
 pub mod library;
 pub mod oidc;
 pub mod pages;
+pub mod passkeys;
 pub mod perf;
 pub mod perf_history;
 pub mod problem;

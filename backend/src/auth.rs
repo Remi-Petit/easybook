@@ -10,6 +10,9 @@
 //! | `GET /api/auth/session` | public — qui suis-je, et comment se connecter |
 //! | `GET /api/auth/check` | connecté — 204 ; contrôle d'accès du cache nginx |
 //! | `POST /api/auth/login`, `POST /api/auth/logout` | public |
+//! | `POST /api/auth/passkey/login/begin`, `…/finish` | public — connexion par passkey |
+//! | `POST /api/auth/passkey/register/begin`, `…/finish` | connecté — ajout d'une passkey |
+//! | `GET /api/auth/passkey`, `DELETE /api/auth/passkey/{id}` | connecté |
 //! | `POST /api/auth/password` | connecté |
 //! | `GET /api/auth/oidc/login` | public — `?next=`, `?link=<invitation>` |
 //! | `GET /api/auth/oidc/link` | connecté — lie son propre compte |
@@ -21,11 +24,13 @@
 #![allow(clippy::result_large_err)]
 
 use crate::accounts::{
-    AccountError, Accounts, Identity, NewUser, Role, SessionMeta, User, UserPatch, random_token,
+    AccountError, Accounts, Identity, NewUser, PasskeyInfo, Role, SessionMeta, User, UserPatch,
+    random_token,
 };
 use crate::api::AppState;
 use crate::config;
 use crate::oidc::{Claims, Flows, Intent, Pending, Provider, pkce_pair, safe_next};
+use crate::passkeys::{PasskeyError, Passkeys};
 use axum::body::Body;
 use axum::extract::{FromRequestParts, Path, Query, Request, State};
 use axum::http::request::Parts;
@@ -41,12 +46,15 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
+use webauthn_rs::prelude::{Passkey, PublicKeyCredential, RegisterPublicKeyCredential};
 
 pub const SESSION_COOKIE: &str = "easybook_session";
 /// Retient le `state` de la connexion OIDC en cours : lie le retour du
 /// fournisseur au navigateur qui l'a demandé (sans lui, on pourrait faire
 /// ouvrir à quelqu'un la session d'un autre).
 const FLOW_COOKIE: &str = "easybook_oidc";
+/// Retient la cérémonie WebAuthn en cours (défi à usage unique, cinq minutes).
+const PASSKEY_COOKIE: &str = "easybook_passkey";
 
 /// Essais ratés avant blocage temporaire, par identifiant et par client.
 const MAX_FAILURES: u32 = 5;
@@ -58,6 +66,8 @@ const LINK_TOKEN_TTL: i64 = 900;
 /// éventuel, et les connexions en cours.
 pub struct AuthState {
     pub accounts: Arc<Accounts>,
+    /// Cérémonies WebAuthn en cours (passkeys).
+    pub passkeys: Passkeys,
     provider: Option<Provider>,
     flows: Flows,
     throttle: Throttle,
@@ -136,8 +146,10 @@ impl AuthState {
             .oidc
             .is_enabled()
             .then(|| Provider::new(settings.oidc));
+        let passkeys = Passkeys::new(settings.webauthn.clone());
         Self {
             accounts,
+            passkeys,
             provider,
             flows: Flows::default(),
             throttle: Throttle::default(),
@@ -334,6 +346,8 @@ fn is_public(path: &str) -> bool {
             | "/api/auth/logout"
             | "/api/auth/oidc/login"
             | "/api/auth/oidc/callback"
+            | "/api/auth/passkey/login/begin"
+            | "/api/auth/passkey/login/finish"
     )
 }
 
@@ -456,7 +470,8 @@ fn account_error(e: AccountError) -> Response {
         | AccountError::EmailOwnedByUser
         | AccountError::IdentityTaken
         | AccountError::LastAdmin
-        | AccountError::LastCredential => StatusCode::CONFLICT,
+        | AccountError::LastCredential
+        | AccountError::PasskeyTaken => StatusCode::CONFLICT,
         AccountError::NotFound => StatusCode::NOT_FOUND,
         AccountError::Internal(ref detail) => {
             eprintln!("comptes : {detail}");
@@ -581,6 +596,18 @@ pub fn routes() -> Router<AppState> {
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/password", post(change_password))
         .route("/api/auth/password/skip", post(skip_password_change))
+        .route("/api/auth/passkey", get(list_passkeys))
+        .route("/api/auth/passkey/{id}", delete(delete_passkey))
+        .route("/api/auth/passkey/login/begin", post(passkey_login_begin))
+        .route("/api/auth/passkey/login/finish", post(passkey_login_finish))
+        .route(
+            "/api/auth/passkey/register/begin",
+            post(passkey_register_begin),
+        )
+        .route(
+            "/api/auth/passkey/register/finish",
+            post(passkey_register_finish),
+        )
         .route("/api/auth/oidc/login", get(oidc_login))
         .route("/api/auth/oidc/link", get(oidc_link))
         .route("/api/auth/oidc/callback", get(oidc_callback))
@@ -618,16 +645,35 @@ struct UserView {
     #[serde(flatten)]
     user: User,
     identities: Vec<Identity>,
+    passkeys: Vec<PasskeyInfo>,
 }
 
 fn view(accounts: &Accounts, user: User) -> Result<UserView, AccountError> {
     let identities = accounts.identities_of(&user.id)?;
-    Ok(UserView { user, identities })
+    let passkeys = accounts
+        .passkeys_of(&user.id)?
+        .into_iter()
+        .map(|stored| PasskeyInfo {
+            id: stored.id,
+            name: stored.name,
+            created_at: stored.created_at,
+            last_used_at: stored.last_used_at,
+        })
+        .collect();
+    Ok(UserView {
+        user,
+        identities,
+        passkeys,
+    })
 }
 
 /// `GET /api/auth/session` — toujours 200 : l'interface s'en sert pour décider
 /// d'afficher la page de connexion.
-async fn session(State(state): State<AppState>, MaybeUser(user): MaybeUser) -> Response {
+async fn session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    MaybeUser(user): MaybeUser,
+) -> Response {
     let Some(auth) = state.auth().cloned() else {
         return Json(serde_json::json!({ "enabled": false, "user": null, "oidc": null }))
             .into_response();
@@ -650,7 +696,13 @@ async fn session(State(state): State<AppState>, MaybeUser(user): MaybeUser) -> R
     let dev_emails: Vec<&str> = auth.dev_logins.iter().map(|(e, _)| e.as_str()).collect();
     (
         [(header::CACHE_CONTROL, "no-store")],
-        Json(serde_json::json!({ "enabled": true, "user": user, "oidc": oidc, "dev_logins": dev_emails })),
+        Json(serde_json::json!({
+            "enabled": true,
+            "user": user,
+            "oidc": oidc,
+            "dev_logins": dev_emails,
+            "passkey": auth.passkeys.available(&headers),
+        })),
     )
         .into_response()
 }
@@ -918,6 +970,323 @@ async fn skip_password_change(
     })
     .await?
     .map_err(account_error)?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+// ── Passkeys (WebAuthn) ──────────────────────────────────────────────────
+
+/// Cookie du défi en cours : limité aux routes passkey, jamais lu par la page.
+fn passkey_cookie(headers: &HeaderMap, token: &str) -> String {
+    format!(
+        "{PASSKEY_COOKIE}={token}; Path=/api/auth/passkey; HttpOnly; SameSite=Strict; Max-Age={}{}",
+        crate::passkeys::CEREMONY_TTL.as_secs(),
+        if is_https(headers) { "; Secure" } else { "" }
+    )
+}
+
+fn expired_passkey_cookie(headers: &HeaderMap) -> String {
+    format!(
+        "{PASSKEY_COOKIE}=; Path=/api/auth/passkey; HttpOnly; SameSite=Strict; Max-Age=0{}",
+        if is_https(headers) { "; Secure" } else { "" }
+    )
+}
+
+fn passkey_error(e: PasskeyError, login: bool) -> Response {
+    match e {
+        PasskeyError::Unavailable => error(StatusCode::BAD_REQUEST, "passkey_unavailable"),
+        PasskeyError::Expired => error(StatusCode::BAD_REQUEST, "passkey_expired"),
+        PasskeyError::OtherUser => error(StatusCode::FORBIDDEN, "forbidden"),
+        PasskeyError::Rejected(detail) => {
+            eprintln!("passkey : {detail}");
+            // Même réponse qu'un mauvais mot de passe : rien à apprendre.
+            if login {
+                error(StatusCode::UNAUTHORIZED, "invalid_credentials")
+            } else {
+                error(StatusCode::BAD_REQUEST, "passkey_failed")
+            }
+        }
+        PasskeyError::Internal(detail) => internal(detail),
+    }
+}
+
+#[derive(Deserialize)]
+struct PasskeyNameBody {
+    #[serde(default)]
+    name: String,
+    /// Mot de passe actuel : confirmation avant d'ajouter une passkey.
+    #[serde(default)]
+    current: String,
+}
+
+/// `POST /api/auth/passkey/login/begin` — défi de connexion.
+///
+/// Aucun corps : la passkey est **découvrable**, l'authentificateur sait à quel
+/// compte elle appartient et le serveur l'apprend à la fin de la cérémonie.
+async fn passkey_login_begin(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let key = format!("pk|{}", client_key(&headers));
+    if let Some(wait) = auth.throttle.blocked(&key) {
+        let mut response = error(StatusCode::TOO_MANY_REQUESTS, "too_many_attempts");
+        if let Ok(value) = HeaderValue::from_str(&wait.to_string()) {
+            response.headers_mut().insert(header::RETRY_AFTER, value);
+        }
+        return Err(response);
+    }
+
+    let (options, token) = auth
+        .passkeys
+        .begin_discoverable_authentication(&headers)
+        .map_err(|e| passkey_error(e, true))?;
+    Ok((
+        [(header::SET_COOKIE, passkey_cookie(&headers, &token))],
+        Json(options),
+    )
+        .into_response())
+}
+
+/// `POST /api/auth/passkey/login/finish` — vérifie la signature, ouvre la session.
+async fn passkey_login_finish(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(credential): Json<PublicKeyCredential>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let key = format!("pk|{}", client_key(&headers));
+    if let Some(wait) = auth.throttle.blocked(&key) {
+        let mut response = error(StatusCode::TOO_MANY_REQUESTS, "too_many_attempts");
+        if let Ok(value) = HeaderValue::from_str(&wait.to_string()) {
+            response.headers_mut().insert(header::RETRY_AFTER, value);
+        }
+        return Err(response);
+    }
+
+    let token = cookie_value(&headers, PASSKEY_COOKIE);
+    let pending = auth
+        .passkeys
+        .take_discoverable(token.as_deref())
+        .map_err(|e| passkey_error(e, true))?;
+
+    // Aucun compte n'a été annoncé : c'est la passkey présentée par le
+    // navigateur qui le désigne. On la charge avant de vérifier la signature.
+    let credential_id = credential.raw_id.clone();
+    let stored = db(&auth, move |accounts| {
+        accounts.passkey_by_credential(credential_id.as_ref())
+    })
+    .await?
+    .map_err(account_error)?;
+
+    let Some(stored) = stored else {
+        auth.throttle.failure(&key);
+        return Err(error(StatusCode::UNAUTHORIZED, "invalid_credentials"));
+    };
+
+    let mut passkey: Passkey = serde_json::from_str(&stored.passkey).map_err(internal)?;
+    let result = match pending.finish(&credential, &passkey) {
+        Ok(result) => result,
+        Err(e) => {
+            auth.throttle.failure(&key);
+            let (failed, meta) = (stored.user_id.clone(), session_meta(&headers, "passkey"));
+            if let Ok(Ok(Some(id))) = db(&auth, move |accounts| match accounts.user(&failed)? {
+                Some(user) => {
+                    accounts.log_failed_login(user.email.as_deref().unwrap_or_default(), &meta)
+                }
+                None => Ok(None),
+            })
+            .await
+            {
+                auth.notify(&id);
+            }
+            return Err(passkey_error(e, true));
+        }
+    };
+    if result.cred_id() != stored.credential_id.as_slice() {
+        auth.throttle.failure(&key);
+        return Err(error(StatusCode::UNAUTHORIZED, "invalid_credentials"));
+    }
+
+    // Compteur anti-rejeu et état de sauvegarde : la passkey peut avoir changé
+    // d'appareil (trousseau synchronisé), on garde son nouvel état.
+    let ttl = auth.session_ttl;
+    let (user, session) = db(&auth, move |accounts| {
+        if passkey.update_credential(&result).is_none() {
+            return Err(AccountError::Internal(
+                "passkey : identifiant de credential incohérent".into(),
+            ));
+        }
+        let payload =
+            serde_json::to_string(&passkey).map_err(|e| AccountError::Internal(e.to_string()))?;
+        accounts.touch_passkey(&stored.user_id, &stored.id, &payload)?;
+        let user = accounts
+            .user(&stored.user_id)?
+            .filter(|user| !user.disabled)
+            .ok_or(AccountError::NotFound)?;
+        accounts.touch_login(&user.id)?;
+        let session = accounts.create_session(&user.id, ttl)?;
+        Ok((user, session))
+    })
+    .await?
+    .map_err(|e| {
+        // Compte désactivé entre le défi et la réponse : refus générique.
+        if e == AccountError::NotFound {
+            error(StatusCode::UNAUTHORIZED, "invalid_credentials")
+        } else {
+            account_error(e)
+        }
+    })?;
+    auth.throttle.success(&key);
+    replace_previous(&auth, &headers, &session).await;
+    {
+        let (session, meta) = (session.clone(), session_meta(&headers, "passkey"));
+        if let Ok(Ok(Some(id))) = db(&auth, move |accounts| {
+            accounts.log_session_start(&session, &meta)
+        })
+        .await
+        {
+            auth.notify(&id);
+        }
+    }
+    let cookie = session_cookies(&headers, &session, ttl);
+    let presented = db(&auth, move |accounts| view(accounts, user))
+        .await?
+        .map_err(account_error)?;
+    // Deux cookies : le tableau d'en-têtes d'axum **remplace** une clé déjà
+    // posée, donc on les ajoute nous-mêmes (sinon la session écraserait le
+    // nettoyage du défi, ou l'inverse).
+    let mut response = Json(presented).into_response();
+    for value in [cookie, expired_passkey_cookie(&headers)] {
+        if let Ok(value) = HeaderValue::from_str(&value) {
+            response.headers_mut().append(header::SET_COOKIE, value);
+        }
+    }
+    Ok(response)
+}
+
+/// `POST /api/auth/passkey/register/begin` — défi de création d'une passkey.
+async fn passkey_register_begin(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    SessionUser(user): SessionUser,
+    Json(body): Json<PasskeyNameBody>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    // Ajouter une passkey est une porte d'entrée durable : quelqu'un qui
+    // disposerait seulement de la session ne doit pas pouvoir en poser une
+    // sans connaître le mot de passe (quand il y en a un).
+    if user.has_password {
+        let key = format!("pkpw|{}", user.id);
+        if let Some(wait) = auth.throttle.blocked(&key) {
+            let mut response = error(StatusCode::TOO_MANY_REQUESTS, "too_many_attempts");
+            if let Ok(value) = HeaderValue::from_str(&wait.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+            return Err(response);
+        }
+        let (id, current) = (user.id.clone(), body.current.clone());
+        let ok = db(&auth, move |accounts| {
+            accounts.check_user_password(&id, &current)
+        })
+        .await?
+        .map_err(account_error)?;
+        if !ok {
+            auth.throttle.failure(&key);
+            return Err(error(StatusCode::FORBIDDEN, "wrong_password"));
+        }
+        auth.throttle.success(&key);
+    }
+    let user_id = user.id.clone();
+    let rows = db(&auth, move |accounts| accounts.passkeys_of(&user_id))
+        .await?
+        .map_err(account_error)?;
+    // Empêche de créer deux fois la même passkey (le navigateur refuse alors
+    // proprement au lieu d'en enregistrer un doublon).
+    let exclude = rows
+        .iter()
+        .map(|row| row.credential_id.clone())
+        .collect::<Vec<_>>();
+    let (options, token) = auth
+        .passkeys
+        .begin_registration(&headers, &user, &body.name, Some(exclude))
+        .map_err(|e| passkey_error(e, false))?;
+    Ok((
+        [(header::SET_COOKIE, passkey_cookie(&headers, &token))],
+        Json(options),
+    )
+        .into_response())
+}
+
+/// `POST /api/auth/passkey/register/finish` — enregistre la passkey vérifiée.
+async fn passkey_register_finish(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    SessionUser(user): SessionUser,
+    Json(credential): Json<RegisterPublicKeyCredential>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let token = cookie_value(&headers, PASSKEY_COOKIE);
+    let pending = auth
+        .passkeys
+        .take_registration(token.as_deref(), &user.id)
+        .map_err(|e| passkey_error(e, false))?;
+    let name = pending.name.clone();
+    let passkey = pending
+        .finish(&credential)
+        .map_err(|e| passkey_error(e, false))?;
+    let credential_id = passkey.cred_id().to_vec();
+    let payload = serde_json::to_string(&passkey).map_err(internal)?;
+
+    let user_id = user.id.clone();
+    let info = db(&auth, move |accounts| {
+        accounts.add_passkey(&user_id, &name, &credential_id, &payload)
+    })
+    .await?
+    .map_err(account_error)?;
+    auth.notify(&user.id);
+    Ok((
+        StatusCode::CREATED,
+        [(header::SET_COOKIE, expired_passkey_cookie(&headers))],
+        Json(info),
+    )
+        .into_response())
+}
+
+/// `GET /api/auth/passkey` — les passkeys du compte connecté.
+async fn list_passkeys(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let rows = db(&auth, move |accounts| accounts.passkeys_of(&user.id))
+        .await?
+        .map_err(account_error)?;
+    let passkeys: Vec<PasskeyInfo> = rows
+        .into_iter()
+        .map(|stored| PasskeyInfo {
+            id: stored.id,
+            name: stored.name,
+            created_at: stored.created_at,
+            last_used_at: stored.last_used_at,
+        })
+        .collect();
+    Ok(Json(serde_json::json!({ "passkeys": passkeys })).into_response())
+}
+
+/// `DELETE /api/auth/passkey/{id}` — retire une passkey du compte connecté.
+async fn delete_passkey(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+    Path(id): Path<String>,
+) -> Result<Response, Response> {
+    let auth = auth_of(&state)?;
+    let user_id = user.id.clone();
+    db(&auth, move |accounts| {
+        accounts.delete_passkey(&user_id, &id)
+    })
+    .await?
+    .map_err(account_error)?;
+    auth.notify(&user.id);
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 

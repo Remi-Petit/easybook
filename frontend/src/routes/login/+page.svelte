@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { call, errorKey, oidcLoginUrl, safeNext, type Session } from '$lib/auth';
 	import { LOCALES, chooseLocale, locale, t } from '$lib/i18n/state.svelte';
+	import { loginWithPasskey, passkeySupported } from '$lib/passkeys';
 
 	let { data }: { data: { session: Session } } = $props();
 
@@ -13,6 +15,13 @@
 	let password = $state('');
 	let busy = $state(false);
 	let failure = $state<string | null>(null);
+	// WebAuthn dépend du navigateur : décidé après l'hydratation, pour que le
+	// rendu serveur et le rendu client s'accordent.
+	let canPasskey = $state(false);
+	onMount(() => {
+		canPasskey = passkeySupported();
+	});
+	const showPasskey = $derived(data.session.passkey && canPasskey);
 
 	const message = $derived.by(() => {
 		const code = failure ?? returned;
@@ -46,6 +55,23 @@
 		}
 		failure = result.code;
 		password = '';
+		busy = false;
+	}
+
+	/**
+	 * Connexion par passkey : aucune adresse à saisir, l'authentificateur choisit
+	 * la clé et demande le code ou la biométrie.
+	 */
+	async function withPasskey() {
+		if (busy) return;
+		busy = true;
+		failure = null;
+		const result = await loginWithPasskey();
+		if (result.ok) {
+			location.assign(next);
+			return;
+		}
+		failure = result.code;
 		busy = false;
 	}
 </script>
@@ -90,6 +116,13 @@
 		<button type="submit" class="btn-main auth-submit" disabled={busy}>
 			{busy ? t('auth.submitting') : t('auth.submit')}
 		</button>
+
+		{#if showPasskey}
+			<p class="auth-or"><span>{t('auth.or')}</span></p>
+			<button type="button" class="btn-plain auth-sso" disabled={busy} onclick={withPasskey}>
+				{t('auth.passkey')}
+			</button>
+		{/if}
 
 		{#if data.session.dev_logins.length > 0}
 			<div class="auth-quick">

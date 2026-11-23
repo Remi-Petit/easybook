@@ -80,6 +80,12 @@ services:
       EASYBOOK_OIDC_AUTO_CREATE: ${EASYBOOK_OIDC_AUTO_CREATE:-false}
       EASYBOOK_OIDC_LINK_BY_EMAIL: ${EASYBOOK_OIDC_LINK_BY_EMAIL:-false}
       EASYBOOK_OIDC_SELF_LINK: ${EASYBOOK_OIDC_SELF_LINK:-false}
+      # Passkeys (WebAuthn) : facultatives, chacun les ajoute depuis « Mon compte ».
+      # `RP_ID` doit être le domaine définitif ; vide : déduit de l'adresse.
+      EASYBOOK_WEBAUTHN_ENABLED: ${EASYBOOK_WEBAUTHN_ENABLED:-true}
+      EASYBOOK_WEBAUTHN_RP_ID: ${EASYBOOK_WEBAUTHN_RP_ID:-}
+      EASYBOOK_WEBAUTHN_RP_NAME: ${EASYBOOK_WEBAUTHN_RP_NAME:-easybook}
+      EASYBOOK_WEBAUTHN_ORIGIN: ${EASYBOOK_WEBAUTHN_ORIGIN:-}
       # Un proxy d'entreprise injecté dans les conteneurs (variables HTTP_PROXY du
       # démon Docker) intercepterait l'appel vers `keycloak` : on l'en écarte.
       NO_PROXY: localhost,127.0.0.1,keycloak

@@ -63,6 +63,12 @@ base64 = "0.22"
 # OIDC : découverte, échange du code (PKCE) et validation de l'ID token (JWKS).
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 jsonwebtoken = "9"
+webauthn-rs = { version = "0.6.2", default-features = false, features = ["conditional-ui"] }
+# Passkeys découvrables : la façade de `webauthn-rs` 0.6 demande en dur
+# `require_resident_key(false)`, et son `prelude` n'expose pas le type qui
+# permet de corriger la demande faite au navigateur. Même version que
+# `webauthn-rs` (elle est épinglée à `=0.6.2` en interne).
+webauthn-rs-proto = "0.6.2"
 
 # Rendre à l'OS la mémoire libérée après le décodage d'une image (`malloc_trim`).
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]

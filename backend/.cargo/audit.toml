@@ -1,0 +1,27 @@
+# Avis RustSec ignorés, chacun avec sa justification.
+#
+# `cargo audit` lit ce fichier dans le dossier où il s'exécute — la CI le lance
+# depuis `backend/` (voir `defaults.run.working-directory` dans `ci.yml`).
+#
+# Un avis ne s'ignore que si le code **ne peut pas** y être exposé : la valeur
+# `reason` dit pourquoi, ce n'est pas une liste de « faux positifs ».
+
+[advisories]
+# `ignore` n'accepte que des identifiants (une table `{ id, reason }` est
+# refusée par cargo-audit 0.23) : la justification de chaque ligne est le
+# commentaire qui la précède.
+ignore = [
+  # rsa 0.10.0-rc.19 — RUSTSEC-2023-0071 « Marvin » : récupération de clé par
+  # canal temporel pendant le **déchiffrement** RSA PKCS#1 v1.5.
+  #
+  # `rsa` n'entre ici que par `webauthn-rs` → `crypto-glue`, qui ne s'en sert
+  # que pour **vérifier** des signatures RS256 (clé publique) et lire des
+  # certificats d'attestation : aucune clé privée RSA, aucun déchiffrement,
+  # donc pas de canal temporel exploitable.
+  #
+  # Passer à rsa 0.10.0 est impossible pour l'instant : `crypto-glue 0.2.2`
+  # demande la feature `sha2`, supprimée en 0.10.0 (cargo échoue avec
+  # « depends on `rsa` with feature `sha2` but `rsa` does not have that
+  # feature »). À retirer dès qu'une version de `crypto-glue` suit.
+  "RUSTSEC-2023-0071",
+]
