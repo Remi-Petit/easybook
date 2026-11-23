@@ -2338,23 +2338,19 @@ code {
 	}
 
 	.reader-head {
-		gap: 12px;
+		gap: 6px;
 		padding-right: max(14px, env(safe-area-inset-right, 0px));
 		padding-left: max(14px, env(safe-area-inset-left, 0px));
 	}
 
-	/* Seuls le retour et le titre tiennent : auteur et boutons-icônes restent
-	   sur grand écran. */
-	.reader-sub {
-		display: none;
-	}
-
-	.reader-sub.icon {
+	/* Seul l'auteur cède sa place : sur un téléphone, les réglages de lecture, le
+	   téléchargement et le plein écran doivent rester à portée du pouce. */
+	.reader-sub:not(.icon) {
 		display: none;
 	}
 
 	.back {
-		max-width: 42%;
+		max-width: 26%;
 	}
 
 	.reader-title {
@@ -4693,6 +4689,17 @@ a.link-more {
 
 	.input-eye input {
 		padding-right: 46px;
+	}
+
+	/* En-tête du lecteur : les icônes gardent leur place et prennent 36 px. Les
+	   raccourcis clavier, eux, ne servent à rien au doigt. */
+	.reader-sub.icon {
+		width: 36px;
+		height: 36px;
+	}
+
+	.reader-sub.icon.help {
+		display: none;
 	}
 
 	/* Titre d'un livre dans une ligne d'historique ou d'anomalie. */

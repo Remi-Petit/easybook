@@ -333,7 +333,7 @@
 			</button>
 			<button
 				type="button"
-				class="reader-sub icon"
+				class="reader-sub icon help"
 				onclick={() => (helpOpen = true)}
 				title={t('reader.shortcuts')}
 				aria-label={t('reader.shortcuts')}
