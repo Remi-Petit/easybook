@@ -1,13 +1,18 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
-	import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+	// Build « legacy » : pdf.js 6 s'appuie sur les *iterator helpers* (`Iterator`,
+	// `Iterator.from`…), que Chrome n'a qu'à partir de la version 122. Les
+	// téléphones Android encore en Chrome 11x (mis à jour, mais pas de version
+	// majeure) affichaient « Livre illisible : Iterator is not defined ». Le build
+	// legacy est le même code, transpilé : mêmes PDF, un peu plus d'octets.
 	import { rawUrl } from '$lib/api';
 	import { t } from '$lib/i18n/state.svelte';
 	import { flushPositions, reportPosition } from '$lib/progress';
 	import { readingZone } from './zones';
 	import { prefs, cycleScale, setReadingDirection } from './prefs.svelte';
 	import { arrowStep, isEditable, isPlainKey, shortcutAction } from './shortcuts';
+	import { PDF_WORKER_URL, installPromiseWithResolvers } from './pdf-compat';
 
 	let {
 		rel,
@@ -91,8 +96,12 @@
 		// pdf.js touche `window` dès son chargement : import dynamique, côté navigateur seulement.
 		void (async () => {
 			try {
-				const lib = await import('pdfjs-dist');
-				lib.GlobalWorkerOptions.workerSrc = workerUrl;
+				const lib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+				// Chrome < 119 n'a pas `Promise.withResolvers`, dont pdf.js 6 a besoin :
+				// la page reçoit le polyfill, le worker passe par un relais qui le pose
+				// avant de charger le vrai worker (voir `pdf-compat`).
+				installPromiseWithResolvers();
+				lib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
 				// Lecture par plages, à la demande : seules les pages affichées sont téléchargées.
 				// Les dossiers de ressources viennent de `static/pdfjs/` (voir scripts/copy-pdfjs-assets.mjs).
 				const assets = new URL('/pdfjs/', window.location.origin).href;
