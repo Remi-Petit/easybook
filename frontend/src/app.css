@@ -3212,6 +3212,15 @@ code {
 	margin-top: 14px;
 }
 
+/* Un indice de panneau n'est jamais collé au bloc qu'il introduit (liste) ni à
+   celui qu'il commente (formulaire) : même respiration de 14 px que sous le
+   titre. Sans ces règles, `.panel-hint` (margin 0) touchait la liste et le
+   pied du formulaire, alors que `.panel-card` a 18/20 px de padding. */
+.panel-hint + .identity-list,
+.stack-form + .panel-hint {
+	margin-top: 14px;
+}
+
 .muted {
 	color: var(--muted);
 }
